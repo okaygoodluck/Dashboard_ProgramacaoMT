@@ -228,7 +228,7 @@ if df is not None:
 
     # 2. FILTROS
     with st.expander("🔍 Filtros Avançados", expanded=True):
-        c_filtro1, c_filtro2 = st.columns(2)
+        c_filtro1, c_filtro2, c_filtro3 = st.columns(3)
         filtro_malha = c_filtro1.multiselect("Filtrar por Malha", options=sorted(df[col_malha].unique()), default=df[col_malha].unique())
         
         # Filtra DF pela Malha para atualizar opções de região
@@ -236,9 +236,27 @@ if df is not None:
         
         filtro_regiao = c_filtro2.multiselect("Filtrar por Região", options=sorted(df_filtered_temp[col_regiao].unique()), default=df_filtered_temp[col_regiao].unique())
 
+        # Filtro de Data
+        min_date = pd.to_datetime(df[col_data]).min().date()
+        max_date = pd.to_datetime(df[col_data]).max().date()
+        
+        filtro_data = c_filtro3.date_input(
+            "Filtrar por Período",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date,
+            format="DD/MM/YYYY"
+        )
+
     # Aplica filtros finais
     df_filtered = df[df[col_malha].isin(filtro_malha)]
     df_filtered = df_filtered[df_filtered[col_regiao].isin(filtro_regiao)]
+    
+    # Aplica filtro de data se um período válido for selecionado
+    if isinstance(filtro_data, tuple) and len(filtro_data) == 2:
+        start_date, end_date = filtro_data
+        mask_date = (pd.to_datetime(df_filtered[col_data]).dt.date >= start_date) & (pd.to_datetime(df_filtered[col_data]).dt.date <= end_date)
+        df_filtered = df_filtered.loc[mask_date]
     
     # Recalcula KPIs filtrados
     total_filtrado = len(df_filtered)
