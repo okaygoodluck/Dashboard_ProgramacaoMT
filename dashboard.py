@@ -237,9 +237,30 @@ if df is not None:
         filtro_regiao = c_filtro2.multiselect("Filtrar por Região", options=sorted(df_filtered_temp[col_regiao].unique()), default=df_filtered_temp[col_regiao].unique())
 
         # Filtro de Data
-        min_date = pd.to_datetime(df[col_data]).min().date()
-        max_date = pd.to_datetime(df[col_data]).max().date()
+        # Identifica colunas de data potenciais para o filtro
+        cols_data_possiveis = [c for c in df.columns if 'data' in c.lower() or 'inicio' in c.lower() or 'criacao' in c.lower() or 'entrada' in c.lower()]
+        if not cols_data_possiveis:
+             cols_data_possiveis = [col_data]
         
+        col_filtro_data = c_filtro3.selectbox("Coluna de Data", options=cols_data_possiveis, index=cols_data_possiveis.index(col_data) if col_data in cols_data_possiveis else 0)
+
+        # Garante que a coluna selecionada para filtro esteja em datetime
+        if col_filtro_data not in [col_data]: # Se não for a já convertida
+             df[col_filtro_data] = pd.to_datetime(df[col_filtro_data], dayfirst=True, errors='coerce')
+
+        min_date = df[col_filtro_data].min()
+        max_date = df[col_filtro_data].max()
+        
+        # Trata NaT
+        if pd.isna(min_date): min_date = datetime.now().date()
+        else: min_date = min_date.date()
+        
+        if pd.isna(max_date): max_date = datetime.now().date()
+        else: max_date = max_date.date()
+
+        # Garante min <= max
+        if min_date > max_date: min_date = max_date
+
         filtro_data = c_filtro3.date_input(
             "Filtrar por Período",
             value=(min_date, max_date),
@@ -255,7 +276,10 @@ if df is not None:
     # Aplica filtro de data se um período válido for selecionado
     if isinstance(filtro_data, tuple) and len(filtro_data) == 2:
         start_date, end_date = filtro_data
-        mask_date = (pd.to_datetime(df_filtered[col_data]).dt.date >= start_date) & (pd.to_datetime(df_filtered[col_data]).dt.date <= end_date)
+        # Garante que a coluna de filtro esteja em datetime no df_filtered (caso tenha vindo do df original já convertido ou não)
+        # Como alteramos o df original acima, deve estar ok.
+        
+        mask_date = (df_filtered[col_filtro_data].dt.date >= start_date) & (df_filtered[col_filtro_data].dt.date <= end_date)
         df_filtered = df_filtered.loc[mask_date]
     
     # Recalcula KPIs filtrados
