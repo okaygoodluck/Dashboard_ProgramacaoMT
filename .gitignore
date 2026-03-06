@@ -156,6 +156,7 @@ cython_debug/
 
 # Project specific
 dados_demanda.db
+demanda.db
 relatorios/
 *.xlsx
 *.xls
