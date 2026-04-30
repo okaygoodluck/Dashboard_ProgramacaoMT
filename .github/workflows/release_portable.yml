@@ -1,0 +1,43 @@
+name: Gerar Release Portátil (CCP_Versao_Rede)
+
+on:
+  push:
+    tags:
+      - 'v*' # Dispara em tags como v1.0.0, v1.5.2, etc.
+  workflow_dispatch: # Permite disparar manualmente pela interface do GitHub
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Necessário para criar a release e subir assets
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Criar Pacote ZIP
+        run: |
+          zip -r CCP_Portable.zip CCP_Versao_Rede/
+          
+      - name: Criar Release e Upload do Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: CCP_Portable.zip
+          name: "Vanguard Command Center - Release ${{ github.ref_name }}"
+          body: |
+            ## 🚀 Vanguard Portable (CCP_Versao_Rede)
+            
+            Esta release contém a versão atualizada da pasta de rede para uso em Home Office.
+            
+            ### 📝 Instruções:
+            1. Baixe o arquivo `CCP_Portable.zip`.
+            2. Extraia o conteúdo no seu **C:\ (Desktop ou Documentos)** local.
+            3. Execute o `INSTALAR_DEPENDENCIAS_PORTABLE.bat` para configurar o ambiente.
+            4. Abra o Dashboard pelo `ACESSAR_DASHBOARD.bat`.
+            
+            *Nota: Não execute diretamente da unidade de rede para evitar lentidão.*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

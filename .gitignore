@@ -157,6 +157,11 @@ cython_debug/
 # Project specific
 dados_demanda.db
 demanda.db
+web/
+api.py
+run_dashboard.py
+README_EXECUTAVEL.txt
+setup_script.iss
 relatorios/
 *.xlsx
 *.xls
@@ -171,3 +176,6 @@ Acessar_Dashboard.bat
 iniciar_projeto.bat
 COMO_RODAR_NO_OUTRO_PC.txt
 gerar_link_publico.py
+Erros/
+browsers/
+Pacote_Servidor/
