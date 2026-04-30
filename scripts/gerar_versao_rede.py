@@ -11,14 +11,21 @@ def gerar_versao_rede():
     print(f"Destino: {dist_dir}")
     
     if os.path.exists(dist_dir):
-        print(f"Tentando limpar pasta anterior: {dist_dir}")
-        try:
-            shutil.rmtree(dist_dir)
-            os.makedirs(dist_dir, exist_ok=True)
-        except PermissionError:
-            print("AVISO: Pasta de rede em uso. Prosseguindo com a atualização via sobrescrita...")
+        print(f"Limpando arquivos antigos em: {dist_dir}")
+        for item in os.listdir(dist_dir):
+            item_path = os.path.join(dist_dir, item)
+            if item == 'python': continue
+            if os.path.isfile(item_path): os.remove(item_path)
+            elif os.path.isdir(item_path): shutil.rmtree(item_path)
     else:
         os.makedirs(dist_dir)
+
+    # Tenta copiar a pasta 'python' da raiz se ela existir
+    python_src = os.path.join(src_dir, 'python')
+    python_dest = os.path.join(dist_dir, 'python')
+    if os.path.exists(python_src) and not os.path.exists(python_dest):
+        print(" [OK] Pasta 'python' portátil encontrada na raiz. Copiando para distribuição...")
+        shutil.copytree(python_src, python_dest)
 
     # Arquivos essenciais para o funcionamento na rede
     files_to_copy = [

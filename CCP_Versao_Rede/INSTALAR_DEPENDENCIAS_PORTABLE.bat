@@ -31,10 +31,16 @@ if not exist "%REQ_FILE%" (
     exit /b 1
 )
 
-echo [1/2] Recuperando/Verificando sistema PIP...
-"%PYTHON_EXE%" -m ensurepip --default-pip
+echo [1/2] Verificando sistema PIP...
+"%PYTHON_EXE%" -m pip --version >nul 2>&1
 if errorlevel 1 (
-    echo [!] Aviso: Nao foi possivel rodar o ensurepip. Tentando prosseguir...
+    echo [!] PIP nao encontrado. Instalando via get-pip.py...
+    if exist "%BASE_DIR%python\get-pip.py" (
+        "%PYTHON_EXE%" "%BASE_DIR%python\get-pip.py"
+    ) else (
+        echo [ERRO] get-pip.py nao encontrado. Tentando ensurepip...
+        "%PYTHON_EXE%" -m ensurepip --default-pip
+    )
 )
 
 echo.
