@@ -61,6 +61,9 @@ if errorlevel 1 (
     echo [ERRO] Houve um problema na instalacao. 
     echo Verifique sua conexao com a internet ou permissoes de rede.
     echo.
+    echo --- DIAGNOSTICO DE PASTA ---
+    dir "%BASE_DIR%python"
+    echo ---------------------------
     pause
 ) else (
     echo.

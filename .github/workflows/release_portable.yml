@@ -24,12 +24,18 @@ jobs:
             curl -L https://www.python.org/ftp/python/3.12.3/python-3.12.3-embed-amd64.zip -o python_portable.zip
             unzip python_portable.zip -d CCP_Versao_Rede/python
             
-            # Configura o arquivo ._pth para ser totalmente portátil e encontrar as bibliotecas
-            # O nome do arquivo ._pth deve corresponder à versão do python baixada (3.12)
-            if [ -f "CCP_Versao_Rede/python/python312._pth" ]; then
-              echo "Configurando python312._pth..."
-              echo -e "python312.zip\n.\nLib\nsite-packages\nimport site" > CCP_Versao_Rede/python/python312._pth
-            fi
+            # Configura o arquivo ._pth de forma infalível usando Heredoc
+            # Isso garante que as quebras de linha sejam reais e o Python encontre o zip
+            echo "python312.zip" > CCP_Versao_Rede/python/python312._pth
+            echo "." >> CCP_Versao_Rede/python/python312._pth
+            echo "Lib" >> CCP_Versao_Rede/python/python312._pth
+            echo "Lib/site-packages" >> CCP_Versao_Rede/python/python312._pth
+            echo "import site" >> CCP_Versao_Rede/python/python312._pth
+            
+            # Garante que as pastas de bibliotecas existam para o PIP
+            mkdir -p CCP_Versao_Rede/python/Lib/site-packages
+            
+            echo "Python portátil configurado com sucesso."
             
             # Baixa o get-pip.py para facilitar a instalação de dependências pelo usuário
             curl -L https://bootstrap.pypa.io/get-pip.py -o CCP_Versao_Rede/python/get-pip.py
