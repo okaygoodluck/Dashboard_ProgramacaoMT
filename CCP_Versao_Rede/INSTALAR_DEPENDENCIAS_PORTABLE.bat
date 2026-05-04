@@ -16,11 +16,19 @@ set "REQ_FILE=%BASE_DIR%requirements.txt"
 
 :: AMBIENTE ISOLADO: O Python agora usa o arquivo python314._pth para encontrar a pasta Lib automaticamente.
 
-:: 1. VERIFICA SE O PYTHON EXISTE
+:: 1. VERIFICA SE O PYTHON E A LIB EXISTEM
 if not exist "%PYTHON_EXE%" (
     echo [ERRO] Pasta 'python' nao encontrada neste diretorio.
-    echo Certifique-se de que a pasta 'python' ^(portatil^) foi colada aqui.
-    echo Caminho esperado: %PYTHON_EXE%
+    echo.
+    pause
+    exit /b 1
+)
+if not exist "%BASE_DIR%python\Lib\" (
+    echo [ERRO CRITICO] A pasta 'python\Lib' esta faltando!
+    echo Isso significa que o Python nao tem a sua biblioteca padrao.
+    echo.
+    echo CAUSA: O Git provavelmente ignorou esta pasta ao subir para o GitHub.
+    echo SOLUCAO: Rode 'git add python/Lib/ -f' no seu terminal e de um Push novo.
     echo.
     pause
     exit /b 1

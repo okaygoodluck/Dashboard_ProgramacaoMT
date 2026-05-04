@@ -24,11 +24,12 @@ def gerar_versao_rede():
     else:
         os.makedirs(dist_dir)
 
-    # Tenta copiar a pasta 'python' da raiz se ela existir (Sincroniza arquivos novos)
+    # Tenta copiar a pasta 'python' da raiz se ela existir (Sincronia robusta)
     python_src = os.path.join(src_dir, 'python')
     python_dest = os.path.join(dist_dir, 'python')
     if os.path.exists(python_src):
-        print(" [OK] Sincronizando pasta 'python' portátil...")
+        print(" [OK] Sincronizando pasta 'python' portátil (Atualizando arquivos)...")
+        # Usamos dirs_exist_ok=True para permitir atualização mesmo se a pasta estiver aberta
         shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
 
     # Arquivos essenciais para o funcionamento na rede
