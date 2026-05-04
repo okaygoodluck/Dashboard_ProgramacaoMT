@@ -14,9 +14,7 @@ cd /d "%BASE_DIR%"
 set "PYTHON_EXE=%BASE_DIR%python\python.exe"
 set "REQ_FILE=%BASE_DIR%requirements.txt"
 
-:: CORREÇÃO PARA HOME OFFICE: Força o Python a encontrar sua própria pasta Lib
-set "PYTHONHOME=%BASE_DIR%python"
-set "PYTHONPATH=%BASE_DIR%python\Lib;%BASE_DIR%python\DLLs;%BASE_DIR%python\Lib\site-packages"
+:: AMBIENTE ISOLADO: O Python agora usa o arquivo python314._pth para encontrar a pasta Lib automaticamente.
 
 :: 1. VERIFICA SE O PYTHON EXISTE
 if not exist "%PYTHON_EXE%" (
