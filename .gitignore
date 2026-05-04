@@ -17,6 +17,8 @@ eggs/
 lib/
 lib64/
 !python/Lib/
+!python/**/*.pyd
+!python/**/*.dll
 !python/
 parts/
 sdist/
