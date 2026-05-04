@@ -24,14 +24,18 @@ if not exist "%PYTHON_EXE%" (
     exit /b 1
 )
 if not exist "%BASE_DIR%python\Lib\" (
-    echo [ERRO CRITICO] A pasta 'python\Lib' esta faltando!
-    echo Isso significa que o Python nao tem a sua biblioteca padrao.
-    echo.
-    echo CAUSA: O Git provavelmente ignorou esta pasta ao subir para o GitHub.
-    echo SOLUCAO: Rode 'git add python/Lib/ -f' no seu terminal e de um Push novo.
-    echo.
-    pause
-    exit /b 1
+    if not exist "%BASE_DIR%python\python312.zip" (
+        if not exist "%BASE_DIR%python\python314.zip" (
+            echo [ERRO CRITICO] A biblioteca padrao do Python esta faltando!
+            echo Nao foi encontrada a pasta 'Lib' nem os arquivos '.zip' base.
+            echo.
+            echo Isso significa que o Python esta incompleto.
+            echo SOLUCAO: Baixe a versao mais recente da Release no GitHub.
+            echo.
+            pause
+            exit /b 1
+        )
+    )
 )
 
 :: 2. VERIFICA REQUIREMENTS

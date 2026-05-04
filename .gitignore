@@ -21,6 +21,7 @@ lib64/
 parts/
 sdist/
 var/
+CCP_Versao_Rede/
 wheels/
 share/python-wheels/
 *.egg-info/
