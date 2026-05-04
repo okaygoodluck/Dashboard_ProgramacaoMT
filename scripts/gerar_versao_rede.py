@@ -14,7 +14,6 @@ def gerar_versao_rede():
         print(f"Limpando arquivos antigos em: {dist_dir}")
         for item in os.listdir(dist_dir):
             item_path = os.path.join(dist_dir, item)
-            if item == 'python': continue
             try:
                 if os.path.isfile(item_path): os.remove(item_path)
                 elif os.path.isdir(item_path): shutil.rmtree(item_path)
