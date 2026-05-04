@@ -21,16 +21,16 @@ jobs:
           if [ ! -f "CCP_Versao_Rede/python/python.exe" ]; then
             echo "Interpretador Python não encontrado. Preparando versão portátil para a release..."
             mkdir -p CCP_Versao_Rede/python
-            curl -L https://www.python.org/ftp/python/3.12.3/python-3.12.3-embed-amd64.zip -o python_portable.zip
+            curl -L https://www.python.org/ftp/python/3.14.3/python-3.14.3-embed-amd64.zip -o python_portable.zip
             unzip python_portable.zip -d CCP_Versao_Rede/python
             
             # Configura o arquivo ._pth de forma infalível usando Heredoc
             # Isso garante que as quebras de linha sejam reais e o Python encontre o zip
-            echo "python312.zip" > CCP_Versao_Rede/python/python312._pth
-            echo "." >> CCP_Versao_Rede/python/python312._pth
-            echo "Lib" >> CCP_Versao_Rede/python/python312._pth
-            echo "Lib/site-packages" >> CCP_Versao_Rede/python/python312._pth
-            echo "import site" >> CCP_Versao_Rede/python/python312._pth
+            echo "python314.zip" > CCP_Versao_Rede/python/python314._pth
+            echo "." >> CCP_Versao_Rede/python/python314._pth
+            echo "Lib" >> CCP_Versao_Rede/python/python314._pth
+            echo "Lib/site-packages" >> CCP_Versao_Rede/python/python314._pth
+            echo "import site" >> CCP_Versao_Rede/python/python314._pth
             
             # Garante que as pastas de bibliotecas existam para o PIP
             mkdir -p CCP_Versao_Rede/python/Lib/site-packages
