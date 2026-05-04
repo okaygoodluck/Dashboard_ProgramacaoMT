@@ -200,8 +200,10 @@ def atualizar_senha(matricula, nova_senha):
         conn.execute("UPDATE usuarios SET password_hash = ?, senha_provisoria = 0 WHERE matricula = ? COLLATE NOCASE", (senha_hash, matricula))
         conn.commit()
         return True
-    except Exception:
-        return False
+    except Exception as e:
+        error_msg = str(e)
+        print(f"[ERRO DB] Falha ao atualizar senha: {error_msg}")
+        return error_msg
     finally:
         conn.close()
 

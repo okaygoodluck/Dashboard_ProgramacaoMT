@@ -476,9 +476,10 @@ def change_password_screen():
             elif new_pwd != conf_pwd:
                 st.error("As senhas não coincidem.")
             else:
-                if db_manager.atualizar_senha(st.session_state.user_matricula, new_pwd):
+                result = db_manager.atualizar_senha(st.session_state.user_matricula, new_pwd)
+                if result is True:
                     st.success("Senha atualizada com sucesso!")
                     st.session_state.is_provisional = False
                     st.rerun()
                 else:
-                    st.error("Erro ao atualizar senha no banco de dados.")
+                    st.error(f"Erro ao atualizar senha no banco de dados. Detalhe: {result}")
