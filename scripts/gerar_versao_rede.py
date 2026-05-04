@@ -42,7 +42,8 @@ def gerar_versao_rede():
         'INSTALAR_DEPENDENCIAS_PORTABLE.bat',
         'Configurar_Servidor_Automatizado.bat',
         'ACESSAR_DASHBOARD.bat',
-        'Iniciar_Dashboard_Local.bat'
+        'Iniciar_Dashboard_Local.bat',
+        'calendario_programacao.html'
     ]
 
     for f in files_to_copy:
