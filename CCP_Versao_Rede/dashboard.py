@@ -804,6 +804,10 @@ if df is not None:
             Urgencia=('Status_Prazo', lambda x: x.isin(['Urgência']).sum()),
             Alertas=('Status_Prazo', lambda x: (x == 'Alerta de Prazo').sum())
         ).reset_index()
+
+        # Garante que as colunas sejam numéricas para evitar erros de cálculo
+        for col in ['Total', 'Em_Elaboracao', 'Atrasadas', 'Urgencia', 'Alertas']:
+            df_equipe_agg[col] = pd.to_numeric(df_equipe_agg[col], errors='coerce').fillna(0)
         df_equipe_agg['Total Critico'] = df_equipe_agg['Atrasadas'] + df_equipe_agg['Urgencia'] + df_equipe_agg['Alertas']
         df_equipe_agg = df_equipe_agg.sort_values('Total', ascending=False)
 
@@ -823,6 +827,11 @@ if df is not None:
             Total=('Status_Prazo', 'count'),
             Atrasadas=('Status_Prazo', lambda x: x.isin(['Atrasada']).sum())
         ).reset_index()
+        
+        # Garante que as colunas sejam numéricas (evita erro: str / int)
+        df_malha_agg['Total'] = pd.to_numeric(df_malha_agg['Total'], errors='coerce').fillna(0)
+        df_malha_agg['Atrasadas'] = pd.to_numeric(df_malha_agg['Atrasadas'], errors='coerce').fillna(0)
+
         df_malha_agg['% Atraso'] = (df_malha_agg['Atrasadas'] / df_malha_agg['Total'] * 100).round(1)
         df_malha_agg = df_malha_agg.sort_values('Total', ascending=False)
         
@@ -842,6 +851,11 @@ if df is not None:
             Urgencia=('Status_Prazo', lambda x: (x == 'Urgência').sum()),
             Alertas=('Status_Prazo', lambda x: (x == 'Alerta de Prazo').sum())
         ).reset_index()
+
+        # Garante que as colunas sejam numéricas
+        for col in ['Total', 'Atrasadas', 'Urgencia', 'Alertas']:
+            df_regiao_agg[col] = pd.to_numeric(df_regiao_agg[col], errors='coerce').fillna(0)
+
         df_regiao_agg['Total Critico'] = df_regiao_agg['Atrasadas'] + df_regiao_agg['Urgencia'] + df_regiao_agg['Alertas']
         df_regiao_agg = df_regiao_agg.sort_values('Total', ascending=False)
         
