@@ -107,33 +107,35 @@ if errorlevel 1 (
         f.write(launch_script)
     print(" [OK] Iniciar_Vanguard.bat criado.")
 
-    # 6. Self-Test (Verificação de Integridade Agressiva)
-    print("[*] Executando teste de integridade agressivo...")
-    py_exe = os.path.join(python_dest, "python.exe")
-    test_script = "import ssl, socket, warnings; print('SSL_FILE:', ssl.__file__); print('SSL_VER:', getattr(ssl, 'OPENSSL_VERSION', 'MISSING')); print('PYTHON_OK')"
-    try:
-        # Forçar PATH no ambiente do subprocesso
-        env = os.environ.copy()
-        env["PYTHONNOUSERSITE"] = "1"
-        env["PYTHONPATH"] = ""
-        env["PATH"] = f"{python_dest};{os.path.join(python_dest, 'DLLs')};" + env.get("PATH", "")
-        
-        result = subprocess.run([py_exe, "-c", test_script], 
-                              capture_output=True, text=True, timeout=10,
-                              env=env)
-        
-        print(f"DEBUG Saida: {result.stdout}")
-        print(f"DEBUG Erro: {result.stderr}")
-        
-        if "PYTHON_OK" in result.stdout and "MISSING" not in result.stdout:
-            print(" [OK] Teste de isolacao total passou!")
-        else:
-            print("\n[!!!] ERRO DE INTEGRIDADE DETECTADO [!!!]")
-            print("O pacote gerado esta CORROMPIDO e nao deve ser usado.")
+    # 6. Self-Test (Verificação de Integridade Agressiva - APENAS NO WINDOWS)
+    if os.name == 'nt':
+        print("[*] Executando teste de integridade agressivo...")
+        py_exe = os.path.join(python_dest, "python.exe")
+        test_script = "import ssl, socket, warnings; print('SSL_FILE:', ssl.__file__); print('SSL_VER:', getattr(ssl, 'OPENSSL_VERSION', 'MISSING')); print('PYTHON_OK')"
+        try:
+            # Forçar PATH no ambiente do subprocesso
+            env = os.environ.copy()
+            env["PYTHONNOUSERSITE"] = "1"
+            env["PYTHONPATH"] = ""
+            env["PATH"] = f"{python_dest};{os.path.join(python_dest, 'DLLs')};" + env.get("PATH", "")
+            
+            result = subprocess.run([py_exe, "-c", test_script], 
+                                  capture_output=True, text=True, timeout=15,
+                                  env=env)
+            
+            if "PYTHON_OK" in result.stdout and "MISSING" not in result.stdout:
+                print(" [OK] Teste de isolacao total passou!")
+            else:
+                print("\n[!!!] ERRO DE INTEGRIDADE DETECTADO [!!!]")
+                print(f"Saida: {result.stdout}")
+                print(f"Erro: {result.stderr}")
+                print("O pacote gerado esta CORROMPIDO e nao deve ser usado.")
+                sys.exit(1)
+        except Exception as e:
+            print(f" [!] Falha fatal no teste de integridade local: {e}")
             sys.exit(1)
-    except Exception as e:
-        print(f" [!] Falha fatal no teste de integridade: {e}")
-        sys.exit(1)
+    else:
+        print("[*] Ambiente Linux detectado (GitHub). Pulando teste de execucao do .exe...")
 
     print("\n[SUCESSO] Pacote gerado com sucesso em:")
     print(f" -> {dist_dir}")
