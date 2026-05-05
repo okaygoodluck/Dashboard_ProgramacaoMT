@@ -16,14 +16,14 @@ eggs/
 .eggs/
 lib/
 lib64/
-!python/Lib/
-!python/**/*.pyd
-!python/**/*.dll
-!python/
 parts/
 sdist/
 var/
 CCP_Versao_Rede/
+
+# GARANTIR QUE A PASTA PYTHON NUNCA SEJA IGNORADA
+!python/
+!python/**
 wheels/
 share/python-wheels/
 *.egg-info/

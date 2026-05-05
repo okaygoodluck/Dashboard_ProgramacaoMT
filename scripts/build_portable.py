@@ -74,13 +74,13 @@ def build_package():
                 os.remove(p)
         
         # CRIAR o arquivo de isolação correto (.pth)
-        # IMPORTANTE: A ordem das linhas importa. 'import site' permite o uso do site-packages
-        pth_content = ".\nLib\nLib/site-packages\nimport site\n"
+        # DLLs é essencial para _socket, _ssl, etc.
+        pth_content = ".\nLib\nDLLs\nLib/site-packages\nimport site\n"
         # Usamos o nome fixo que o executável espera (baseado na DLL)
         with open(os.path.join(python_dest, "python314._pth"), "w") as f:
             f.write(pth_content)
         
-        print(" [OK] Runtime Python isolado e configurado.")
+        print(" [OK] Runtime Python isolado e configurado (com DLLs).")
     else:
         print("[!] ERRO CRITICO: Pasta 'python' nao encontrada na raiz!")
         return
@@ -91,7 +91,8 @@ setlocal
 cd /d "%~dp0"
 title Vanguard Command Center
 echo [*] Iniciando Dashboard...
-".\\python\\python.exe" -m streamlit run dashboard.py --server.fileWatcherType none
+set "PY_EXE=%~dp0python\\python.exe"
+"%PY_EXE%" -m streamlit run dashboard.py --server.fileWatcherType none
 if errorlevel 1 (
     echo [ERRO] Falha ao iniciar. Verifique se as dependencias estao instaladas.
     pause

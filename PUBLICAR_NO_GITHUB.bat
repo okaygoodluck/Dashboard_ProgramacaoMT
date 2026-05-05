@@ -41,7 +41,7 @@ if "%version_tag%"=="" (
 :: 5. Enviar para o GitHub
 echo.
 echo [*] Enviando para o GitHub...
-git push origin main
+git push origin HEAD
 
 if not "%version_tag%"=="" (
     echo.

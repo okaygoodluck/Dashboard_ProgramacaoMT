@@ -1,9 +1,0 @@
-[EMAIL] Sincronizando e-mails para 53 protocolos urgentes...
-    -> Sincronização concluída. 16 e-mails confirmados.
-
-[DB] Salvando dados no banco local...
-[DB] Snapshot atualizado na tabela 'demanda_atual'. (1165 registros)
-[DB] Erro ao salvar dados: Execution failed
-[PUBLICACAO] OK: Publicado em: I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT\demanda_publica.db
-
-[SUCESSO] Relatório salvo em: relatorios\relatorio_demanda_20260424_103919.xlsx
