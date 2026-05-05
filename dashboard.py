@@ -220,12 +220,6 @@ def verificar_status_atraso(row):
     return "Atrasada"
 
 
-# Função para mapear Região -> Responsável
-# Função para mapear Região -> Responsável (AGORA DINÂMICO VIA BANCO)
-@st.cache_data(ttl=300) # Cache de 5 min para o mapeamento
-def obter_mapeamento_db():
-    return db_manager.get_mapeamento_regioes()
-
 def tratar_snapshot_diario(total, atrasadas, alertas, urgencias, no_prazo):
     """Verifica se já existe snapshot hoje e salva se necessário."""
     # Se chegarmos aqui sem dados, ignora
@@ -279,22 +273,6 @@ def render_tab_calendario():
         st.components.v1.html(final_html, height=800, scrolling=True)
     except Exception as e:
         st.error(f"Erro ao carregar o calendário: {e}")
-
-def obter_responsavel(regiao):
-    # Obtém o mapeamento atual do banco
-    df_map = obter_mapeamento_db()
-    
-    # Sigla da região (ex: 'AR')
-    sigla = str(regiao)[:2].upper().strip()
-    
-    if not df_map.empty:
-        # Tenta encontrar a sigla no mapeamento
-        match = df_map[df_map['sigla_regiao'] == sigla]
-        if not match.empty:
-            resp = match.iloc[0]['responsavel']
-            return resp if resp else "Não Atribuído"
-            
-    return "Não Atribuído"
 
 # Função para carregar o arquivo mais recente (AGORA VIA BANCO DE DADOS)
 @st.cache_data(ttl=60)  # Cache de 1 minuto para não reler banco toda hora
@@ -462,8 +440,17 @@ if df is not None:
     else:
         df['Is_Elaboracao'] = False
 
-    # --- MAPEAMENTO GLOBAL DO RESPONSÁVEL ---
-    df['Responsavel'] = df[col_regiao].apply(obter_responsavel)
+    # --- MAPEAMENTO GLOBAL DO RESPONSÁVEL (Real-time via Banco) ---
+    df['temp_sigla'] = df[col_regiao].astype(str).str.strip().str[:2].str.upper()
+    df_map = db_manager.get_mapeamento_regioes()
+    
+    if not df_map.empty:
+        df = df.merge(df_map[['sigla_regiao', 'responsavel']], left_on='temp_sigla', right_on='sigla_regiao', how='left')
+        df['Responsavel'] = df['responsavel'].fillna("Não Atribuído")
+        df = df.drop(columns=['temp_sigla', 'sigla_regiao', 'responsavel'])
+    else:
+        df['Responsavel'] = "Não Atribuído"
+        df = df.drop(columns=['temp_sigla'])
 
     # --- DEFINIÇÃO DE ESCOPO DE KPIs (Regra de Acesso) ---
     if st.session_state.user_nivel == "Usuario":
