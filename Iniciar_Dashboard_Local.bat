@@ -20,9 +20,9 @@ set "LOG_FILE=%LOG_DIR%\dashboard_start.log"
 >> "%LOG_FILE%" echo INICIO: %DATE% %TIME%
 >> "%LOG_FILE%" echo SRC_DIR=%SRC_DIR%
 
-if exist "%SRC_DIR%\python\python.exe" (
-    set "PY_CMD="%SRC_DIR%\python\python.exe""
-) else (
+set "PY_CMD="
+if exist "%SRC_DIR%\python\python.exe" set PY_CMD="%SRC_DIR%\python\python.exe"
+if not defined PY_CMD (
     set "PY_CMD=py -3"
     where py >nul 2>nul
     if errorlevel 1 set "PY_CMD=python"
