@@ -582,7 +582,8 @@ def decodebytes(s):
 # Usable as a script...
 def main():
     """Small main program"""
-    import sys, getopt
+    import sys
+    import getopt
     usage = f"""usage: {sys.argv[0]} [-h|-d|-e|-u] [file|-]
         -h: print this help message and exit
         -d, -u: decode

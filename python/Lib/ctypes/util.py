@@ -194,7 +194,8 @@ elif sys.platform == "emscripten":
 
 elif os.name == "posix":
     # Andreas Degert's find functions, using gcc, /sbin/ldconfig, objdump
-    import re, tempfile
+    import re
+    import tempfile
 
     def _is_elf(filename):
         "Return True if the given file is an ELF file"

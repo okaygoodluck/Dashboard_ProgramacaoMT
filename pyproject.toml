@@ -1,0 +1,9 @@
+[tool.ruff]
+exclude = [".agent", "python", "CCP_Servidor", "CCP_Servidor1", "CCP_Versao_Rede", "dist"]
+[tool.ruff.lint]
+ignore = ["E701", "E722", "F841", "E501", "F401", "F541", "E402"]
+
+[tool.mypy]
+ignore_errors = true
+ignore_missing_imports = true
+explicit_package_bases = true

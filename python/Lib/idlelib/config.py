@@ -262,7 +262,7 @@ class IdleConf:
         configSet must be either 'user' or 'default'
         configType must be in self.config_types.
         """
-        if not (configType in self.config_types):
+        if configType not in self.config_types:
             raise InvalidConfigType('Invalid configType specified')
         if configSet == 'user':
             cfgParser = self.userCfg[configType]

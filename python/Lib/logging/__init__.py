@@ -23,7 +23,15 @@ Copyright (C) 2001-2022 Vinay Sajip. All Rights Reserved.
 To use, simply 'import logging' and log away!
 """
 
-import sys, os, time, io, re, traceback, warnings, weakref, collections.abc
+import sys
+import os
+import time
+import io
+import re
+import traceback
+import warnings
+import weakref
+import collections.abc
 
 from types import GenericAlias
 from string import Template
@@ -827,7 +835,7 @@ class Filterer(object):
         """
         Add the specified filter to this handler.
         """
-        if not (filter in self.filters):
+        if filter not in self.filters:
             self.filters.append(filter)
 
     def removeFilter(self, filter):
@@ -1685,7 +1693,7 @@ class Logger(Filterer):
         Add the specified handler to this logger.
         """
         with _lock:
-            if not (hdlr in self.handlers):
+            if hdlr not in self.handlers:
                 self.handlers.append(hdlr)
 
     def removeHandler(self, hdlr):

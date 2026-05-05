@@ -1,6 +1,5 @@
 """Cross-interpreter Queues High Level Module."""
 
-import pickle
 import queue
 import time
 import weakref
@@ -219,12 +218,12 @@ class Queue:
         if timeout is not None:
             timeout = int(timeout)
             if timeout < 0:
-                raise ValueError(f'timeout value must be non-negative')
+                raise ValueError('timeout value must be non-negative')
             end = time.time() + timeout
         while True:
             try:
                 _queues.put(self._id, obj, unboundop)
-            except QueueFull as exc:
+            except QueueFull:
                 if timeout is not None and time.time() >= end:
                     raise  # re-raise
                 time.sleep(_delay)
@@ -254,12 +253,12 @@ class Queue:
         if timeout is not None:
             timeout = int(timeout)
             if timeout < 0:
-                raise ValueError(f'timeout value must be non-negative')
+                raise ValueError('timeout value must be non-negative')
             end = time.time() + timeout
         while True:
             try:
                 obj, unboundop = _queues.get(self._id)
-            except QueueEmpty as exc:
+            except QueueEmpty:
                 if timeout is not None and time.time() >= end:
                     raise  # re-raise
                 time.sleep(_delay)
@@ -278,7 +277,7 @@ class Queue:
         """
         try:
             obj, unboundop = _queues.get(self._id)
-        except QueueEmpty as exc:
+        except QueueEmpty:
             raise  # re-raise
         if unboundop is not None:
             assert obj is None, repr(obj)

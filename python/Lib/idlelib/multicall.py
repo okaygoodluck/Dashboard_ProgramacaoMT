@@ -34,11 +34,11 @@ import sys
 import tkinter
 
 # the event type constants, which define the meaning of mc_type
-MC_KEYPRESS=0; MC_KEYRELEASE=1; MC_BUTTONPRESS=2; MC_BUTTONRELEASE=3;
-MC_ACTIVATE=4; MC_CIRCULATE=5; MC_COLORMAP=6; MC_CONFIGURE=7;
-MC_DEACTIVATE=8; MC_DESTROY=9; MC_ENTER=10; MC_EXPOSE=11; MC_FOCUSIN=12;
-MC_FOCUSOUT=13; MC_GRAVITY=14; MC_LEAVE=15; MC_MAP=16; MC_MOTION=17;
-MC_MOUSEWHEEL=18; MC_PROPERTY=19; MC_REPARENT=20; MC_UNMAP=21; MC_VISIBILITY=22;
+MC_KEYPRESS=0; MC_KEYRELEASE=1; MC_BUTTONPRESS=2; MC_BUTTONRELEASE=3
+MC_ACTIVATE=4; MC_CIRCULATE=5; MC_COLORMAP=6; MC_CONFIGURE=7
+MC_DEACTIVATE=8; MC_DESTROY=9; MC_ENTER=10; MC_EXPOSE=11; MC_FOCUSIN=12
+MC_FOCUSOUT=13; MC_GRAVITY=14; MC_LEAVE=15; MC_MAP=16; MC_MOTION=17
+MC_MOUSEWHEEL=18; MC_PROPERTY=19; MC_REPARENT=20; MC_UNMAP=21; MC_VISIBILITY=22
 # the modifier state constants, which define the meaning of mc_state
 MC_SHIFT = 1<<0; MC_CONTROL = 1<<2; MC_ALT = 1<<3; MC_META = 1<<5
 MC_OPTION = 1<<6; MC_COMMAND = 1<<7
@@ -107,7 +107,7 @@ class _SimpleBinder:
                 self.widget.unbind(self.widgetinst, self.sequence,
                         self.handlerid)
             except tkinter.TclError as e:
-                if not APPLICATION_GONE in e.args[0]:
+                if APPLICATION_GONE not in e.args[0]:
                     raise
 
 # An int in range(1 << len(_modifiers)) represents a combination of modifiers
@@ -240,7 +240,7 @@ class _ComplexBinder:
             try:
                 self.widget.unbind(self.widgetinst, seq, id)
             except tkinter.TclError as e:
-                if not APPLICATION_GONE in e.args[0]:
+                if APPLICATION_GONE not in e.args[0]:
                     raise
 
 # define the list of event types to be handled by MultiEvent. the order is
@@ -407,7 +407,7 @@ def MultiCallCreator(widget):
                         try:
                             self.__binders[triplet[1]].unbind(triplet, func)
                         except tkinter.TclError as e:
-                            if not APPLICATION_GONE in e.args[0]:
+                            if APPLICATION_GONE not in e.args[0]:
                                 raise
 
     _multicall_dict[widget] = MultiCall

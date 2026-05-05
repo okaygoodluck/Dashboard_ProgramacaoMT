@@ -888,7 +888,7 @@ class HTMLDoc(Doc):
                 module = sys.modules.get(modname)
                 if modname != name and module and hasattr(module, key):
                     if getattr(module, key) is base:
-                        if not key in cdict:
+                        if key not in cdict:
                             cdict[key] = cdict[base] = modname + '.html#' + key
         funcs, fdict = [], {}
         for key, value in inspect.getmembers(object, inspect.isroutine):
@@ -1824,7 +1824,6 @@ def writedocs(dir, pkgpath='', done=None):
 
 
 def _introdoc():
-    import textwrap
     ver = '%d.%d' % sys.version_info[:2]
     if os.environ.get('PYTHON_BASIC_REPL'):
         pyrepl_keys = ''

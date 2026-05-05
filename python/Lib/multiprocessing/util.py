@@ -212,7 +212,8 @@ def get_temp_dir():
     # get name of a temp directory which will be automatically cleaned up
     tempdir = process.current_process()._config.get('tempdir')
     if tempdir is None:
-        import shutil, tempfile
+        import shutil
+        import tempfile
         base_tempdir = _get_base_temp_dir(tempfile)
         tempdir = tempfile.mkdtemp(prefix='pymp-', dir=base_tempdir)
         info('created temp directory %s', tempdir)

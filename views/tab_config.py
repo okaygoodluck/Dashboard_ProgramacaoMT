@@ -86,7 +86,7 @@ def render_tab_config():
                     if st.form_submit_button("✨ Criar Usuário Vanguard"):
                         if fn_mat and fn_nom:
                             if db_manager.criar_usuario(fn_mat, fn_nom, fn_niv):
-                                st.success(f"Sucesso! Senha inicial: 12345")
+                                st.success("Sucesso! Senha inicial: 12345")
                                 time.sleep(1)
                                 st.rerun()
                             else:

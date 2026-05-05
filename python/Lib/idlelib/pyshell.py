@@ -1588,7 +1588,7 @@ def main():
             pathx.append(os.path.dirname(filename))
         for dir in pathx:
             dir = os.path.abspath(dir)
-            if not dir in sys.path:
+            if dir not in sys.path:
                 sys.path.insert(0, dir)
     else:
         dir = os.getcwd()

@@ -3917,10 +3917,10 @@ class Context(object):
         if not isinstance(d, dict):
             raise TypeError("%s must be a signal dict" % d)
         for key in d:
-            if not key in _signals:
+            if key not in _signals:
                 raise KeyError("%s is not a valid signal dict" % d)
         for key in _signals:
-            if not key in d:
+            if key not in d:
                 raise KeyError("%s is not a valid signal dict" % d)
         return object.__setattr__(self, name, d)
 
@@ -3936,7 +3936,7 @@ class Context(object):
         elif name == 'clamp':
             return self._set_integer_check(name, value, 0, 1)
         elif name == 'rounding':
-            if not value in _rounding_modes:
+            if value not in _rounding_modes:
                 # raise TypeError even for strings to have consistency
                 # among various implementations.
                 raise TypeError("%s: invalid rounding mode" % value)

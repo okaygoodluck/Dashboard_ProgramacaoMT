@@ -153,7 +153,7 @@ def _readmodule(module, path, inpackage=None):
         parent = _readmodule(package, path, inpackage)
         if inpackage is not None:
             package = "%s.%s" % (inpackage, package)
-        if not '__path__' in parent:
+        if '__path__' not in parent:
             raise ImportError('No package named {}'.format(package))
         return _readmodule(submodule, parent['__path__'], package)
 

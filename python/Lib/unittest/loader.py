@@ -216,7 +216,7 @@ class TestLoader(object):
             testFunc = getattr(testCaseClass, attrname)
             if not callable(testFunc):
                 return False
-            fullName = f'%s.%s.%s' % (
+            fullName = '%s.%s.%s' % (
                 testCaseClass.__module__, testCaseClass.__qualname__, attrname
             )
             return self.testNamePatterns is None or \
@@ -265,7 +265,7 @@ class TestLoader(object):
 
         top_level_dir = os.path.abspath(top_level_dir)
 
-        if not top_level_dir in sys.path:
+        if top_level_dir not in sys.path:
             # all test modules must be importable from the top level directory
             # should we *unconditionally* put the start directory in first
             # in sys.path to minimise likelihood of conflicts between installed

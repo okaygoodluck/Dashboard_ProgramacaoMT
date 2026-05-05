@@ -532,14 +532,14 @@ class AddressList(AddrlistClass):
         newaddr = AddressList(None)
         newaddr.addresslist = self.addresslist[:]
         for x in other.addresslist:
-            if not x in self.addresslist:
+            if x not in self.addresslist:
                 newaddr.addresslist.append(x)
         return newaddr
 
     def __iadd__(self, other):
         # Set union, in-place
         for x in other.addresslist:
-            if not x in self.addresslist:
+            if x not in self.addresslist:
                 self.addresslist.append(x)
         return self
 
@@ -547,7 +547,7 @@ class AddressList(AddrlistClass):
         # Set difference
         newaddr = AddressList(None)
         for x in self.addresslist:
-            if not x in other.addresslist:
+            if x not in other.addresslist:
                 newaddr.addresslist.append(x)
         return newaddr
 

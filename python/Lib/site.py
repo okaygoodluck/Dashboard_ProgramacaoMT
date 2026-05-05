@@ -241,7 +241,7 @@ def addsitedir(sitedir, known_paths=None):
     else:
         reset = False
     sitedir, sitedircase = makepath(sitedir)
-    if not sitedircase in known_paths:
+    if sitedircase not in known_paths:
         sys.path.append(sitedir)        # Add path component
         known_paths.add(sitedircase)
     try:

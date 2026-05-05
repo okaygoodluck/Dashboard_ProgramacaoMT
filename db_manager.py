@@ -2,7 +2,6 @@ import sqlite3
 import pandas as pd
 import datetime
 import os
-import glob
 
 # Nomes dos arquivos de banco de dados (Oficiais: CCP - Centro de Controle da Programação)
 DB_APP_NAME = "ccp_app.db"    # Persistente (Usuários, Configs)
@@ -135,7 +134,7 @@ def salvar_dados(df):
         # 2. Salva Histórico (Append - exige sincronia de colunas)
         sync_schema('demanda_historico', df)
         df.to_sql('demanda_historico', conn, if_exists='append', index=False)
-        print(f"[DB] Dados adicionados ao histórico na tabela 'demanda_historico'.")
+        print("[DB] Dados adicionados ao histórico na tabela 'demanda_historico'.")
 
     except Exception as e:
         print(f"[DB] Erro ao salvar dados: {e}")
@@ -167,7 +166,7 @@ def carregar_historico():
     try:
         df = pd.read_sql("SELECT * FROM demanda_historico", conn)
         return df
-    except Exception as e:
+    except Exception:
         return None
     finally:
         conn.close()

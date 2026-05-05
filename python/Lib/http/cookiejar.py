@@ -33,7 +33,8 @@ import copy
 import datetime
 import re
 import time
-import urllib.parse, urllib.request
+import urllib.parse
+import urllib.request
 import threading as _threading
 import http.client  # only for the default HTTP port
 from calendar import timegm
@@ -67,7 +68,9 @@ def _warn_unhandled_exception():
     # There are a few catch-all except: statements in this module, for
     # catching input that's bad in unexpected ways.  Warn if any
     # exceptions are caught there.
-    import io, warnings, traceback
+    import io
+    import warnings
+    import traceback
     f = io.StringIO()
     traceback.print_exc(None, f)
     msg = f.getvalue()

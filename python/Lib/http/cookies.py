@@ -301,7 +301,7 @@ class Morsel(dict):
 
     def __setitem__(self, K, V):
         K = K.lower()
-        if not K in self._reserved:
+        if K not in self._reserved:
             raise CookieError("Invalid attribute %r" % (K,))
         if _has_control_character(K, V):
             raise CookieError(f"Control characters are not allowed in cookies {K!r} {V!r}")

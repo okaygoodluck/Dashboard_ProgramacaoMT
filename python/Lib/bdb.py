@@ -860,7 +860,8 @@ class Bdb:
         line of code (if it exists).
 
         """
-        import linecache, reprlib
+        import linecache
+        import reprlib
         frame, lineno = frame_lineno
         filename = self.canonic(frame.f_code.co_filename)
         s = '%s(%r)' % (filename, lineno)

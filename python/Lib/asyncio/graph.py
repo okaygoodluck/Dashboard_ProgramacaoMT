@@ -209,7 +209,7 @@ def format_call_graph(
 
         if st.call_stack:
             add_line(
-                f'  + Call stack:'
+                '  + Call stack:'
             )
             for ste in st.call_stack:
                 f = ste.frame
@@ -246,7 +246,7 @@ def format_call_graph(
 
         if st.awaited_by:
             add_line(
-                f'  + Awaited by:'
+                '  + Awaited by:'
             )
             for fut in st.awaited_by:
                 render_level(fut, buf, level + 1)

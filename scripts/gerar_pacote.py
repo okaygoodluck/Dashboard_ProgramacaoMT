@@ -6,7 +6,7 @@ def gerar_pacote():
     src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     dist_dir = os.path.join(src_dir, 'CCP_Servidor')
 
-    print(f"=== Gerando Pacote: Centro de Controle da Programação (Servidor) ===")
+    print("=== Gerando Pacote: Centro de Controle da Programação (Servidor) ===")
     print(f"Origem: {src_dir}")
     print(f"Destino: {dist_dir}")
     

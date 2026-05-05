@@ -11,7 +11,7 @@ DB_DATA = os.path.join(REDE_DIR, "vanguard_data.db")
 DB_APP = os.path.join(REDE_DIR, "vanguard_app.db")
 
 def migrate():
-    print(f"=== INICIANDO MIGRAÇÃO DE BANCO DE DADOS ===")
+    print("=== INICIANDO MIGRAÇÃO DE BANCO DE DADOS ===")
     
     if not os.path.exists(DB_ORIGINAL):
         print(f"[ERRO] Banco original não encontrado: {DB_ORIGINAL}")
@@ -40,7 +40,7 @@ def migrate():
         placeholders = ",".join(["?"] * len(col_names))
         conn_app.executemany(f"INSERT INTO usuarios ({','.join(col_names)}) VALUES ({placeholders})", usuarios)
         conn_app.commit()
-        print(f"    -> [OK] Tabela 'usuarios' migrada com sucesso.")
+        print("    -> [OK] Tabela 'usuarios' migrada com sucesso.")
     except Exception as e:
         print(f"    -> [AVISO] Tabela 'usuarios' não encontrada ou erro: {e}")
 
@@ -54,7 +54,7 @@ def migrate():
         placeholders = ",".join(["?"] * len(col_names))
         conn_app.executemany(f"INSERT INTO log_acesso ({','.join(col_names)}) VALUES ({placeholders})", logs)
         conn_app.commit()
-        print(f"    -> [OK] Tabela 'log_acesso' migrada com sucesso.")
+        print("    -> [OK] Tabela 'log_acesso' migrada com sucesso.")
     except Exception as e:
         print(f"    -> [AVISO] Tabela 'log_acesso' não encontrada ou erro: {e}")
 
@@ -69,15 +69,15 @@ def migrate():
     conn_data.execute("DROP TABLE IF EXISTS log_acesso")
     conn_data.execute("VACUUM")
     conn_data.close()
-    print(f"    -> [OK] Tabela de dados limpa e preparada.")
+    print("    -> [OK] Tabela de dados limpa e preparada.")
 
     conn_orig.close()
     
-    print(f"\n[3/3] FINALIZANDO...")
-    print(f"Bancos criados na rede:")
+    print("\n[3/3] FINALIZANDO...")
+    print("Bancos criados na rede:")
     print(f" - APP: {DB_APP}")
     print(f" - DATA: {DB_DATA}")
-    print(f"\n[SUCESSO] Migração concluída. O arquivo antigo 'demanda_publica.db' pode ser removido após validação.")
+    print("\n[SUCESSO] Migração concluída. O arquivo antigo 'demanda_publica.db' pode ser removido após validação.")
 
 if __name__ == "__main__":
     migrate()

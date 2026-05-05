@@ -422,7 +422,10 @@ class UUID:
 
 
 def _get_command_stdout(command, *args):
-    import io, os, shutil, subprocess
+    import io
+    import os
+    import shutil
+    import subprocess
 
     try:
         path_dirs = os.environ.get('PATH', os.defpath).split(os.pathsep)
@@ -592,7 +595,8 @@ def _ip_getnode():
 
 def _arp_getnode():
     """Get the hardware address on Unix by running arp."""
-    import os, socket
+    import os
+    import socket
     if not hasattr(socket, "gethostbyname"):
         return None
     try:

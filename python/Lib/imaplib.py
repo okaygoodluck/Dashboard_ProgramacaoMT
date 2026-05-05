@@ -23,7 +23,15 @@ Public functions:       Internaldate2tuple
 
 __version__ = "2.60"
 
-import binascii, errno, random, re, socket, subprocess, sys, time, calendar
+import binascii
+import errno
+import random
+import re
+import socket
+import subprocess
+import sys
+import time
+import calendar
 from datetime import datetime, timezone, timedelta
 from io import DEFAULT_BUFFER_SIZE
 
@@ -264,7 +272,7 @@ class IMAP4:
                 self._mesg('CAPABILITIES: %r' % (self.capabilities,))
 
         for version in AllowedVersions:
-            if not version in self.capabilities:
+            if version not in self.capabilities:
                 continue
             self.PROTOCOL_VERSION = version
             return
@@ -984,7 +992,7 @@ class IMAP4:
         Returns response appropriate to 'command'.
         """
         command = command.upper()
-        if not command in Commands:
+        if command not in Commands:
             raise self.error("Unknown IMAP4 UID command: %s" % command)
         if self.state not in Commands[command]:
             raise self.error("command %s illegal in state %s, "
@@ -1037,7 +1045,7 @@ class IMAP4:
         name = name.upper()
         #if not name in self.capabilities:      # Let the server decide!
         #    raise self.error('unknown extension command: %s' % name)
-        if not name in Commands:
+        if name not in Commands:
             Commands[name] = (self.state,)
         return self._simple_command(name, *args)
 
@@ -1220,7 +1228,7 @@ class IMAP4:
 
         if self._match(self.tagre, resp):
             tag = self.mo.group('tag')
-            if not tag in self.tagged_commands:
+            if tag not in self.tagged_commands:
                 raise self.abort('unexpected tagged response: %r' % resp)
 
             typ = self.mo.group('type')
@@ -1313,7 +1321,7 @@ class IMAP4:
 
             try:
                 self._get_response()
-            except self.abort as val:
+            except self.abort:
                 if __debug__:
                     if self.debug >= 1:
                         self.print_log()
@@ -1375,7 +1383,7 @@ class IMAP4:
     def _untagged_response(self, typ, dat, name):
         if typ == 'NO':
             return typ, dat
-        if not name in self.untagged_responses:
+        if name not in self.untagged_responses:
             return typ, [None]
         data = self.untagged_responses.pop(name)
         if __debug__:
@@ -1866,11 +1874,12 @@ if __name__ == '__main__':
     # or 'python imaplib.py -s "rsh IMAP4_server_hostname exec /etc/rimapd"'
     # to test the IMAP4_stream class
 
-    import getopt, getpass
+    import getopt
+    import getpass
 
     try:
         optlist, args = getopt.getopt(sys.argv[1:], 'd:s:')
-    except getopt.error as val:
+    except getopt.error:
         optlist, args = (), ()
 
     stream_command = None

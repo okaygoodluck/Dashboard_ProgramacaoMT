@@ -1,7 +1,6 @@
 import sqlite3
 import pandas as pd
 import hashlib
-import os
 
 DB_PATH = r'i:\IT\ODCO\PUBLICA\Kennedy\Projetos\analise_demanda\demanda.db'
 EXCEL_PATH = r'i:\IT\ODCO\PUBLICA\Kennedy\Projetos\analise_demanda\Lista de funcionarios.xlsx'

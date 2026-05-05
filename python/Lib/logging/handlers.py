@@ -1138,7 +1138,8 @@ class NTEventLogHandler(logging.Handler):
     def __init__(self, appname, dllname=None, logtype="Application"):
         logging.Handler.__init__(self)
         try:
-            import win32evtlogutil, win32evtlog
+            import win32evtlogutil
+            import win32evtlog
             self.appname = appname
             self._welu = win32evtlogutil
             if not dllname:

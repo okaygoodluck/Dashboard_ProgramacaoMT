@@ -1845,7 +1845,7 @@ class MHMessage(Message):
     def add_sequence(self, sequence):
         """Add sequence to list of sequences including the message."""
         if isinstance(sequence, str):
-            if not sequence in self._sequences:
+            if sequence not in self._sequences:
                 self._sequences.append(sequence)
         else:
             raise TypeError('sequence type must be str: %s' % type(sequence))

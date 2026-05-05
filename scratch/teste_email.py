@@ -1,7 +1,6 @@
 import imaplib
 import json
 import os
-import sys
 
 def testar_conexao():
     print("="*50)
@@ -33,7 +32,7 @@ def testar_conexao():
         caixa_compartilhada = "SHM-man-urgencia" 
         login_string = f"{email_principal}\\{caixa_compartilhada}"
 
-        print(f"Tentando logar em: outlook.office365.com")
+        print("Tentando logar em: outlook.office365.com")
         print(f"Utilizando login: {login_string}")
         print("-" * 50)
 

@@ -3626,7 +3626,7 @@ def main():
     if getattr(opts, 'pid', None) is not None:
         try:
             attach(opts.pid, opts.commands)
-        except PermissionError as e:
+        except PermissionError:
             exit_with_permission_help_text()
         return
     elif getattr(opts, 'module', None) is not None:

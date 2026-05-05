@@ -1101,7 +1101,7 @@ class CGIHTTPRequestHandler(SimpleHTTPRequestHandler):
         """
         collapsed_path = _url_collapse_path(self.path)
         dir_sep = collapsed_path.find('/', 1)
-        while dir_sep > 0 and not collapsed_path[:dir_sep] in self.cgi_directories:
+        while dir_sep > 0 and collapsed_path[:dir_sep] not in self.cgi_directories:
             dir_sep = collapsed_path.find('/', dir_sep+1)
         if dir_sep > 0:
             head, tail = collapsed_path[:dir_sep], collapsed_path[dir_sep+1:]
@@ -1187,7 +1187,8 @@ class CGIHTTPRequestHandler(SimpleHTTPRequestHandler):
         if authorization:
             authorization = authorization.split()
             if len(authorization) == 2:
-                import base64, binascii
+                import base64
+                import binascii
                 env['AUTH_TYPE'] = authorization[0]
                 if authorization[0].lower() == "basic":
                     try:

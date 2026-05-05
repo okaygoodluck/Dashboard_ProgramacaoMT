@@ -413,7 +413,7 @@ class POP3:
         if self._tls_established:
             raise error_proto('-ERR TLS session already established')
         caps = self.capa()
-        if not 'STLS' in caps:
+        if 'STLS' not in caps:
             raise error_proto('-ERR STLS not supported by server')
         if context is None:
             context = ssl._create_stdlib_context()

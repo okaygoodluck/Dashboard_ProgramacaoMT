@@ -48,7 +48,7 @@ def _convert_names(names):
 
 
 def _convert_select_pattern(pattern):
-    if not '*' in pattern:
+    if '*' not in pattern:
         pattern = '*%s*' % pattern
     return pattern
 

@@ -2904,7 +2904,7 @@ class RawTurtle(TPen, TNavigator):
         """
         if name is None:
             return self.turtle.shapeIndex
-        if not name in self.screen.getshapes():
+        if name not in self.screen.getshapes():
             raise TurtleGraphicsError("There is no shape named %s" % name)
         self.turtle._setshape(name)
         self._update()

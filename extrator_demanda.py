@@ -1,10 +1,8 @@
 import time
 import os
 import datetime
-import glob
 import json
 import sys
-import shutil
 import subprocess
 
 import pandas as pd
@@ -372,7 +370,7 @@ def extrair_dados():
                 except:
                     pass
 
-                print(f"    -> Pesquisando...")
+                print("    -> Pesquisando...")
                 ctx.click(SELETOR_BTN_PESQUISAR, no_wait_after=True)
                 
                 # Aguarda a resposta do AJAX
@@ -655,10 +653,10 @@ def extrair_dados():
                         print(f"    -> Navegando para a página {pagina_atual + 1} (aguardando carregamento)...")
                         try:
                             # Espera nativa do Playwright pelo número da página no componente JSF
-                            ctx_tabela.wait_for_function(f"""(prox) => {{ 
+                            ctx_tabela.wait_for_function("""(prox) => { 
                                 const active = document.querySelector('td.rich-datascr-act');
                                 return active && active.innerText.trim() === String(prox);
-                            }}""", arg=(pagina_atual + 1), timeout=15000)
+                            }""", arg=(pagina_atual + 1), timeout=15000)
                         except:
                             time.sleep(2.0) # Fallback seguro
                         time.sleep(0.4) # Garante que os dados da nova página foram pintados
@@ -726,7 +724,7 @@ def extrair_dados():
                         
                         print(f"    -> Deduplicação Concluída: {df_antes_count} registros -> {len(df)} registros.")
                     else:
-                        print(f"    -> [AVISO] Colunas necessárias no Mesão não encontradas. Deduplicação ignorada.")
+                        print("    -> [AVISO] Colunas necessárias no Mesão não encontradas. Deduplicação ignorada.")
             except Exception as e:
                 print(f"    -> [ERRO] Falha ao processar Mesão para deduplicação: {e}")
                 if '_solic_key' in df.columns:
@@ -766,7 +764,7 @@ def extrair_dados():
                                 print(f"    -> [ERRO] Falha ao processar JSON do e-mail: {e_json}")
                                 df['Tem_Email'] = False
                         else:
-                            print(f"    -> [AVISO] Falha no motor de e-mail (Outlook pode estar fechado).")
+                            print("    -> [AVISO] Falha no motor de e-mail (Outlook pode estar fechado).")
                             df['Tem_Email'] = False
                     else:
                         print("\n[EMAIL] Nenhuma urgência detectada para sincronização.")
@@ -846,8 +844,8 @@ def extrair_dados():
         end_time = time.time()
         duration_seconds = int(end_time - start_time)
         tempo_formatado = str(datetime.timedelta(seconds=duration_seconds))
-        print(f"\n" + "="*50)
-        print(f"RESUMO DA EXECUÇÃO")
+        print("\n" + "="*50)
+        print("RESUMO DA EXECUÇÃO")
         print(f"Tempo total: {tempo_formatado}")
         if dados_consolidados:
             print(f"Registros extraídos: {len(dados_consolidados)}")

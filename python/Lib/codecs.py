@@ -1103,7 +1103,7 @@ def make_encoding_map(decoding_map):
     """
     m = {}
     for k,v in decoding_map.items():
-        if not v in m:
+        if v not in m:
             m[v] = k
         else:
             m[v] = None

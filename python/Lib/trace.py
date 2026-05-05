@@ -317,7 +317,7 @@ class CoverageResults:
                     outfile.write("%5d: " % lines_hit[lineno])
                     n_hits += 1
                     n_lines += 1
-                elif lineno in lnotab and not PRAGMA_NOCOVER in line:
+                elif lineno in lnotab and PRAGMA_NOCOVER not in line:
                     # Highlight never-executed lines, unless the line contains
                     # #pragma: NO COVER
                     outfile.write(">>>>>> ")

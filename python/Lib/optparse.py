@@ -73,7 +73,8 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
-import sys, os
+import sys
+import os
 from gettext import gettext as _, ngettext
 
 
@@ -1047,7 +1048,7 @@ class OptionContainer:
             return ""
         result = []
         for option in self.option_list:
-            if not option.help is SUPPRESS_HELP:
+            if option.help is not SUPPRESS_HELP:
                 result.append(formatter.format_option(option))
         return "".join(result)
 

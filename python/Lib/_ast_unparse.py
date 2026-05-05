@@ -338,7 +338,7 @@ class Unparser(NodeVisitor):
         self.fill("raise")
         if not node.exc:
             if node.cause:
-                raise ValueError(f"Node can't use cause without an exception.")
+                raise ValueError("Node can't use cause without an exception.")
             return
         self.write(" ")
         self.traverse(node.exc)

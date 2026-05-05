@@ -3,12 +3,10 @@ import pandas as pd
 import altair as alt
 import glob
 import os
-import time
 import numpy as np
 from datetime import datetime, date
 from streamlit_autorefresh import st_autorefresh
 import db_manager
-import base64
 
 # --- IMPORTAÇÃO DOS MÓDULOS CCP (Centro de Controle da Programação) ---
 from ccp_ui import (
