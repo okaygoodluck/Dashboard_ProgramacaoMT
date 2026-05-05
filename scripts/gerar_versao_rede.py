@@ -33,14 +33,23 @@ def gerar_versao_rede():
             # Usamos dirs_exist_ok=True para permitir atualização mesmo se a pasta estiver aberta
             shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
             
-            # Limpeza de arquivos residuais que causam problemas de path
-            for conflict_file in ['pyvenv.cfg', 'python314._pth', 'python._pth']:
+            # Limpeza APENAS do pyvenv.cfg (que causa erros de venv)
+            # NÃO removemos o ._pth pois ele é vital para isolação no Python portátil
+            for conflict_file in ['pyvenv.cfg']:
                 cf_path = os.path.join(python_dest, conflict_file)
                 if os.path.exists(cf_path):
                     try:
                         os.remove(cf_path)
                     except:
                         pass
+            
+            # Garante que o arquivo de isolação exista (Vital para evitar erro de circular import em warnings)
+            pth_file = os.path.join(python_dest, 'python314._pth')
+            pth_content = ".\nLib\nLib/site-packages\nimport site\n"
+            with open(pth_file, 'w', encoding='utf-8') as f:
+                f.write(pth_content)
+            print(" [OK] Arquivo de isolação 'python314._pth' garantido.")
+            
         except Exception as e:
             print(f" [!] ERRO CRÍTICO ao copiar pasta 'python': {e}")
             print(" [!] Certifique-se de que nenhum programa está usando o Python da pasta de rede.")
