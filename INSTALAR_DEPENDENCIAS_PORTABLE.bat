@@ -19,6 +19,11 @@ set "REQ_FILE=%BASE_DIR%requirements.txt"
 :: 1. VERIFICA SE O PYTHON E A LIB EXISTEM
 if not exist "%PYTHON_EXE%" (
     echo [ERRO] Pasta 'python' nao encontrada neste diretorio.
+    echo Local atual: %CD%
+    echo Esperado em: %BASE_DIR%python\
+    echo.
+    echo Certifique-se de que voce extraiu todos os arquivos do ZIP
+    echo e nao moveu este arquivo .bat para fora da pasta principal.
     echo.
     pause
     exit /b 1

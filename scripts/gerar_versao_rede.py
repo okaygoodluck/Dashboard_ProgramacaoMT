@@ -29,8 +29,21 @@ def gerar_versao_rede():
     python_dest = os.path.join(dist_dir, 'python')
     if os.path.exists(python_src):
         print(" [OK] Sincronizando pasta 'python' portátil (Atualizando arquivos)...")
-        # Usamos dirs_exist_ok=True para permitir atualização mesmo se a pasta estiver aberta
-        shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
+        try:
+            # Usamos dirs_exist_ok=True para permitir atualização mesmo se a pasta estiver aberta
+            shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
+            
+            # Limpeza de arquivos residuais que causam problemas de path
+            for conflict_file in ['pyvenv.cfg', 'python314._pth', 'python._pth']:
+                cf_path = os.path.join(python_dest, conflict_file)
+                if os.path.exists(cf_path):
+                    try:
+                        os.remove(cf_path)
+                    except:
+                        pass
+        except Exception as e:
+            print(f" [!] ERRO CRÍTICO ao copiar pasta 'python': {e}")
+            print(" [!] Certifique-se de que nenhum programa está usando o Python da pasta de rede.")
 
     # Arquivos essenciais para o funcionamento na rede
     files_to_copy = [
@@ -49,8 +62,11 @@ def gerar_versao_rede():
     for f in files_to_copy:
         src_file = os.path.join(src_dir, f)
         if os.path.exists(src_file):
-            shutil.copy2(src_file, dist_dir)
-            print(f" [OK] Copiado: {f}")
+            try:
+                shutil.copy2(src_file, dist_dir)
+                print(f" [OK] Copiado: {f}")
+            except Exception as e:
+                print(f" [!] ERRO ao copiar arquivo {f}: {e}")
         else:
             print(f" [!] ALERTA: Arquivo {f} não encontrado.")
 
@@ -72,7 +88,7 @@ Esta versao foi preparada para ser executada direto da rede (I:/).
 ### INSTRUCOES DE INSTALACAO:
 
 1. COPIAR PASTA PYTHON:
-   Cole a sua pasta 'python' (portatil) dentro desta pasta aqui.
+   Caso a pasta 'python' nao esteja aqui, copie a pasta portatil da raiz para ca.
    O arquivo 'ACESSAR_DASHBOARD.bat' espera encontrar o executavel em: ./python/python.exe
 
 2. COMO ABRIR:
@@ -81,8 +97,7 @@ Esta versao foi preparada para ser executada direto da rede (I:/).
 ### NOTAS:
 - Nao eh necessario instalar Python no seu computador.
 - Os dados sao lidos em tempo real do banco mestre na rede.
-- Caso o Dashboard nao abra, verifique se voce tem acesso ao caminho:
-  I:\\IT\\ODCO\\PROGRAMACAO_MT\\1 - Sistemas da programacao\\Dashboard MT
+- Caso o Dashboard nao abra, verifique se voce tem acesso ao caminho da rede.
 
 Desenvolvido por: Kennedy / Vanguard Team
 """
@@ -93,7 +108,7 @@ Desenvolvido por: Kennedy / Vanguard Team
 
     print("\n[SUCESSO] Versão de Rede gerada com sucesso!")
     print(f"Local: {dist_dir}")
-    print("\nPROXIMO PASSO: Coloque a pasta 'python' dentro de 'Vanguard_Versao_Rede' e pronto!")
+    print("\nPROXIMO PASSO: Se voce for usar em outro PC, garanta que a pasta 'python' esteja dentro de 'CCP_Versao_Rede'.")
 
 if __name__ == "__main__":
     gerar_versao_rede()

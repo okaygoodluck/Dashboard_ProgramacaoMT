@@ -21,8 +21,13 @@ set "LOG_FILE=%LOG_DIR%\dashboard_start.log"
 >> "%LOG_FILE%" echo SRC_DIR=%SRC_DIR%
 
 set "PY_CMD="
-if exist "%SRC_DIR%\python\python.exe" set PY_CMD="%SRC_DIR%\python\python.exe"
+if exist "%SRC_DIR%\python\python.exe" (
+    set "PY_CMD="%SRC_DIR%\python\python.exe""
+    >> "%LOG_FILE%" echo INFO: Usando Python Portatil em %SRC_DIR%\python
+)
+
 if not defined PY_CMD (
+    >> "%LOG_FILE%" echo AVISO: Python Portatil nao encontrado. Tentando comandos do sistema.
     set "PY_CMD=py -3"
     where py >nul 2>nul
     if errorlevel 1 set "PY_CMD=python"
