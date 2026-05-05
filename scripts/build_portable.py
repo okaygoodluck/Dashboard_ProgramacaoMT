@@ -23,13 +23,19 @@ def build_package():
     # 1. Limpeza da pasta de destino e ZIP antigo
     if os.path.exists(dist_dir):
         print(f"[*] Limpando pasta de build...")
-        shutil.rmtree(dist_dir, ignore_errors=True)
+        try:
+            shutil.rmtree(dist_dir)
+        except Exception as e:
+            print(f" [!] Aviso na limpeza: {e}. Tentando prosseguir...")
     
     if os.path.exists(zip_path):
         print(f"[*] Removendo ZIP antigo...")
-        os.remove(zip_path)
+        try:
+            os.remove(zip_path)
+        except:
+            pass
         
-    os.makedirs(dist_dir)
+    os.makedirs(dist_dir, exist_ok=True)
 
     # 2. Whitelist de arquivos essenciais
     essential_files = [
