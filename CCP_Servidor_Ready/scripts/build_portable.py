@@ -4,9 +4,6 @@ import sys
 import subprocess
 import zipfile
 
-# Caminhos da Rede (Sincronizado com db_manager.py)
-REDE_BASE = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
-
 def build_package():
     print("========================================================")
     print("   CCP - CENTRO DE CONTROLE DA PROGRAMACAO")
@@ -48,32 +45,12 @@ def build_package():
         'ccp_ui.py',
         'requirements.txt',
         'calendario_programacao.html',
-        'ccp_app.db',
-        'demanda.db'
+        'Iniciar_CCP_Servidor.bat'
     ]
 
     print("[*] Copiando arquivos essenciais...")
     for f in essential_files:
         src = os.path.join(root_dir, f)
-        
-        # Se não achar local, tenta buscar na rede (para bancos de dados)
-        if not os.path.exists(src) and f.endswith('.db'):
-            network_src = os.path.join(REDE_BASE, f)
-            if os.path.exists(network_src):
-                print(f" [REDE] Buscando {f} na rede...")
-                shutil.copy2(network_src, dist_dir)
-                print(f" [OK] {f} (via rede)")
-                continue
-            else:
-                # Caso especial para ccp_data.db -> demanda.db
-                if f == "demanda.db":
-                    alt_network = os.path.join(REDE_BASE, "ccp_data.db")
-                    if os.path.exists(alt_network):
-                        print(f" [REDE] Buscando dados em ccp_data.db...")
-                        shutil.copy2(alt_network, os.path.join(dist_dir, "demanda.db"))
-                        print(f" [OK] demanda.db (via ccp_data.db)")
-                        continue
-
         if os.path.exists(src):
             shutil.copy2(src, dist_dir)
             print(f" [OK] {f}")
