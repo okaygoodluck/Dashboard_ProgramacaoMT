@@ -11,19 +11,20 @@ for %%A in (%*) do (
   if /I "%%~A"=="--check" set "CHECK=1"
 )
 
-set "LOCAL_ROOT=%LOCALAPPDATA%\Dashboard_MT"
+set "LOCAL_ROOT=%LOCALAPPDATA%\CCP"
 set "LOG_DIR=%LOCAL_ROOT%\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%" >nul 2>nul
-set "LOG_FILE=%LOG_DIR%\dashboard_start.log"
+set "LOG_FILE=%LOG_DIR%\ccp_start.log"
 
 >> "%LOG_FILE%" echo ========================================================
+>> "%LOG_FILE%" echo CCP - CENTRO DE CONTROLE DA PROGRAMACAO
 >> "%LOG_FILE%" echo INICIO: %DATE% %TIME%
 >> "%LOG_FILE%" echo SRC_DIR=%SRC_DIR%
 
 set "PY_CMD="
 if exist "%SRC_DIR%\python\python.exe" (
     set "PY_CMD="%SRC_DIR%\python\python.exe""
-    >> "%LOG_FILE%" echo INFO: Usando Python Portatil em %SRC_DIR%\python
+    >> "%LOG_FILE%" echo INFO: Usando Python Portatil CCP em %SRC_DIR%\python
 )
 
 if not defined PY_CMD (

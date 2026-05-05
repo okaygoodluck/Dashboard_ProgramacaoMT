@@ -20,10 +20,12 @@ parts/
 sdist/
 var/
 CCP_Versao_Rede/
+CCP_Portable_Ready/
+python/
+*.zip
+*.db
 
-# GARANTIR QUE A PASTA PYTHON NUNCA SEJA IGNORADA
-!python/
-!python/**
+# Environments
 wheels/
 share/python-wheels/
 *.egg-info/

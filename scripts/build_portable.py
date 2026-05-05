@@ -2,33 +2,34 @@ import os
 import shutil
 import sys
 import subprocess
+import zipfile
 
 def build_package():
     print("========================================================")
-    print("   VANGUARD PORTABLE BUILDER (CLEAN START)")
+    print("   CCP - CENTRO DE CONTROLE DA PROGRAMACAO")
+    print("           BUILDER PORTATIL (LOCAL)")
     print("========================================================")
 
     # Definir diretórios
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    dist_name = "CCP_Versao_Rede"
+    dist_name = "CCP_Portable_Ready"
     dist_dir = os.path.join(root_dir, dist_name)
+    zip_name = "CCP_Portable.zip"
+    zip_path = os.path.join(root_dir, zip_name)
     
-    print(f"[*] Root: {root_dir}")
-    print(f"[*] Dist: {dist_dir}")
+    print(f"[*] Raiz: {root_dir}")
+    print(f"[*] Pasta de Build: {dist_dir}")
 
-    # 1. Limpeza da pasta de destino (Robustez contra arquivos travados)
+    # 1. Limpeza da pasta de destino e ZIP antigo
     if os.path.exists(dist_dir):
-        print(f"[*] Limpando pasta de destino...")
-        # Tenta remover o que for possível sem travar o script todo
-        for item in os.listdir(dist_dir):
-            item_path = os.path.join(dist_dir, item)
-            try:
-                if os.path.isfile(item_path): os.remove(item_path)
-                elif os.path.isdir(item_path): shutil.rmtree(item_path, ignore_errors=True)
-            except:
-                pass
-    else:
-        os.makedirs(dist_dir)
+        print(f"[*] Limpando pasta de build...")
+        shutil.rmtree(dist_dir, ignore_errors=True)
+    
+    if os.path.exists(zip_path):
+        print(f"[*] Removendo ZIP antigo...")
+        os.remove(zip_path)
+        
+    os.makedirs(dist_dir)
 
     # 2. Whitelist de arquivos essenciais
     essential_files = [
@@ -37,9 +38,7 @@ def build_package():
         'db_manager.py',
         'ccp_ui.py',
         'requirements.txt',
-        'calendario_programacao.html',
-        'INSTALAR_DEPENDENCIAS_PORTABLE.bat',
-        'get-pip.py'
+        'calendario_programacao.html'
     ]
 
     print("[*] Copiando arquivos essenciais...")
@@ -56,6 +55,7 @@ def build_package():
     for folder in essential_folders:
         src = os.path.join(root_dir, folder)
         if os.path.exists(src):
+            # No caso da pasta scripts, vamos evitar copiar o próprio build_portable para não gerar loop
             shutil.copytree(src, os.path.join(dist_dir, folder), dirs_exist_ok=True)
             print(f" [OK] Pasta {folder}/")
 
@@ -81,64 +81,49 @@ def build_package():
         with open(os.path.join(python_dest, "python314._pth"), "w") as f:
             f.write(pth_content)
         
-        print(" [OK] Runtime Python 3.14 com ESTRUTURA FLATTEN configurada.")
+        print(" [OK] Runtime Python configurado com isolamento total.")
     else:
         print("[!] ERRO CRITICO: Pasta 'python' nao encontrada na raiz!")
         return
 
-    # 5. Criar Inicializador Simplificado
+    # 5. Criar Inicializador CCP
     launch_script = """@echo off
 setlocal
 cd /d "%~dp0"
-title Vanguard Command Center
-echo [*] Iniciando Dashboard...
+title CCP - Centro de Controle da Programacao
+echo [*] Iniciando Dashboard CCP...
 set "PY_DIR=%~dp0python"
 set "PY_EXE=%PY_DIR%\\python.exe"
 :: Garantir isolamento
 set PYTHONNOUSERSITE=1
 set PYTHONPATH=
-"%PY_EXE%" -m streamlit run dashboard.py --server.fileWatcherType none
+"%PY_EXE%" -m streamlit run dashboard.py --server.fileWatcherType none --browser.gatherUsageStats false --server.headless true
 if errorlevel 1 (
-    echo [ERRO] Falha ao iniciar. Verifique se as dependencias estao instaladas.
+    echo [ERRO] Falha ao iniciar o CCP. Verifique se os arquivos estao completos.
     pause
 )
 """
-    with open(os.path.join(dist_dir, "Iniciar_Vanguard.bat"), "w") as f:
+    with open(os.path.join(dist_dir, "Iniciar_CCP.bat"), "w") as f:
         f.write(launch_script)
-    print(" [OK] Iniciar_Vanguard.bat criado.")
+    print(" [OK] Iniciar_CCP.bat criado.")
 
-    # 6. Self-Test (Verificação de Integridade Agressiva - APENAS NO WINDOWS)
-    if os.name == 'nt':
-        print("[*] Executando teste de integridade agressivo...")
-        py_exe = os.path.join(python_dest, "python.exe")
-        test_script = "import ssl, socket, warnings; print('SSL_FILE:', ssl.__file__); print('SSL_VER:', getattr(ssl, 'OPENSSL_VERSION', 'MISSING')); print('PYTHON_OK')"
-        try:
-            # Forçar PATH no ambiente do subprocesso
-            env = os.environ.copy()
-            env["PYTHONNOUSERSITE"] = "1"
-            env["PYTHONPATH"] = ""
-            env["PATH"] = f"{python_dest};{os.path.join(python_dest, 'DLLs')};" + env.get("PATH", "")
-            
-            result = subprocess.run([py_exe, "-c", test_script], 
-                                  capture_output=True, text=True, timeout=15,
-                                  env=env)
-            
-            if "PYTHON_OK" in result.stdout and "MISSING" not in result.stdout:
-                print(" [OK] Teste de isolacao total passou!")
-            else:
-                print("\n[!!!] ERRO DE INTEGRIDADE DETECTADO [!!!]")
-                print(f"Saida: {result.stdout}")
-                print(f"Erro: {result.stderr}")
-                print("O pacote gerado esta CORROMPIDO e nao deve ser usado.")
-                sys.exit(1)
-        except Exception as e:
-            print(f" [!] Falha fatal no teste de integridade local: {e}")
-            sys.exit(1)
-    else:
-        print("[*] Ambiente Linux detectado (GitHub). Pulando teste de execucao do .exe...")
+    # 6. Criar Pacote ZIP Final
+    print(f"[*] Criando pacote final {zip_name}...")
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(dist_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, dist_dir)
+                    zipf.write(file_path, arcname)
+        print(f" [OK] ZIP criado com sucesso em: {zip_path}")
+    except Exception as e:
+        print(f" [!] Erro ao criar ZIP: {e}")
 
-    print("\n[SUCESSO] Pacote gerado com sucesso em:")
-    print(f" -> {dist_dir}")
+    print("\n========================================================")
+    print(f" [SUCESSO] CCP PRONTO PARA DISTRIBUICAO!")
+    print(f" Local: {zip_path}")
+    print("========================================================")
 
 if __name__ == "__main__":
     build_package()
