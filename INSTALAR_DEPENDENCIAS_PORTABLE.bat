@@ -13,6 +13,10 @@ set "PYTHON_EXE=%BASE_DIR%python\python.exe"
 set "REQ_FILE=%BASE_DIR%requirements.txt"
 set "GET_PIP=%BASE_DIR%get-pip.py"
 
+:: Forcar isolamento
+set PYTHONNOUSERSITE=1
+set PYTHONPATH=
+
 :: 1. Verificacao de Integridade
 if not exist "%PYTHON_EXE%" (
     echo [ERRO] Pasta 'python' nao encontrada!

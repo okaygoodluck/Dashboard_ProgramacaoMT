@@ -67,20 +67,21 @@ def build_package():
         print("[*] Preparando Runtime Python...")
         shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
         
-        # REMOVER arquivos que causam conflitos de venv/path
-        for f in ['pyvenv.cfg', 'python314._pth', 'python._pth']:
-            p = os.path.join(python_dest, f)
-            if os.path.exists(p):
-                os.remove(p)
-        
+        # MOVER DLLs para a raiz (Garante que o Windows encontre _socket, _ssl, etc.)
+        dlls_dir = os.path.join(python_dest, 'DLLs')
+        if os.path.exists(dlls_dir):
+            print(" [*] Movendo DLLs para a raiz do Python...")
+            for f in os.listdir(dlls_dir):
+                shutil.copy2(os.path.join(dlls_dir, f), python_dest)
+            shutil.rmtree(dlls_dir, ignore_errors=True)
+
         # CRIAR o arquivo de isolação correto (.pth)
-        # DLLs é essencial para _socket, _ssl, etc.
-        pth_content = ".\nLib\nDLLs\nLib/site-packages\nimport site\n"
-        # Usamos o nome fixo que o executável espera (baseado na DLL)
+        # Como as DLLs estao na raiz, basta incluir a raiz e a Lib
+        pth_content = ".\nLib\nLib/site-packages\npython314.zip\n"
         with open(os.path.join(python_dest, "python314._pth"), "w") as f:
             f.write(pth_content)
         
-        print(" [OK] Runtime Python isolado e configurado (com DLLs).")
+        print(" [OK] Runtime Python 3.14 com ESTRUTURA FLATTEN configurada.")
     else:
         print("[!] ERRO CRITICO: Pasta 'python' nao encontrada na raiz!")
         return
@@ -91,7 +92,11 @@ setlocal
 cd /d "%~dp0"
 title Vanguard Command Center
 echo [*] Iniciando Dashboard...
-set "PY_EXE=%~dp0python\\python.exe"
+set "PY_DIR=%~dp0python"
+set "PY_EXE=%PY_DIR%\\python.exe"
+:: Garantir isolamento
+set PYTHONNOUSERSITE=1
+set PYTHONPATH=
 "%PY_EXE%" -m streamlit run dashboard.py --server.fileWatcherType none
 if errorlevel 1 (
     echo [ERRO] Falha ao iniciar. Verifique se as dependencias estao instaladas.
@@ -102,19 +107,33 @@ if errorlevel 1 (
         f.write(launch_script)
     print(" [OK] Iniciar_Vanguard.bat criado.")
 
-    # 6. Self-Test (Verificação de Integridade)
-    print("[*] Executando teste de integridade...")
+    # 6. Self-Test (Verificação de Integridade Agressiva)
+    print("[*] Executando teste de integridade agressivo...")
     py_exe = os.path.join(python_dest, "python.exe")
+    test_script = "import ssl, socket, warnings; print('SSL_FILE:', ssl.__file__); print('SSL_VER:', getattr(ssl, 'OPENSSL_VERSION', 'MISSING')); print('PYTHON_OK')"
     try:
-        # Tenta importar warnings (o que estava dando erro antes)
-        result = subprocess.run([py_exe, "-c", "import warnings; print('Python_OK')"], 
-                              capture_output=True, text=True, timeout=10)
-        if "Python_OK" in result.stdout:
-            print(" [OK] Teste de isolacao (warnings) passou!")
+        # Forçar PATH no ambiente do subprocesso
+        env = os.environ.copy()
+        env["PYTHONNOUSERSITE"] = "1"
+        env["PYTHONPATH"] = ""
+        env["PATH"] = f"{python_dest};{os.path.join(python_dest, 'DLLs')};" + env.get("PATH", "")
+        
+        result = subprocess.run([py_exe, "-c", test_script], 
+                              capture_output=True, text=True, timeout=10,
+                              env=env)
+        
+        print(f"DEBUG Saida: {result.stdout}")
+        print(f"DEBUG Erro: {result.stderr}")
+        
+        if "PYTHON_OK" in result.stdout and "MISSING" not in result.stdout:
+            print(" [OK] Teste de isolacao total passou!")
         else:
-            print(f" [!] Erro no teste de isolacao: {result.stderr}")
+            print("\n[!!!] ERRO DE INTEGRIDADE DETECTADO [!!!]")
+            print("O pacote gerado esta CORROMPIDO e nao deve ser usado.")
+            sys.exit(1)
     except Exception as e:
-        print(f" [!] Falha ao rodar teste de integridade: {e}")
+        print(f" [!] Falha fatal no teste de integridade: {e}")
+        sys.exit(1)
 
     print("\n[SUCESSO] Pacote gerado com sucesso em:")
     print(f" -> {dist_dir}")
