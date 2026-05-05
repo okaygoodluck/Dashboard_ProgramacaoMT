@@ -18,7 +18,7 @@ jobs:
 
       - name: Gerar Pasta Portatil (CCP_Versao_Rede)
         run: |
-          python3 scripts/gerar_versao_rede.py
+          python3 scripts/build_portable.py
 
       - name: Criar Pacote ZIP
         run: |
@@ -28,19 +28,19 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: CCP_Portable.zip
-          name: "Vanguard Command Center - Release ${{ github.ref_name }}"
+          name: "Vanguard - Release ${{ github.ref_name }}"
           body: |
-            ## 🚀 Vanguard Portable (CCP_Versao_Rede)
+            ## 🚀 Vanguard Portable (CCP)
             
-            Esta release contém a versão atualizada da pasta de rede para uso em Home Office.
+            Versão automatizada e isolada do sistema.
             
-            ### 📝 Instruções:
-            1. Baixe o arquivo `CCP_Portable.zip`.
-            2. Extraia o conteúdo no seu **C:\ (Desktop ou Documentos)** local.
-            3. Execute o `INSTALAR_DEPENDENCIAS_PORTABLE.bat` para configurar o ambiente.
-            4. Abra o Dashboard pelo `ACESSAR_DASHBOARD.bat`.
+            ### 📝 Instruções Rápidas:
+            1. Baixe e extraia o `CCP_Portable.zip` no seu **C:\ (Desktop)**.
+            2. Entre na pasta `CCP_Versao_Rede`.
+            3. Execute `INSTALAR_DEPENDENCIAS_PORTABLE.bat` (apenas na primeira vez).
+            4. Abra o Dashboard pelo `Iniciar_Vanguard.bat`.
             
-            *Nota: Não execute diretamente da unidade de rede para evitar lentidão.*
+            *Atenção: Não é necessário ter Python instalado no seu PC.*
           draft: false
           prerelease: false
         env:

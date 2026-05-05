@@ -1,94 +1,59 @@
 @echo off
-setlocal EnableExtensions DisableDelayedExpansion
-
-title Vanguard Command Center - Instalador de Dependencias
+setlocal EnableExtensions
+title Vanguard - Instalador de Dependencias
 echo ========================================================
 echo   INSTALADOR DE DEPENDENCIAS (VANGUARD PORTABLE)
 echo ========================================================
 echo.
 
-:: Navega para a pasta do script
 set "BASE_DIR=%~dp0"
 cd /d "%BASE_DIR%"
 
 set "PYTHON_EXE=%BASE_DIR%python\python.exe"
 set "REQ_FILE=%BASE_DIR%requirements.txt"
+set "GET_PIP=%BASE_DIR%get-pip.py"
 
-:: AMBIENTE ISOLADO: O Python agora usa o arquivo python314._pth para encontrar a pasta Lib automaticamente.
-
-:: 1. VERIFICA SE O PYTHON E A LIB EXISTEM
+:: 1. Verificacao de Integridade
 if not exist "%PYTHON_EXE%" (
-    echo [ERRO] Pasta 'python' nao encontrada neste diretorio.
-    echo Local atual: %CD%
-    echo Esperado em: %BASE_DIR%python\
-    echo.
-    echo Certifique-se de que voce extraiu todos os arquivos do ZIP
-    echo e nao moveu este arquivo .bat para fora da pasta principal.
-    echo.
-    pause
-    exit /b 1
-)
-if not exist "%BASE_DIR%python\Lib\" (
-    if not exist "%BASE_DIR%python\python312.zip" (
-        if not exist "%BASE_DIR%python\python314.zip" (
-            echo [ERRO CRITICO] A biblioteca padrao do Python esta faltando!
-            echo Nao foi encontrada a pasta 'Lib' nem os arquivos '.zip' base.
-            echo.
-            echo Isso significa que o Python esta incompleto.
-            echo SOLUCAO: Baixe a versao mais recente da Release no GitHub.
-            echo.
-            pause
-            exit /b 1
-        )
-    )
-)
-
-:: 2. VERIFICA REQUIREMENTS
-if not exist "%REQ_FILE%" (
-    echo [ERRO] Arquivo 'requirements.txt' nao encontrado.
+    echo [ERRO] Pasta 'python' nao encontrada!
+    echo Local: %CD%
     pause
     exit /b 1
 )
 
-echo [1/2] Verificando sistema PIP...
+:: 2. Verificar PIP
+echo [*] Verificando PIP...
 "%PYTHON_EXE%" -m pip --version >nul 2>&1
 if errorlevel 1 (
     echo [!] PIP nao encontrado. Instalando via get-pip.py...
-    if exist "%BASE_DIR%python\get-pip.py" (
-        "%PYTHON_EXE%" "%BASE_DIR%python\get-pip.py"
+    if exist "%GET_PIP%" (
+        "%PYTHON_EXE%" "%GET_PIP%" --no-warn-script-location
     ) else (
-        echo [ERRO] get-pip.py nao encontrado. Tentando ensurepip...
-        "%PYTHON_EXE%" -m ensurepip --default-pip
+        echo [ERRO] Arquivo 'get-pip.py' nao encontrado. 
+        echo Nao eh possivel instalar o PIP offline.
+        pause
+        exit /b 1
     )
 )
 
+:: 3. Instalar Requirements
 echo.
-echo [2/2] Instalando bibliotecas necessarias...
-echo --------------------------------------------------------
-echo DICA: Se a instalacao falhar ou for muito lenta no I:,
-echo copie esta pasta para o C: (Desktop), rode este instalador
-echo la e depois mova a pasta de volta para a rede.
-echo --------------------------------------------------------
-echo.
-
-"%PYTHON_EXE%" -m pip install -r "%REQ_FILE%"
+echo [*] Instalando bibliotecas do requirements.txt...
+"%PYTHON_EXE%" -m pip install -r "%REQ_FILE%" --no-warn-script-location
 
 if errorlevel 1 (
     echo.
-    echo [ERRO] Houve um problema na instalacao. 
-    echo Verifique sua conexao com a internet ou permissoes de rede.
-    echo.
-    echo --- DIAGNOSTICO DE PASTA ---
-    dir "%BASE_DIR%python"
-    echo ---------------------------
+    echo [ERRO] Falha na instalacao das bibliotecas.
+    echo Verifique sua conexao ou se a pasta esta no Desktop (C:).
     pause
-) else (
-    echo.
-    echo [SUCESSO] Todas as dependencias foram instaladas!
-    echo Agora voce pode abrir o Dashboard pelo ACESSAR_DASHBOARD.bat
-    echo.
-    pause
+    exit /b 1
 )
 
-popd
+echo.
+echo ========================================================
+echo [SUCESSO] Ambiente configurado!
+echo Agora voce pode usar o 'Iniciar_Vanguard.bat'
+echo ========================================================
+echo.
+pause
 exit /b 0
