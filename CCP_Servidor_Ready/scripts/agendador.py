@@ -65,10 +65,9 @@ def job():
         return True
         
     except subprocess.CalledProcessError as e:
-        print(f"[AGENDADOR] ERRO na execução: O script extrator encerrou com código {e.returncode}.")
-        if e.stderr:
-            print("Log de Erro:")
-            print(e.stderr)
+        print(f"[AGENDADOR] ERRO na execução: {e}")
+        print("Log de Erro:")
+        print(e.stderr)
         return False
     except Exception as e:
         print(f"[AGENDADOR] Erro inesperado: {e}")

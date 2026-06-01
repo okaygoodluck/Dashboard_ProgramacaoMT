@@ -1,0 +1,9 @@
+playwright
+pandas
+openpyxl
+streamlit
+schedule
+streamlit-autorefresh
+numpy
+altair
+
