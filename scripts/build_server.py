@@ -23,7 +23,7 @@ def build_server_package():
         shutil.rmtree(dist_dir, ignore_errors=True)
     if os.path.exists(zip_path):
         os.remove(zip_path)
-    os.makedirs(dist_dir)
+    os.makedirs(dist_dir, exist_ok=True)
 
     # 2. Arquivos de Código e Configuração
     essential_files = [
