@@ -68,9 +68,6 @@ SELETOR_COMBO_MALHA = "select[id='formBusca:malha']"    # O * significa "contém
 SELETOR_COMBO_REGIAO = "select[id='formBusca:area']"
 SELETOR_BTN_PESQUISAR = "input[id='formBusca:btnSalvar']" # Ou button[id*='pesquisar']
 
-# Seletor da Tabela de Resultados
-SELETOR_TABELA = "table[id='formResultTable']" # Ajuste para a tabela principal
-
 def find_frame_with_selector(page, css_selector):
     try:
         if page.locator(css_selector).count() > 0:
@@ -153,34 +150,6 @@ def encontrar_contexto_tabela(page):
             melhor = linhas
             melhor_ctx = fr
     return melhor_ctx, melhor
-
-def assinatura_tabela(ctx):
-    try:
-        return str(ctx.evaluate("""() => {
-            const tabelas = Array.from(document.querySelectorAll('table'));
-            let melhorTabela = null;
-            for (const tab of tabelas) {
-                const visivel = (tab.offsetParent !== null) || (tab.getClientRects && tab.getClientRects().length > 0);
-                    if (visivel && (tab.classList.contains('rich-table') || tab.querySelector('tbody[id$=":tb"]'))) {
-                        melhorTabela = tab;
-                        break;
-                }
-            }
-                if (!melhorTabela) {
-                    let maxLinhas = 0;
-                    for (const tab of tabelas) {
-                        const visivel = (tab.offsetParent !== null) || (tab.getClientRects && tab.getClientRects().length > 0);
-                        if (!visivel) continue;
-                        const linhas = tab.querySelectorAll('tr').length;
-                        if (linhas > maxLinhas) { maxLinhas = linhas; melhorTabela = tab; }
-                    }
-                }
-                if (!melhorTabela) return '';
-            // Retorna o texto completo da tabela para ter certeza que os dados mudaram
-            return melhorTabela.innerText.replace(/\\s+/g, ' ').trim();
-        }"""))
-    except Exception:
-        return ""
 
 def extrair_dados():
     start_time = time.time() # Início da medição de tempo
@@ -359,7 +328,7 @@ def extrair_dados():
                 
                 time.sleep(0.2) # OTIMIZAÇÃO: Pausa rápida ao invés de aguardar rede
 
-                ctx_tabela, linhas_tabela = encontrar_contexto_tabela(page)
+                ctx_tabela, _ = encontrar_contexto_tabela(page)
                 
                 # TÉCNICA DE MARCADOR DOM: Injeta um atributo falso na tabela. 
                 # Quando o AJAX recarregar a tabela (mesmo que vazia), o atributo some na mesma hora!
@@ -737,7 +706,6 @@ def extrair_dados():
                 # Identificar protocolos urgentes
                 # Regra: Urgência = SIM/S e Situação = APROVADA (conforme dashboard)
                 col_urg = next((c for c in df.columns if 'urg' in c.lower()), None)
-                col_sit = next((c for c in df.columns if 'situa' in c.lower()), None)
                 col_solic = next((c for c in df.columns if 'solicita' in c.lower()), None)
                 
                 if col_urg and col_solic:

@@ -54,7 +54,7 @@ def build_server_package():
     # 4. Criar ZIP (Sem a pasta python)
     print(f"[*] Criando pacote para servidor {zip_name}...")
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, dirs, files in os.walk(dist_dir):
+        for root, _, files in os.walk(dist_dir):
             for file in files:
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, dist_dir)

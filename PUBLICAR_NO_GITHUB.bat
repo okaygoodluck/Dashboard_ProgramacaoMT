@@ -32,9 +32,9 @@ echo [*] Salvando codigo localmente...
 git add .
 git commit -m "%commit_msg%"
 
-:: 5. Gerar Pacote ZIP Local
+:: 5. Gerar Pacotes ZIP Locais
 echo.
-echo [*] Gerando pacote CCP_Portable.zip...
+echo [*] Gerando pacote CCP_Portable.zip (Home Office)...
 if exist "python\python.exe" (
     "python\python.exe" scripts\build_portable.py
 ) else (
@@ -43,7 +43,22 @@ if exist "python\python.exe" (
 
 if errorlevel 1 (
     echo.
-    echo [ERRO] Falha ao gerar o pacote ZIP.
+    echo [ERRO] Falha ao gerar o pacote ZIP Portatil.
+    pause
+    exit /b 1
+)
+
+echo.
+echo [*] Gerando pacote CCP_Servidor_Codigo.zip (Servidor Central)...
+if exist "python\python.exe" (
+    "python\python.exe" scripts\build_server.py
+) else (
+    python scripts\build_server.py
+)
+
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao gerar o pacote ZIP Servidor.
     pause
     exit /b 1
 )
@@ -68,9 +83,9 @@ echo.
 echo ========================================================
 echo [SUCESSO] Codigo enviado!
 echo.
-echo [*] O arquivo 'CCP_Portable.zip' foi gerado na raiz.
+echo [*] Os arquivos 'CCP_Portable.zip' e 'CCP_Servidor_Codigo.zip' foram gerados na raiz.
 echo [*] Vou abrir a pagina de Releases agora. 
-echo [*] Basta clicar em 'Draft a new release' e arrastar o ZIP.
+echo [*] Basta clicar em 'Draft a new release' e arrastar os arquivos ZIP.
 echo ========================================================
 echo.
 start https://github.com/okaygoodluck/Dashboard_ProgramacaoMT/releases

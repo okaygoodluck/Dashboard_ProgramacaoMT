@@ -43,13 +43,23 @@ def job():
             if not ok:
                 raise RuntimeError("Extração falhou")
         else:
-            # Define caminho absoluto do script extrator
-            script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "extrator_demanda.py")
+            # Define o diretório do agendador
+            current_dir = os.path.dirname(os.path.abspath(__file__))
             
-            # Executa o extrator_demanda.py como um subprocesso
+            # Se estiver na pasta 'scripts', o diretório raiz é o pai
+            if os.path.basename(current_dir) == "scripts":
+                root_dir = os.path.dirname(current_dir)
+            else:
+                root_dir = current_dir
+                
+            # Define caminho absoluto do script extrator
+            script_path = os.path.join(root_dir, "extrator_demanda.py")
+            
+            # Executa o extrator_demanda.py como um subprocesso na raiz
             subprocess.run(
                 [sys.executable, script_path], 
-                check=True
+                check=True,
+                cwd=root_dir
             )
         print("[AGENDADOR] Execução concluída com sucesso.")
         return True

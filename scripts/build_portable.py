@@ -5,7 +5,9 @@ import subprocess
 import zipfile
 
 # Caminhos da Rede (Sincronizado com db_manager.py)
-REDE_BASE = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
+_REDE_ACC = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
+_REDE_NORM = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
+REDE_BASE = _REDE_ACC if os.path.exists(_REDE_ACC) else _REDE_NORM
 
 def build_package():
     print("========================================================")
@@ -141,7 +143,7 @@ if errorlevel 1 (
     print(f"[*] Criando pacote final {zip_name}...")
     try:
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, dirs, files in os.walk(dist_dir):
+            for root, _, files in os.walk(dist_dir):
                 for file in files:
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, dist_dir)

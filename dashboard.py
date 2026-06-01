@@ -188,7 +188,6 @@ def verificar_status_atraso(row):
     
     dias_restantes = row.get('Dias_Uteis_Restantes', 0)
     urgencia = str(row.get('Urgência', '')).upper()
-    finalidade = str(row.get('Finalidade', '')).upper()
     
     # Se a data já passou (negativo), é Atrasada
     if dias_restantes < 0:
@@ -466,7 +465,6 @@ if df is not None:
     qtd_atrasadas = 0
     qtd_urgencia = 0
     qtd_alerta = 0
-    qtd_regioes = 0
 
     # --- 2. FILTROS (Movidos para o topo para garantir reatividade dos KPIs) ---
     st.markdown('<div class="animate-target" style="margin-top: var(--space-xs); margin-bottom: var(--space-xs);">', unsafe_allow_html=True)
@@ -550,7 +548,6 @@ if df is not None:
     qtd_atrasadas = len(df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
     qtd_urgencia = len(df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
     qtd_alerta = len(df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
-    qtd_regioes = df_filtered[col_regiao].nunique()
     
     # --- CABEÇALHO DE CONTROLE ---
     st.markdown(f"""

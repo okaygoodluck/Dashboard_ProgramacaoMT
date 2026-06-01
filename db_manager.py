@@ -17,7 +17,7 @@ REDE_APP_PATH = os.path.join(REDE_BASE, DB_APP_NAME)
 REDE_DATA_PATH = os.path.join(REDE_BASE, DB_DATA_NAME)
 
 def _get_path(filename, network_path, alt_env_key=None):
-    """Lógica de descoberta: Ambiente > Local > Rede"""
+    """Lógica de descoberta: Ambiente > Rede > Local"""
     # 1. Variável de Ambiente (Padronizada)
     env_key = f"CCP_{filename.upper().replace('.','_')}_PATH"
     env_val = os.environ.get(env_key)
@@ -30,14 +30,14 @@ def _get_path(filename, network_path, alt_env_key=None):
         if env_val and os.path.exists(env_val):
             return env_val
 
-    # 2. Pasta atual (Portabilidade)
+    # 2. Caminho da Rede (Prioriza rede para manter tudo atualizado)
+    if os.path.exists(network_path):
+        return network_path
+
+    # 3. Pasta atual (Portabilidade / Offline Fallback)
     local = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
     if os.path.exists(local):
         return local
-
-    # 3. Caminho da Rede
-    if os.path.exists(network_path):
-        return network_path
     
     return None
 
@@ -160,17 +160,6 @@ def carregar_dados_recentes():
     finally:
         conn.close()
 
-def carregar_historico():
-    """Carrega todo o histórico."""
-    conn = get_connection_read()
-    try:
-        df = pd.read_sql("SELECT * FROM demanda_historico", conn)
-        return df
-    except Exception:
-        return None
-    finally:
-        conn.close()
-
 # --- NOVAS FUNÇÕES DE SEGURANÇA E GESTÃO ---
 
 def verificar_login(matricula, password):
@@ -213,18 +202,6 @@ def listar_usuarios():
         return pd.read_sql("SELECT matricula, nome, nivel FROM usuarios ORDER BY nome", conn)
     except Exception:
         return pd.DataFrame()
-    finally:
-        conn.close()
-
-def atualizar_nivel_usuario(matricula, novo_nivel):
-    """Altera o nível de acesso de um usuário."""
-    conn = get_connection_config()
-    try:
-        conn.execute("UPDATE usuarios SET nivel = ? WHERE matricula = ? COLLATE NOCASE", (novo_nivel, matricula))
-        conn.commit()
-        return True
-    except Exception:
-        return False
     finally:
         conn.close()
 
@@ -291,22 +268,6 @@ def get_mapeamento_regioes():
         return pd.read_sql(query, conn)
     except Exception:
         return pd.DataFrame()
-    finally:
-        conn.close()
-
-def atualizar_responsavel_regiao(sigla_regiao, matricula_responsavel):
-    """Atualiza o técnico responsável por uma região específica."""
-    conn = get_connection_config()
-    try:
-        conn.execute('''
-            INSERT INTO regioes_responsaveis (sigla_regiao, matricula_responsavel)
-            VALUES (?, ?)
-            ON CONFLICT(sigla_regiao) DO UPDATE SET matricula_responsavel=excluded.matricula_responsavel
-        ''', (sigla_regiao, matricula_responsavel))
-        conn.commit()
-        return True
-    except Exception:
-        return False
     finally:
         conn.close()
 

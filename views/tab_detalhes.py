@@ -5,9 +5,6 @@ def render_tab_detalhes(df_filtered, col_situacao):
     """Renderiza a aba de dados detalhados com filtros e tabelas customizadas."""
     st.subheader("📋 Base de Dados Detalhada")
     
-    # Filtro Adicional na Tabela
-    busca = st.text_input("Filtrar na Tabela (Qualquer campo)", "")
-    
     df_detalhe_view = df_filtered.copy()
     
     # Função para encurtar nomes

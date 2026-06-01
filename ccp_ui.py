@@ -421,7 +421,7 @@ def login_screen():
     """, unsafe_allow_html=True)
     
     # Grid de Centralização (O container da coluna 2 será o nosso CARD)
-    col1, center_col, col3 = st.columns([1.1, 1, 1.1])
+    _, center_col, _ = st.columns([1.1, 1, 1.1])
     
     with center_col:
         st.markdown('### 🧊 CENTRO DE CONTROLE')
@@ -479,7 +479,7 @@ def change_password_screen():
                 result = db_manager.atualizar_senha(st.session_state.user_matricula, new_pwd)
                 if result is True:
                     st.success("Senha atualizada com sucesso!")
-                    st.session_state.is_provisional = False
+                    st.session_state.senha_provisoria = False
                     st.rerun()
                 else:
                     st.error(f"Erro ao atualizar senha no banco de dados. Detalhe: {result}")
