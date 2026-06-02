@@ -97,7 +97,14 @@ def get_connection_write():
 def get_connection_config():
     """Conexão para sistema (Usuários/Config). Prioriza 'ccp_app.db' na rede."""
     path = get_app_db_path()
-    return sqlite3.connect(path, timeout=30)
+    conn = sqlite3.connect(path, timeout=30)
+    try:
+        # Resolve 'disk I/O error' em unidades de rede evitando a criação do arquivo -journal
+        conn.execute("PRAGMA journal_mode = MEMORY")
+        conn.execute("PRAGMA synchronous = NORMAL")
+    except Exception:
+        pass
+    return conn
 
 def salvar_dados(df):
     """

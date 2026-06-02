@@ -204,6 +204,16 @@ def extrair_dados():
                 page.fill(SELETOR_SENHA, senha)
                 page.click(SELETOR_BTN_LOGIN)
                 page.wait_for_load_state('networkidle')
+                
+                # Verifica se ocorreu erro de login (ex: Usuário ou senha incorretos)
+                msg_erro = page.locator(".messages li").first
+                if msg_erro.count() > 0:
+                    erro_texto = msg_erro.inner_text().strip()
+                    print(f"ERRO DE LOGIN: {erro_texto}")
+                    print("Por favor, atualize suas credenciais no arquivo ~/.dashboard_mt/credenciais.json ou via variáveis de ambiente.")
+                    salvar_debug(page, "login_falhou_credenciais")
+                    fechar_browser(browser)
+                    return False
             else:
                 print("Campos de login não encontrados ou já logado. Prosseguindo...")
         except Exception as e:
