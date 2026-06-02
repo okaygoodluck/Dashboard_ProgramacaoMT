@@ -47,6 +47,10 @@ st.set_page_config(
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
+if st.session_state.get('force_logout'):
+    ui_bridge(delete=True)
+    st.session_state.pop('force_logout')
+
 # 1. Tenta reconectar se não estiver logado
 if not st.session_state.logged_in:
     # Ordem de prioridade: Cookie (Nativo) -> Query Param (Ponte JS)
@@ -59,18 +63,17 @@ if not st.session_state.logged_in:
             st.session_state.user_matricula = user_data[0]
             st.session_state.user_nome = user_data[1]
             st.session_state.user_nivel = user_data[2]
-            st.session_state.senha_provisoria = False # Sessão persistente não pede senha provisória
+            st.session_state.senha_provisoria = bool(user_data[3])
             
             # Atualiza LocalStorage e limpa URL se necessário
             if st.query_params.get("ctoken"):
+                ui_bridge(token=token_auth)
                 st.query_params.clear()
-                st.rerun()
         else:
             # Token inválido: limpa rastros
             ui_bridge(delete=True)
             if st.query_params.get("ctoken"):
                 st.query_params.clear()
-                st.rerun()
     else:
         # Modo Descoberta: Oculto para evitar blocos fantasmas no login
         pass
@@ -115,9 +118,9 @@ if st.sidebar.button("🚪 Sair", use_container_width=True):
     token_cookie = st.context.cookies.get("control_token")
     if token_cookie:
         db_manager.remover_sessao(token_cookie)
-        ui_bridge(delete=True)
     
     st.session_state.logged_in = False
+    st.session_state.force_logout = True
     st.rerun()
 
 # --- CONFIGURAÇÃO DE FERIADOS (Sincronizado com Calendário HTML) ---

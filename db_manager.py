@@ -426,7 +426,7 @@ def validar_token_sessao(token):
         if result:
             matricula = result[0]
             # Busca dados completos do usuário
-            cursor.execute("SELECT matricula, nome, nivel FROM usuarios WHERE matricula = ? COLLATE NOCASE", (matricula,))
+            cursor.execute("SELECT matricula, nome, nivel, senha_provisoria FROM usuarios WHERE matricula = ? COLLATE NOCASE", (matricula,))
             return cursor.fetchone()
         return None
     finally:
