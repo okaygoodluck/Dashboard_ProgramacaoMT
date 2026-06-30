@@ -8,10 +8,21 @@ DB_APP_NAME = "ccp_app.db"    # Persistente (Usuários, Configs)
 DB_DATA_NAME = "ccp_data.db"  # Volátil (Dados da Demanda)
 LOCAL_DB_NAME = "demanda.db"  # Temporário Local para o Extrator
 
-# Caminhos Mestres na Rede (Tenta com e sem acento para robustez)
+# Caminhos Mestres na Rede
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass # Permite rodar sem a biblioteca python-dotenv, caso não esteja instalada ainda
+
+_ENV_REDE_BASE = os.environ.get("CCP_DASHBOARD_DB_PATH")
 _REDE_ACC = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
 _REDE_NORM = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
-REDE_BASE = _REDE_ACC if os.path.exists(_REDE_ACC) else _REDE_NORM
+
+if _ENV_REDE_BASE and os.path.exists(_ENV_REDE_BASE):
+    REDE_BASE = _ENV_REDE_BASE
+else:
+    REDE_BASE = _REDE_ACC if os.path.exists(_REDE_ACC) else _REDE_NORM
 
 REDE_APP_PATH = os.path.join(REDE_BASE, DB_APP_NAME)
 REDE_DATA_PATH = os.path.join(REDE_BASE, DB_DATA_NAME)
@@ -106,17 +117,44 @@ def get_connection_config():
         pass
     return conn
 
-def salvar_dados(df):
+def salvar_dados(df, regioes_confirmadas_vazias=None):
     """
-    Salva os dados no banco de dados com suporte a auto-migração de colunas.
+    Salva os dados no banco de dados com suporte a auto-migração de colunas e Memória de Segurança (Smart Merge).
     """
+    if regioes_confirmadas_vazias is None:
+        regioes_confirmadas_vazias = []
+
     if df is None or df.empty:
-        print("Nenhum dado para salvar no banco.")
+        print("Nenhum dado extraído na rodada. O banco de dados não será alterado para evitar apagão.")
         return
     
+    # --- SMART MERGE: MEMÓRIA DE SEGURANÇA (Camada 3) ---
+    try:
+        df_antigo = carregar_dados_recentes()
+        if df_antigo is not None and not df_antigo.empty:
+            regioes_novas = set(df['Ref_Regiao'].unique())
+            regioes_antigas = set(df_antigo['Ref_Regiao'].unique())
+            
+            # Identifica regiões que estavam no banco, não vieram agora e não foram explicitamente confirmadas como vazias
+            regioes_ausentes = (regioes_antigas - regioes_novas) - set(regioes_confirmadas_vazias)
+            
+            if regioes_ausentes:
+                print(f"[DB] ALERTA: Regiões ausentes suspeitas detectadas: {regioes_ausentes}")
+                print("[DB] Acionando Memória de Segurança (Smart Merge) para preservar histórico...")
+                
+                # Resgata do banco antigo apenas as regiões que sumiram sem confirmação
+                df_preservado = df_antigo[df_antigo['Ref_Regiao'].isin(regioes_ausentes)]
+                
+                # Concatena os dados preservados com o dataframe atual
+                df = pd.concat([df, df_preservado], ignore_index=True)
+                print(f"[DB] {len(df_preservado)} registros antigos preservados na tabela atual.")
+    except Exception as e:
+        print(f"[DB] Falha no Smart Merge (ignorando e salvando apenas dados novos): {e}")
+
     conn = get_connection_write()
     try:
-        # Adiciona data de extração
+        # Adiciona data de extração apenas para os registros NOVOS (ou sobrescreve geral? O timestamp é do snapshot)
+        # É melhor sobrescrever geral para o snapshot
         timestamp = datetime.datetime.now()
         df['Data_Extracao'] = timestamp
 
@@ -129,14 +167,25 @@ def salvar_dados(df):
             if existing_cols:
                 for col in target_df.columns:
                     if col not in existing_cols:
-                        print(f"[DB] Adicionando coluna nova '{col}' na tabela '{table_name}'...")
-                        # SQLite só permite adicionar colunas uma por uma
-                        cursor.execute(f'ALTER TABLE "{table_name}" ADD COLUMN "{col}" TEXT')
+                        # Mapeamento inteligente de tipos (Pandas -> SQLite)
+                        dtype_str = str(target_df[col].dtype).lower()
+                        sql_type = "TEXT"
+                        if "int" in dtype_str:
+                            sql_type = "INTEGER"
+                        elif "float" in dtype_str:
+                            sql_type = "REAL"
+                        elif "datetime" in dtype_str:
+                            sql_type = "DATETIME"
+                        elif "bool" in dtype_str:
+                            sql_type = "BOOLEAN"
+                            
+                        print(f"[DB] Adicionando coluna '{col}' ({sql_type}) na tabela '{table_name}'...")
+                        cursor.execute(f'ALTER TABLE "{table_name}" ADD COLUMN "{col}" {sql_type}')
             conn.commit()
 
         # 1. Salva Snapshot Atual (Replace - não precisa de migração pois apaga e cria)
         df.to_sql('demanda_atual', conn, if_exists='replace', index=False)
-        print(f"[DB] Snapshot atualizado na tabela 'demanda_atual'. ({len(df)} registros)")
+        print(f"[DB] Snapshot atualizado na tabela 'demanda_atual'. ({len(df)} registros totais consolidados)")
 
         # 2. Salva Histórico (Append - exige sincronia de colunas)
         sync_schema('demanda_historico', df)
@@ -146,6 +195,23 @@ def salvar_dados(df):
     except Exception as e:
         print(f"[DB] Erro ao salvar dados: {e}")
         raise e  # Propaga para que o Extrator saiba que falhou
+    finally:
+        conn.close()
+
+def salvar_regioes_sistema(df_regioes):
+    """
+    Salva a lista completa de malhas e regiões identificadas no sistema de origem (GDIS),
+    garantindo que todas as regiões existam como opção de filtro e atribuição, mesmo que tenham 0 demandas.
+    """
+    if df_regioes is None or df_regioes.empty:
+        return
+        
+    conn = get_connection_write()
+    try:
+        df_regioes.to_sql('regioes_sistema', conn, if_exists='replace', index=False)
+        print(f"[DB] Mapeamento de regiões do sistema salvo com sucesso. ({len(df_regioes)} regiões)")
+    except Exception as e:
+        print(f"[DB] Erro ao salvar regioes_sistema: {e}")
     finally:
         conn.close()
 
@@ -170,25 +236,51 @@ def carregar_dados_recentes():
 # --- NOVAS FUNÇÕES DE SEGURANÇA E GESTÃO ---
 
 def verificar_login(matricula, password):
-    """Verifica as credenciais do usuário."""
+    """Verifica as credenciais do usuário com migração suave para bcrypt."""
     import hashlib
-    senha_hash = hashlib.sha256(password.encode()).hexdigest()
+    import bcrypt
     
     conn = get_connection_config()
     try:
         cursor = conn.cursor()
         # COLLATE NOCASE para permitir c012345 ou C012345
-        cursor.execute("SELECT matricula, nome, nivel, senha_provisoria FROM usuarios WHERE matricula = ? COLLATE NOCASE AND password_hash = ?", (matricula, senha_hash))
-        return cursor.fetchone()
-    except Exception:
+        cursor.execute("SELECT matricula, nome, nivel, senha_provisoria, password_hash FROM usuarios WHERE matricula = ? COLLATE NOCASE", (matricula,))
+        user_row = cursor.fetchone()
+        
+        if not user_row:
+            return None
+            
+        stored_hash = user_row[4]
+        
+        # Verifica se o hash é antigo (plain SHA-256 é 64 chars hex)
+        if len(stored_hash) == 64 and not stored_hash.startswith('$'):
+            senha_hash_sha256 = hashlib.sha256(password.encode()).hexdigest()
+            if stored_hash == senha_hash_sha256:
+                # Migração suave para bcrypt
+                novo_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                conn.execute("UPDATE usuarios SET password_hash = ? WHERE matricula = ? COLLATE NOCASE", (novo_hash, matricula))
+                conn.commit()
+                return user_row[:4]
+            return None
+        else:
+            # Formato novo bcrypt
+            try:
+                if bcrypt.checkpw(password.encode('utf-8'), stored_hash.encode('utf-8')):
+                    return user_row[:4]
+            except Exception as e:
+                print(f"[AUTH] Erro ao checar bcrypt: {e}")
+            return None
+            
+    except Exception as e:
+        print(f"[AUTH] Erro interno verificar_login: {e}")
         return None
     finally:
         conn.close()
 
 def atualizar_senha(matricula, nova_senha):
     """Atualiza a senha do usuário e remove a flag de provisória."""
-    import hashlib
-    senha_hash = hashlib.sha256(nova_senha.encode()).hexdigest()
+    import bcrypt
+    senha_hash = bcrypt.hashpw(nova_senha.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
     conn = get_connection_config()
     try:
@@ -214,9 +306,9 @@ def listar_usuarios():
 
 def criar_usuario(matricula, nome, nivel):
     """Cria um novo usuário com senha padrão '12345'."""
-    import hashlib
+    import bcrypt
     senha_padrao = "12345"
-    senha_hash = hashlib.sha256(senha_padrao.encode()).hexdigest()
+    senha_hash = bcrypt.hashpw(senha_padrao.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
     conn = get_connection_config()
     try:
@@ -224,6 +316,18 @@ def criar_usuario(matricula, nome, nivel):
             INSERT INTO usuarios (matricula, nome, password_hash, nivel, senha_provisoria)
             VALUES (?, ?, ?, ?, 1)
         """, (matricula.strip(), nome.strip(), senha_hash, nivel))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+def alterar_nivel_usuario(matricula, novo_nivel):
+    """Altera o nível de acesso de um usuário existente."""
+    conn = get_connection_config()
+    try:
+        conn.execute("UPDATE usuarios SET nivel = ? WHERE matricula = ? COLLATE NOCASE", (novo_nivel, matricula))
         conn.commit()
         return True
     except Exception:
@@ -245,9 +349,9 @@ def deletar_usuario(matricula):
 
 def resetar_senha(matricula):
     """Reseta a senha para '12345' e marca como provisória."""
-    import hashlib
+    import bcrypt
     senha_padrao = "12345"
-    senha_hash = hashlib.sha256(senha_padrao.encode()).hexdigest()
+    senha_hash = bcrypt.hashpw(senha_padrao.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
     conn = get_connection_config()
     try:
@@ -279,21 +383,49 @@ def get_mapeamento_regioes():
         conn.close()
 
 def get_regioes_disponiveis_data():
-    """Busca todas as siglas de regiões presentes nos dados de demanda atual."""
+    """Busca todas as siglas de regiões presentes no sistema, garantindo visibilidade mesmo para regiões vazias."""
     conn = get_connection_read()
+    regioes = set()
     try:
-        # Pega as primeiras 2 letras da coluna Ref_Regiao
         cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT Ref_Regiao FROM demanda_atual")
-        regioes = set()
-        for row in cursor.fetchall():
-            if row[0] and len(row[0]) >= 2:
-                regioes.add(row[0][:2].upper().strip())
-        return sorted(list(regioes))
-    except Exception:
-        return []
+        
+        # 1. Tenta buscar das regiões capturadas direto do sistema GDIS (Mais confiável)
+        try:
+            cursor.execute("SELECT DISTINCT Ref_Regiao FROM regioes_sistema")
+            for row in cursor.fetchall():
+                if row[0] and len(row[0]) >= 2:
+                    regioes.add(row[0][:2].upper().strip())
+        except Exception:
+            pass
+
+        # 2. Busca também da demanda atual (Fallback caso regioes_sistema falhe ou não exista)
+        try:
+            cursor.execute("SELECT DISTINCT Ref_Regiao FROM demanda_atual")
+            for row in cursor.fetchall():
+                if row[0] and len(row[0]) >= 2:
+                    regioes.add(row[0][:2].upper().strip())
+        except Exception:
+            pass
+            
+    except Exception as e:
+        print(f"[DB] Erro ao buscar regiões: {e}")
     finally:
         conn.close()
+        
+    # 3. Adiciona as regiões que já foram atribuídas no painel ADM (Garante consistência da interface)
+    conn_app = get_connection_config()
+    try:
+        cursor_app = conn_app.cursor()
+        cursor_app.execute("SELECT DISTINCT sigla_regiao FROM regioes_responsaveis")
+        for row in cursor_app.fetchall():
+            if row[0]:
+                regioes.add(row[0].strip().upper())
+    except Exception:
+        pass
+    finally:
+        conn_app.close()
+
+    return sorted(list(regioes))
 
 def atribuir_regioes_massa(matricula_responsavel, lista_siglas):
     """Atribui uma lista de regiões a um único responsável."""
@@ -373,10 +505,10 @@ def init_database():
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM usuarios")
         if cursor.fetchone()[0] == 0:
-            import hashlib
+            import bcrypt
             # Login mestre para o usuário atual (Kennedy)
             senha_padrao = "12345"
-            senha_hash = hashlib.sha256(senha_padrao.encode()).hexdigest()
+            senha_hash = bcrypt.hashpw(senha_padrao.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             conn.execute("""
                 INSERT INTO usuarios (matricula, nome, password_hash, nivel, senha_provisoria)
                 VALUES ('c057573', 'Kennedy Garito', ?, 'ADM', 1)

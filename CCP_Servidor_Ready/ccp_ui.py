@@ -437,16 +437,11 @@ def login_screen():
                 user_data = db_manager.verificar_login(user, pwd)
                 if user_data:
                     matricula, nome, nivel, is_provisional = user_data
-                    st.session_state.logged_in = True
-                    st.session_state.user_nome = nome
-                    st.session_state.user_matricula = matricula
-                    st.session_state.user_nivel = nivel
-                    st.session_state.senha_provisoria = bool(is_provisional)
                     
                     # Gera um TOKEN REAL de persistência no Banco de Dados
                     session_token = db_manager.gerar_token_sessao(matricula)
                     if session_token:
-                        ui_bridge(token=session_token)
+                        st.query_params["ctoken"] = session_token
                     
                     st.rerun()
                 else:
