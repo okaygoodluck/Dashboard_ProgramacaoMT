@@ -40,30 +40,52 @@ DESIGN_SYSTEM = {
 }
 
 def inject_ui_css(theme="Dark"):
-    """Injeta o CSS principal do Design System."""
-    ds = DESIGN_SYSTEM.get(theme, DESIGN_SYSTEM["Dark"])
+    """Injeta o CSS principal mapeando para as variáveis nativas do Streamlit."""
     
     st.markdown(f"""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Oswald:wght@500;700&family=Space+Grotesk:wght@500;700&display=swap');
 
         :root {{
-            --bg-color: {ds['bg']};
-            --surface-color: {ds['surface']};
-            --surface-hover: {ds['surface_hover']};
-            --card-bg: {ds['card_bg']};
-            --text-primary: {ds['text']};
-            --text-secondary: {ds['text_secondary']};
-            --text-muted: {ds['text_muted']};
-            --accent-color: {ds['accent']};
-            --accent-glow: {ds['accent_glow']};
-            --border-color: {ds['border']};
-            --card-shadow: {ds['card_shadow']};
+            --bg-color: var(--background-color);
+            --surface-color: var(--secondary-background-color);
+            --surface-hover: rgba(128, 128, 128, 0.1);
+            --card-bg: var(--secondary-background-color);
+            --text-primary: var(--text-color);
+            --text-secondary: var(--text-color);
+            --text-muted: var(--text-color);
+            --accent-color: var(--primary-color);
+            --accent-glow: rgba(128, 128, 128, 0.1);
+            --border-color: rgba(128, 128, 128, 0.2);
+            --card-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
             
             --space-xs: 0.25rem;
             --space-sm: 0.5rem;
             --space-md: 0.75rem;
             --space-lg: 1.25rem;
+        }}
+
+        /* --- OCULTAR BOTÃO DE DEPLOY --- */
+        .stAppDeployButton {{
+            display: none !important;
+        }}
+        .stDeployButton {{
+            display: none !important;
+        }}
+        [data-testid="stAppDeployButton"] {{
+            display: none !important;
+        }}
+
+        /* --- PREVENÇÃO DE ESCURECIMENTO (LOADING) --- */
+        [data-testid="stAppViewContainer"] > div:first-child {{
+            transition: none !important;
+        }}
+        [data-testid="stApp"] {{
+            opacity: 1 !important;
+            transition: none !important;
+        }}
+        [data-testid="stAppViewBlockContainer"] {{
+            transition: none !important;
         }}
 
         /* Global Reset */
@@ -335,43 +357,9 @@ def inject_ui_assets():
     """
     st.components.v1.html(js_clock, height=0)
 
-def ui_bridge(token=None, delete=False, already_logged_in=False):
-    """Ponte JavaScript para persistência de sessão (LocalStorage)."""
-    # Se o Python já sabe que estamos logados, o Discovery Mode (Discovery) deve ficar em silêncio para evitar loops
-    if already_logged_in and not token and not delete:
-        return
 
-    if delete:
-        js = "win.localStorage.removeItem('control_token'); win.document.cookie = 'control_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';"
-    elif token:
-        js = f"win.localStorage.setItem('control_token', '{token}'); win.document.cookie = 'control_token={token}; max-age=2592000; path=/;';"
-    else:
-        # Discovery Mode: Tenta recuperar o token do LocalStorage do navegador
-        js = """
-        const t = win.localStorage.getItem('control_token');
-        if (t && t !== 'null') {
-            win.document.cookie = 'control_token=' + t + '; max-age=2592000; path=/;';
-            const urlParams = new URLSearchParams(win.location.search);
-            if (!urlParams.has('ctoken')) {
-                win.location.search = '?ctoken=' + t;
-            }
-        }
-        """
-    
-    # O código JavaScript agora é injetado via componente HTML isolado para evitar crash do React
-    safe_js = f"""
-    <script>
-    try {{
-        const win = window.parent;
-        {js}
-    }} catch (e) {{
-        console.warn("Bridge Bypass:", e);
-    }}
-    </script>
-    """
-    st.components.v1.html(safe_js, height=0)
 
-def login_screen():
+def login_screen(cookie_manager=None):
     """Renderiza a interface de login premium."""
     import db_manager
     # CSS agressivo para Square Mode 4.0 (Formulário DENTRO do Card)
@@ -441,16 +429,19 @@ def login_screen():
                     # Gera um TOKEN REAL de persistência no Banco de Dados
                     session_token = db_manager.gerar_token_sessao(matricula)
                     if session_token:
-                        st.query_params["ctoken"] = session_token
+                        if cookie_manager:
+                            cookie_manager.set("control_token", session_token, max_age=2592000)
+                            # Simula um pequeno atraso para o componente renderizar o cookie no browser
+                            # e recarrega a página automaticamente usando session_state para evitar piscar.
+                            st.session_state['login_efetuado'] = True
+                        else:
+                            st.query_params["ctoken"] = session_token
                     
                     st.rerun()
                 else:
                     st.error("Credenciais inválidas.")
         
         st.markdown('<p style="font-size: 0.6rem; color: #4b5563; margin-top: 40px; letter-spacing: 4px; opacity: 0.5;">PROGRAMAÇÃO MT • v1.5</p>', unsafe_allow_html=True)
-        
-        # Ponte de Persistência Invisível
-        ui_bridge(already_logged_in=False)
 
 
 

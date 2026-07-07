@@ -19,11 +19,15 @@ def render_tab_detalhes(df_filtered, col_situacao):
     if 'Responsavel' in df_detalhe_view.columns:
         df_detalhe_view['Responsavel'] = df_detalhe_view['Responsavel'].apply(short_name)
 
-    # Opção de filtro rápido por status integrado
+    # 1. Campo de busca global
+    termo_busca = st.text_input("🔍 Buscar na tabela (digite qualquer informação):", "")
+
+    # 2. Status 'Concluída/Outros' removido e 3. Por padrão ativado todos.
+    opcoes_status = ['No Prazo', 'Alerta de Prazo', 'Atrasada', 'Urgência', 'Em Elaboração']
     filtro_status = st.multiselect(
         "Filtrar por Status/Situação:",
-        options=['No Prazo', 'Alerta de Prazo', 'Atrasada', 'Urgência', 'Concluída/Outros', 'Em Elaboração'],
-        default=['Atrasada', 'Urgência', 'Alerta de Prazo']
+        options=opcoes_status,
+        default=opcoes_status
     )
     
     if filtro_status:
@@ -36,6 +40,11 @@ def render_tab_detalhes(df_filtered, col_situacao):
             mask = mask | df_detalhe_view['Status_Prazo'].isin(status_normais)
             
         df_detalhe_view = df_detalhe_view[mask]
+
+    # Aplica a busca global
+    if termo_busca:
+        mask_busca = df_detalhe_view.astype(str).apply(lambda x: x.str.contains(termo_busca, case=False, na=False)).any(axis=1)
+        df_detalhe_view = df_detalhe_view[mask_busca]
 
     # Reordenação de colunas
     cols = list(df_detalhe_view.columns)
@@ -70,6 +79,11 @@ def render_tab_detalhes(df_filtered, col_situacao):
                 col_config[c] = st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm")
             except:
                 pass
+
+    # 4. Ordenar por padrão pela data início em ordem crescente
+    col_inicio = next((c for c in df_detalhe_view.columns if 'início' in c.lower() or 'inicio' in c.lower()), None)
+    if col_inicio:
+        df_detalhe_view = df_detalhe_view.sort_values(by=col_inicio, ascending=True)
 
     st.markdown('<div class="animate-target">', unsafe_allow_html=True)
     st.dataframe(

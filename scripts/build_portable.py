@@ -123,12 +123,26 @@ def build_package():
 setlocal
 cd /d "%~dp0"
 title CCP - Centro de Controle da Programacao
-echo [*] Iniciando Dashboard CCP...
+
 set "PY_DIR=%~dp0python"
 set "PY_EXE=%PY_DIR%\\python.exe"
 :: Garantir isolamento
 set PYTHONNOUSERSITE=1
 set PYTHONPATH=
+
+echo [*] Verificando dependencias (isso pode levar alguns instantes)...
+"%PY_EXE%" -m pip install -r requirements.txt --disable-pip-version-check
+if errorlevel 1 (
+    echo.
+    echo [AVISO] Falha ao checar bibliotecas (possivel bloqueio de rede).
+    echo Tentando iniciar o sistema mesmo assim...
+    echo.
+) else (
+    echo [OK] Todas as dependencias estao prontas.
+)
+
+echo.
+echo [*] Iniciando Dashboard CCP...
 "%PY_EXE%" -m streamlit run dashboard.py --server.fileWatcherType none --browser.gatherUsageStats false --server.headless true
 if errorlevel 1 (
     echo [ERRO] Falha ao iniciar o CCP. Verifique se os arquivos estao completos.
@@ -137,7 +151,7 @@ if errorlevel 1 (
 """
     with open(os.path.join(dist_dir, "Iniciar_CCP.bat"), "w") as f:
         f.write(launch_script)
-    print(" [OK] Iniciar_CCP.bat criado.")
+    print(" [OK] Iniciar_CCP.bat criado (com auto-instalador).")
 
     # 6. Criar Pacote ZIP Final
     print(f"[*] Criando pacote final {zip_name}...")

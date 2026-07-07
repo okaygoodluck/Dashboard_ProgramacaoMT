@@ -7,12 +7,12 @@ import numpy as np
 from datetime import datetime, date
 from streamlit_autorefresh import st_autorefresh
 import db_manager
+import extra_streamlit_components as stx
 
 # --- IMPORTAÇÃO DOS MÓDULOS CCP (Centro de Controle da Programação) ---
 from ccp_ui import (
     DESIGN_SYSTEM, 
     inject_ui_assets, 
-    ui_bridge, 
     inject_ui_css,
     login_screen,
     change_password_screen
@@ -43,18 +43,26 @@ st.set_page_config(
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 
+# 0. Instancia o Gerenciador de Cookies Nativos
+cookie_manager = stx.CookieManager()
+
 # --- SISTEMA DE AUTENTICAÇÃO E PERSISTÊNCIA CCP ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
 if st.session_state.get('force_logout'):
-    ui_bridge(delete=True)
+    cookie_manager.delete("control_token")
     st.session_state.pop('force_logout')
+
+# Limpeza de URL segura após renderização do cookie
+if st.session_state.get('clear_token_soon'):
+    st.query_params.clear()
+    st.session_state['clear_token_soon'] = False
 
 # 1. Tenta reconectar se não estiver logado
 if not st.session_state.logged_in:
-    # Ordem de prioridade: Cookie (Nativo) -> Query Param (Ponte JS)
-    token_auth = st.context.cookies.get("control_token") or st.query_params.get("ctoken")
+    # Ordem de prioridade: Cookie Manager -> Query Param
+    token_auth = cookie_manager.get("control_token") or st.query_params.get("ctoken")
     
     if token_auth:
         user_data = db_manager.validar_token_sessao(token_auth)
@@ -65,18 +73,16 @@ if not st.session_state.logged_in:
             st.session_state.user_nivel = user_data[2]
             st.session_state.senha_provisoria = bool(user_data[3])
             
-            # Atualiza LocalStorage e limpa URL se necessário
+            # Se o token veio pela URL (novo login), assamos ele no Cookie Manager
             if st.query_params.get("ctoken"):
-                ui_bridge(token=token_auth)
-                st.query_params.clear()
+                cookie_manager.set("control_token", token_auth, max_age=2592000)
+                # Marcar para limpar a URL no próximo clique, garantindo que o cookie tenha tempo de renderizar
+                st.session_state['clear_token_soon'] = True
         else:
             # Token inválido: limpa rastros
-            ui_bridge(delete=True)
+            cookie_manager.delete("control_token")
             if st.query_params.get("ctoken"):
                 st.query_params.clear()
-    else:
-        # Modo Descoberta: Oculto para evitar blocos fantasmas no login
-        pass
 
 # 2. Bloqueio de Acesso Global
 if not st.session_state.logged_in:
@@ -93,17 +99,11 @@ if st.session_state.logged_in:
     pass
 
 # --- CONFIGURAÇÃO DE TEMA ---
-with st.sidebar:
-    theme_choice = st.selectbox(
-        "🌓 TEMA DO SISTEMA", 
-        options=["Dark Mode", "Light Mode"], 
-        index=0 if st.session_state.get('control_theme', 'Dark') == "Dark" else 1
-    )
-    st.session_state.control_theme = "Dark" if theme_choice == "Dark Mode" else "Light"
-    ds = DESIGN_SYSTEM[st.session_state.control_theme]
+# O tema agora é gerenciado nativamente pelo menu do Streamlit (Settings > Theme)
+# para garantir que as tabelas mudem de cor corretamente.
 
 # --- INJEÇÃO DE ESTILOS E ASSETS ---
-inject_ui_css(st.session_state.control_theme)
+inject_ui_css()
 inject_ui_assets()
 
 
@@ -145,7 +145,7 @@ FERIADOS_BASE = [
 # Função para calcular dias úteis RESTANTES (Data Inicio - Hoje)
 def calcular_dias_uteis_restantes(data_inicio):
     if pd.isnull(data_inicio):
-        return 0
+        return None
     
     # Converte para datetime se não for
     if not isinstance(data_inicio, datetime):
@@ -153,7 +153,7 @@ def calcular_dias_uteis_restantes(data_inicio):
             # Tenta formatos comuns PT-BR
             data_inicio = pd.to_datetime(data_inicio, dayfirst=True)
         except:
-            return 0
+            return None
             
     hoje = pd.Timestamp.now().normalize() # Data de hoje sem hora
     data_inicio = pd.Timestamp(data_inicio).normalize()
@@ -177,7 +177,7 @@ def calcular_dias_uteis_restantes(data_inicio):
         return int(np.busday_count(hoje_util, data_inicio_util, weekmask='1111100', holidays=feriados_np))
     except Exception as e:
         print(f"Erro no cálculo de dias úteis: {e}")
-        return 0
+        return None
 
 # Função para calcular status de atraso
 def verificar_status_atraso(row):
@@ -189,7 +189,11 @@ def verificar_status_atraso(row):
     if "APROVADA" not in situacao:
         return "Concluída/Outros"
     
-    dias_restantes = row.get('Dias_Uteis_Restantes', 0)
+    dias_restantes = row.get('Dias_Uteis_Restantes')
+    
+    if pd.isna(dias_restantes):
+        return "Sem Data"
+        
     urgencia = str(row.get('Urgência', '')).upper()
     
     # Se a data já passou (negativo), é Atrasada
@@ -355,8 +359,13 @@ def load_latest_data():
 
             # --- INTEGRAÇÃO MESÃO DIÁRIO ---
             try:
+                try:
+                    from dotenv import load_dotenv
+                    load_dotenv()
+                except ImportError:
+                    pass
                 hoje = datetime.now()
-                pasta_mesao = r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario"
+                pasta_mesao = os.environ.get("CCP_MESAO_DIARIO_PATH", r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario")
                 data_str_hj = hoje.strftime("%d_%m_%y")
                 arquivo_mesao_hj = os.path.join(pasta_mesao, f"Mesao_{data_str_hj}.xlsx")
                 
@@ -469,71 +478,75 @@ if df is not None:
     qtd_urgencia = 0
     qtd_alerta = 0
 
-    # --- 2. FILTROS (Movidos para o topo para garantir reatividade dos KPIs) ---
-    st.markdown('<div class="animate-target" style="margin-top: var(--space-xs); margin-bottom: var(--space-xs);">', unsafe_allow_html=True)
-    with st.expander("🔍 FILTROS DE COMANDO • PROTOCOLO VANGUARD", expanded=False):
-        c_filtro0, c_filtro1, c_filtro2, c_filtro3 = st.columns(4)
+    # --- 2. FILTROS (No Sidebar) ---
+    st.sidebar.markdown("### 🔍 Filtros")
+    
+    # 1. Filtro de Data (Movido para o topo)
+    col_filtro_data = next((c for c in df.columns if 'inicio' in c.lower() or 'início' in c.lower()), col_data)
+    
+    if col_filtro_data != col_data:
+         df[col_filtro_data] = pd.to_datetime(df[col_filtro_data], dayfirst=True, errors='coerce')
+
+    min_date = df[col_filtro_data].min()
+    max_date = df[col_filtro_data].max()
+    min_date = min_date.date() if not pd.isna(min_date) else datetime.now().date()
+    max_date = max_date.date() if not pd.isna(max_date) else datetime.now().date()
+    if min_date > max_date: min_date = max_date
+
+    # Data Padrão: Hoje até Hoje + 11 dias úteis
+    hoje_date = pd.Timestamp.now().normalize().date()
+    feriados_np_filtro = np.array(FERIADOS_BASE, dtype='datetime64[D]')
+    try:
+        decimo_primeiro_dia_util = np.busday_offset(hoje_date, 11, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
+        default_max = pd.to_datetime(decimo_primeiro_dia_util).date()
         
-        # 1. Filtro de Responsável (Foco Operacional)
-        lista_responsaveis = sorted(df_top['Responsavel'].unique())
+        # Se cair na sexta-feira (weekday == 4), estende até domingo (+2 dias)
+        if default_max.weekday() == 4:
+            default_max += pd.Timedelta(days=2)
+            
+    except: 
+        default_max = hoje_date + pd.Timedelta(days=15)
         
-        if st.session_state.user_nivel == "Usuario":
-            if st.session_state.user_nome in lista_responsaveis:
-                filtro_responsavel = c_filtro0.multiselect("👩‍💻 Responsável (Travado)", options=lista_responsaveis, default=[st.session_state.user_nome], key="v_filter_resp", disabled=True)
-            else:
-                st.sidebar.error(f"Seu nome ({st.session_state.user_nome}) não foi encontrado como responsável.")
-                filtro_responsavel = c_filtro0.multiselect("👩‍💻 Filtrar por Responsável", options=lista_responsaveis, default=lista_responsaveis, key="v_filter_resp")
+    min_value_picker = min(min_date, hoje_date)
+    max_value_picker = max(max_date, default_max)
+    
+    # Filtro de Data com PERSISTÊNCIA (Session State key)
+    filtro_data = st.sidebar.date_input(
+        "📅 Filtrar por Período", 
+        value=(hoje_date, default_max), 
+        min_value=min_value_picker, 
+        max_value=max_value_picker, 
+        format="DD/MM/YYYY",
+        key="v_filter_date"
+    )
+
+    st.sidebar.markdown("---")
+    
+    # 2. Filtro de Responsável (Foco Operacional)
+    lista_responsaveis = sorted(df_top['Responsavel'].unique())
+    
+    if st.session_state.user_nivel == "Usuario":
+        if st.session_state.user_nome in lista_responsaveis:
+            filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável (Travado)", options=lista_responsaveis, default=[st.session_state.user_nome], key="v_filter_resp", disabled=True)
         else:
-            filtro_responsaveis_all = sorted(df['Responsavel'].unique())
-            filtro_responsavel = c_filtro0.multiselect("👩‍💻 Filtrar por Responsável", options=filtro_responsaveis_all, default=filtro_responsaveis_all, key="v_filter_resp")
-            
-        df_filtered_resp = df[df['Responsavel'].isin(filtro_responsavel)]
-
-        # 2. Filtro de Malha (Opções sempre visíveis)
-        lista_malhas_total = sorted(df_top[col_malha].unique())
-        default_malhas = sorted(df_filtered_resp[col_malha].unique()) if not df_filtered_resp.empty else []
-        filtro_malha = c_filtro1.multiselect("Filtrar por Malha", options=lista_malhas_total, default=default_malhas, key="v_filter_malha")
+            st.sidebar.error(f"Seu nome ({st.session_state.user_nome}) não foi encontrado como responsável.")
+            filtro_responsavel = st.sidebar.multiselect("👩‍💻 Filtrar por Responsável", options=lista_responsaveis, default=lista_responsaveis, key="v_filter_resp")
+    else:
+        filtro_responsaveis_all = sorted(df['Responsavel'].unique())
+        filtro_responsavel = st.sidebar.multiselect("👩‍💻 Filtrar por Responsável", options=filtro_responsaveis_all, default=filtro_responsaveis_all, key="v_filter_resp")
         
-        # 3. Filtro de Região (Opções sempre visíveis)
-        lista_regioes_total = sorted(df_top[col_regiao].unique())
-        df_filtered_temp = df_filtered_resp[df_filtered_resp[col_malha].isin(filtro_malha)] if not df_filtered_resp.empty else pd.DataFrame()
-        default_regioes = sorted(df_filtered_temp[col_regiao].unique()) if not df_filtered_temp.empty else []
-        filtro_regiao = c_filtro2.multiselect("Filtrar por Região", options=lista_regioes_total, default=default_regioes, key="v_filter_regiao")
+    df_filtered_resp = df[df['Responsavel'].isin(filtro_responsavel)]
 
-        # 4. Filtro de Data
-        cols_data_possiveis = [c for c in df.columns if 'data' in c.lower() or 'inicio' in c.lower() or 'criacao' in c.lower()]
-        if not cols_data_possiveis: cols_data_possiveis = [col_data]
-        col_filtro_data = c_filtro3.selectbox("Coluna de Data", options=cols_data_possiveis, index=0, key="v_filter_col_data")
-
-        if col_filtro_data != col_data:
-             df[col_filtro_data] = pd.to_datetime(df[col_filtro_data], dayfirst=True, errors='coerce')
-
-        min_date = df[col_filtro_data].min()
-        max_date = df[col_filtro_data].max()
-        min_date = min_date.date() if not pd.isna(min_date) else datetime.now().date()
-        max_date = max_date.date() if not pd.isna(max_date) else datetime.now().date()
-        if min_date > max_date: min_date = max_date
-
-        # Data Padrão: 8 dias úteis
-        hoje_date = pd.Timestamp.now().normalize().date()
-        feriados_np_filtro = np.array(FERIADOS_BASE, dtype='datetime64[D]')
-        try:
-            oitavo_dia_util = np.busday_offset(hoje_date, 8, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
-            default_max = pd.to_datetime(oitavo_dia_util).date()
-        except: default_max = hoje_date + pd.Timedelta(days=12)
-            
-        max_value_picker = max(max_date, default_max)
-        
-        # Filtro de Data com PERSISTÊNCIA (Session State key)
-        filtro_data = c_filtro3.date_input(
-            "Filtrar por Período", 
-            value=(min(min_date, default_max), default_max), 
-            min_value=min_date, 
-            max_value=max_value_picker, 
-            format="DD/MM/YYYY",
-            key="v_filter_date"
-        )
-    st.markdown('</div>', unsafe_allow_html=True)
+    # 3. Filtro de Malha (Opções sempre visíveis)
+    lista_malhas_total = sorted(df_top[col_malha].unique())
+    default_malhas = sorted(df_filtered_resp[col_malha].unique()) if not df_filtered_resp.empty else []
+    filtro_malha = st.sidebar.multiselect("Filtrar por Malha", options=lista_malhas_total, default=default_malhas, key="v_filter_malha")
+    
+    # 4. Filtro de Região (Opções sempre visíveis)
+    lista_regioes_total = sorted(df_top[col_regiao].unique())
+    df_filtered_temp = df_filtered_resp[df_filtered_resp[col_malha].isin(filtro_malha)] if not df_filtered_resp.empty else pd.DataFrame()
+    default_regioes = sorted(df_filtered_temp[col_regiao].unique()) if not df_filtered_temp.empty else []
+    filtro_regiao = st.sidebar.multiselect("Filtrar por Região", options=lista_regioes_total, default=default_regioes, key="v_filter_regiao")
 
     # Aplica filtros finais para gerar o df_filtered
     df_filtered = df[df['Responsavel'].isin(filtro_responsavel)]
@@ -567,7 +580,7 @@ if df is not None:
                 </div>
             </div>
             <div style="background: var(--surface-color); padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: inset 0 0 10px rgba(0,0,0,0.2);">
-                <span id="digital-clock" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 700; color: var(--text-primary); letter-spacing: 1px;">{datetime.now().strftime('%H:%M:%S')}</span>
+                <span id="digital-clock" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 700; color: var(--primary-color); letter-spacing: 1px;">{datetime.now().strftime('%H:%M:%S')}</span>
             </div>
         </div>
     </div>
@@ -640,13 +653,10 @@ if df is not None:
             flex-direction: column;
             gap: 6px;
         }
-        #digital-clock {
-            background: linear-gradient(135deg, var(--accent-color), #3b82f6);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
     </style>
     """, unsafe_allow_html=True)
+
+
 
     # --- MOTOR DE ATIVAÇÃO ---
     inject_ui_assets()
@@ -662,211 +672,403 @@ if df is not None:
         df_filtered[col_situacao].astype(str).str.upper().str.contains('APROVADA')
     ].copy()
     
-    # Filtra as que o usuário ainda não confirmou leitura
+    # Filtra as que o usuário ainda não confirmou leitura e remove duplicações para evitar erro de chaves iguais
     alertas_pendentes = urgencias_ativas[~urgencias_ativas['Solicitação'].astype(str).isin(st.session_state.control_dismissed)]
+    alertas_pendentes = alertas_pendentes.drop_duplicates(subset=['Solicitação'])
 
     if not alertas_pendentes.empty:
-        head_c1, head_c2 = st.columns([3, 1])
-        with head_c1:
-            st.markdown(f'<h3 style="color: #ef4444; font-size: 0.8rem; margin-bottom: var(--space-sm); font-weight: 700; display: flex; align-items: center; gap: 8px;"><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6rem;">!</span> PROTOCOLOS CRÍTICOS DETECTADOS ({len(alertas_pendentes)})</h3>', unsafe_allow_html=True)
-        with head_c2:
-            if st.button("✓ Confirmar Tudo", key="btn_confirm_all", help="Marcar todos os alertas atuais como lidos", use_container_width=True):
-                for solicit in alertas_pendentes['Solicitação'].astype(str):
-                    st.session_state.control_dismissed.add(solicit)
-                st.rerun()
+        st.markdown(f'<h3 style="color: #ef4444; font-size: 0.8rem; margin-bottom: var(--space-sm); font-weight: 700; display: flex; align-items: center; gap: 8px;"><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6rem;">!</span> Solicitações Fora do Prazo ({len(alertas_pendentes)})</h3>', unsafe_allow_html=True)
         
-        # Grid de Alertas: 4 colunas por linha
-        n_cols = 4
-        num_alertas = len(alertas_pendentes)
+        # 4. Separar com email vs sem email (comparação explícita para evitar KeyError)
+        alertas_com_email = alertas_pendentes[alertas_pendentes['Tem_Email'] == True].copy()
+        alertas_sem_email = alertas_pendentes[alertas_pendentes['Tem_Email'] != True].copy()
         
-        for i in range(0, num_alertas, n_cols):
-            cols = st.columns(n_cols)
-            batch = alertas_pendentes.iloc[i : i + n_cols]
-            
-            for j, (idx, row) in enumerate(batch.iterrows()):
-                solicit_id = str(row['Solicitação'])
-                tem_email = row.get('Tem_Email', False)
+        # 3. Ordenar de forma crescente considerando a data
+        # Tenta usar a coluna de data (col_data) se existir, senão usa os Dias Úteis (mais atrasados primeiro)
+        if col_data in alertas_pendentes.columns:
+            alertas_com_email.sort_values(col_data, ascending=True, inplace=True)
+            alertas_sem_email.sort_values(col_data, ascending=True, inplace=True)
+        else:
+            alertas_com_email.sort_values('Dias_Uteis_Restantes', ascending=True, inplace=True)
+            alertas_sem_email.sort_values('Dias_Uteis_Restantes', ascending=True, inplace=True)
+
+        def renderizar_grid_alertas(df_alertas, header_label, header_class, card_class, n_cols=2):
+            num_alertas = len(df_alertas)
+            for i in range(0, num_alertas, n_cols):
+                cols = st.columns(n_cols)
+                batch = df_alertas.iloc[i : i + n_cols]
                 
-                # Define as classes e labels baseadas no status do e-mail
-                card_class = "vanguard-card-confirmed" if tem_email else "vanguard-card-pending"
-                header_class = "card-header-confirmed" if tem_email else "card-header-pending"
-                header_label = "📧 E-MAIL RECEBIDO" if tem_email else "⚠️ AGUARDANDO E-MAIL"
-                
-                with cols[j]:
-                    st.markdown(f"""
-                    <div class="vanguard-alert-card {card_class}">
-                        <div class="{header_class}">{header_label}</div>
-                        <div class="card-body">
-                            <div style="color: var(--text-primary); font-size: 1.05rem; font-weight: 700; line-height: 1.2;">Solicitação {solicit_id}</div>
-                            <div style="color: var(--text-secondary); font-size: 0.85rem; font-weight: 500;">📍 {row[col_regiao]}</div>
-                            <div style="color: var(--text-secondary); font-size: 0.85rem; font-weight: 500;">⏳ {row['Dias_Uteis_Restantes']} dias úteis restantes</div>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                for j, (idx, row) in enumerate(batch.iterrows()):
+                    solicit_id = str(row['Solicitação'])
+                    # Tenta capturar o nome do responsável caso o nome da coluna varie
+                    responsavel = str(row.get('Responsável', row.get('Técnico Responsável', row.get('Responsavel', 'Não Atribuído'))))
                     
-                    label_btn = "✓ Marcar como visto"
-                    if st.button(label_btn, key=f"btn_alert_{solicit_id}", use_container_width=True):
-                        st.session_state.control_dismissed.add(solicit_id)
-                        st.rerun()
+                    with cols[j]:
+                        # Estilos inline para compactar ainda mais e adicionar o responsável
+                        st.markdown(f"""
+                        <div class="vanguard-alert-card {card_class}">
+                            <div class="{header_class}">{header_label}</div>
+                            <div class="card-body" style="padding: 6px; gap: 2px;">
+                                <div style="color: var(--text-primary); font-size: 0.9rem; font-weight: 700; line-height: 1.1;">Sol. {solicit_id}</div>
+                                <div style="color: var(--text-secondary); font-size: 0.7rem; font-weight: 500;">📍 {row[col_regiao]}</div>
+                                <div style="color: var(--text-secondary); font-size: 0.7rem; font-weight: 500;">🎯 {str(row.get('Finalidade', 'N/A'))}</div>
+                                <div style="color: var(--text-secondary); font-size: 0.7rem; font-weight: 500;">👤 {responsavel}</div>
+                                <div style="color: var(--text-secondary); font-size: 0.7rem; font-weight: 500;">⏳ {row.get('Dias_Uteis_Restantes')} dias úteis</div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+        # 1. Área dividida ao meio, usando sistema de paginação em vez de scroll
+        col_esq, col_dir = st.columns(2)
         
-        # Espaçamento compactado
+        ITEMS_PER_PAGE = 4
+        
+        # Paginação Esquerda (Sem E-mail)
+        if 'page_sem_email' not in st.session_state:
+            st.session_state.page_sem_email = 0
+            
+        total_pages_sem = max(1, int(np.ceil(len(alertas_sem_email) / ITEMS_PER_PAGE)))
+        if st.session_state.page_sem_email >= total_pages_sem:
+            st.session_state.page_sem_email = max(0, total_pages_sem - 1)
+            
+        start_idx_sem = st.session_state.page_sem_email * ITEMS_PER_PAGE
+        batch_sem = alertas_sem_email.iloc[start_idx_sem : start_idx_sem + ITEMS_PER_PAGE]
+        
+        with col_esq:
+            # Cabeçalho com paginação embutida e botões menores
+            hc1, hc2, hc3, hc4, hc5, hc6 = st.columns([3.5, 0.6, 0.6, 1.2, 0.6, 0.6])
+            with hc1:
+                st.markdown("<div style='margin-top: 8px;'><strong style='color: #ef4444; font-size: 0.85rem;'>⚠️ AGUARDANDO E-MAIL</strong></div>", unsafe_allow_html=True)
+            if total_pages_sem > 1:
+                with hc2:
+                    if st.button("⏮", key="first_sem", disabled=(st.session_state.page_sem_email == 0), use_container_width=True):
+                        st.session_state.page_sem_email = 0
+                        st.rerun()
+                with hc3:
+                    if st.button("◄", key="prev_sem", disabled=(st.session_state.page_sem_email == 0), use_container_width=True):
+                        st.session_state.page_sem_email -= 1
+                        st.rerun()
+                with hc4:
+                    st.markdown(f"<div style='text-align: center; font-size: 0.70rem; color: var(--text-secondary); margin-top: 12px; font-weight: bold;'>{st.session_state.page_sem_email + 1} / {total_pages_sem}</div>", unsafe_allow_html=True)
+                with hc5:
+                    if st.button("►", key="next_sem", disabled=(st.session_state.page_sem_email == total_pages_sem - 1), use_container_width=True):
+                        st.session_state.page_sem_email += 1
+                        st.rerun()
+                with hc6:
+                    if st.button("⏭", key="last_sem", disabled=(st.session_state.page_sem_email == total_pages_sem - 1), use_container_width=True):
+                        st.session_state.page_sem_email = total_pages_sem - 1
+                        st.rerun()
+
+            with st.container(border=True):
+                if not alertas_sem_email.empty:
+                    renderizar_grid_alertas(batch_sem, "⚠️ SEM E-MAIL", "card-header-pending", "vanguard-card-pending", n_cols=2)
+                else:
+                    st.info("Nenhuma solicitação sem e-mail.")
+
+        # Paginação Direita (Com E-mail)
+        if 'page_com_email' not in st.session_state:
+            st.session_state.page_com_email = 0
+            
+        total_pages_com = max(1, int(np.ceil(len(alertas_com_email) / ITEMS_PER_PAGE)))
+        if st.session_state.page_com_email >= total_pages_com:
+            st.session_state.page_com_email = max(0, total_pages_com - 1)
+            
+        start_idx_com = st.session_state.page_com_email * ITEMS_PER_PAGE
+        batch_com = alertas_com_email.iloc[start_idx_com : start_idx_com + ITEMS_PER_PAGE]
+
+        with col_dir:
+            # Cabeçalho com paginação embutida e botões menores
+            hc1, hc2, hc3, hc4, hc5, hc6 = st.columns([3.5, 0.6, 0.6, 1.2, 0.6, 0.6])
+            with hc1:
+                st.markdown("<div style='margin-top: 8px;'><strong style='color: #10b981; font-size: 0.85rem;'>📧 E-MAIL RECEBIDO</strong></div>", unsafe_allow_html=True)
+            if total_pages_com > 1:
+                with hc2:
+                    if st.button("⏮", key="first_com", disabled=(st.session_state.page_com_email == 0), use_container_width=True):
+                        st.session_state.page_com_email = 0
+                        st.rerun()
+                with hc3:
+                    if st.button("◄", key="prev_com", disabled=(st.session_state.page_com_email == 0), use_container_width=True):
+                        st.session_state.page_com_email -= 1
+                        st.rerun()
+                with hc4:
+                    st.markdown(f"<div style='text-align: center; font-size: 0.70rem; color: var(--text-secondary); margin-top: 12px; font-weight: bold;'>{st.session_state.page_com_email + 1} / {total_pages_com}</div>", unsafe_allow_html=True)
+                with hc5:
+                    if st.button("►", key="next_com", disabled=(st.session_state.page_com_email == total_pages_com - 1), use_container_width=True):
+                        st.session_state.page_com_email += 1
+                        st.rerun()
+                with hc6:
+                    if st.button("⏭", key="last_com", disabled=(st.session_state.page_com_email == total_pages_com - 1), use_container_width=True):
+                        st.session_state.page_com_email = total_pages_com - 1
+                        st.rerun()
+
+            with st.container(border=True):
+                if not alertas_com_email.empty:
+                    renderizar_grid_alertas(batch_com, "📧 COM E-MAIL", "card-header-confirmed", "vanguard-card-confirmed", n_cols=2)
+                else:
+                    st.info("Nenhuma solicitação com e-mail.")
+
+
+
 
     # --- LAYOUT SIMÉTRICO VANGUARD (KPIs GERAIS) ---
+    @st.dialog("📋 Detalhamento de Solicitações", width="large")
+    def show_kpi_dialog(kpi_name, df_kpi):
+        st.markdown(f"#### Mostrando: **{kpi_name}** ({len(df_kpi)} itens)")
+        if df_kpi.empty:
+            st.info("Nenhuma solicitação encontrada para este filtro.")
+        else:
+            # Exibir colunas mais relevantes primeiro
+            cols_prioridade = ['Solicitação', 'Responsavel', 'Região', col_malha, 'Status_Prazo', 'Dias_Uteis_Restantes']
+            cols_exibicao = [c for c in cols_prioridade if c in df_kpi.columns]
+            cols_restantes = [c for c in df_kpi.columns if c not in cols_exibicao]
+            st.dataframe(df_kpi[cols_exibicao + cols_restantes], use_container_width=True, hide_index=True)
+
+    # Âncora única para o CSS targeting
+    st.markdown('<div id="kpi-columns-anchor"></div>', unsafe_allow_html=True)
+    st.markdown("""
+    <style>
+    /* Transforma a coluna que vem logo após a âncora no referencial relativo */
+    div[data-testid="element-container"]:has(#kpi-columns-anchor) + div[data-testid="element-container"] div[data-testid="column"] {
+        position: relative !important;
+    }
+    /* Estica os botões contidos nas colunas para o tamanho da coluna toda e zera opacidade */
+    div[data-testid="element-container"]:has(#kpi-columns-anchor) + div[data-testid="element-container"] div[data-testid="column"] div[data-testid="stButton"] {
+        position: absolute !important;
+        top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
+        opacity: 0 !important; z-index: 999 !important;
+    }
+    div[data-testid="element-container"]:has(#kpi-columns-anchor) + div[data-testid="element-container"] div[data-testid="column"] div[data-testid="stButton"] button {
+        width: 100% !important; height: 100% !important; cursor: pointer !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
     
     with kpi_col1:
         premium_metric_card(f"{prefix_kpi}Fila de Processamento", total_solicitacoes, icon_name="people", color="#3b82f6", is_vanguard=True)
+        if st.button("Fila", key="kpi_btn_fila", use_container_width=True):
+            show_kpi_dialog("Fila de Processamento", df_filtered)
     
     with kpi_col2:
         premium_metric_card(f"{prefix_kpi}Atrasados", qtd_atrasadas, icon_name="timer", color="#f87171")
+        if st.button("Atrasados", key="kpi_btn_atrasados", use_container_width=True):
+            show_kpi_dialog("Atrasados", df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
         
     with kpi_col3:
-        # KPI de Saúde do Sistema (No Prazo / Total) centralizado
         percent_prazo = round((total_solicitacoes - qtd_atrasadas) / total_solicitacoes * 100, 1) if total_solicitacoes > 0 else 100
         circular_progress_ring("Saúde Operacional", percent_prazo, color="#34d399")
         
     with kpi_col4:
         premium_metric_card(f"{prefix_kpi}Urgentes", qtd_urgencia, icon_name="flash", color="#fbbf24")
+        if st.button("Urgentes", key="kpi_btn_urgentes", use_container_width=True):
+            show_kpi_dialog("Urgentes", df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
         
     with kpi_col5:
         premium_metric_card(f"{prefix_kpi}Alertas", qtd_alerta, icon_name="info", color="#818cf8")
+        if st.button("Alertas", key="kpi_btn_alertas", use_container_width=True):
+            show_kpi_dialog("Alertas", df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
 
     # Automação de Snapshot Diário (Pós-processamento dos KPIs)
     tratar_snapshot_diario(total_solicitacoes, qtd_atrasadas, qtd_alerta, qtd_urgencia, (total_solicitacoes - qtd_atrasadas))
 
 
     # 3. ABAS DE VISUALIZAÇÃO (Symmetry Mode - Responsivo)
-    abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados"]
-    
-    # Nível Gerencial ou ADM vê Histórico
     if st.session_state.user_nivel in ["Gerencial", "ADM"]:
-        abas.append("📊 Histórico")
+        abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados", "📊 Histórico"]
+    else:
+        abas = ["📅 Calendário", "🗺️ Visão por Região", "📋 Dados Detalhados"]
     
     # Nível ADM vê Configurações
     if st.session_state.user_nivel == "ADM":
         abas.append("⚙️ Configurações")
         
-    abas_principais = st.tabs(abas)
+    # Recupera a aba ativa ou usa a primeira
+    default_tab = st.session_state.get("active_tab_nav", abas[0])
+    if default_tab not in abas:
+        default_tab = abas[0]
+        
+    # CSS para transformar o st.segmented_control num clone visual do st.tabs escuro com cyan
+    st.markdown("""
+    <style>
+    /* Remove o fundo cinza contínuo do segmented control e cria o espaçamento entre as abas */
+    div[data-testid="stSegmentedControl"] {
+        background-color: transparent !important;
+        padding: 0 !important;
+        gap: 8px !important;
+        margin-bottom: 25px !important;
+    }
     
-    # Desestruturação Dinâmica baseada nos itens da lista 'abas'
-    tabs_map = {}
-    for i, nome_aba in enumerate(abas):
-        tabs_map[nome_aba] = abas_principais[i]
+    /* Remove a pílula de animação padrão do BaseWeb que desliza atrás dos botões */
+    div[data-testid="stSegmentedControl"] > div > div:first-child {
+        display: none !important;
+    }
     
-    # Extração das abas para uso posterior
-    tab_calendario = tabs_map.get("📅 Calendário")
-    tab_equipe = tabs_map.get("👥 Responsáveis")
-    tab_malha = tabs_map.get("🏙️ Visão por Malha")
-    tab_regiao = tabs_map.get("🗺️ Visão por Região")
-    tab_dados = tabs_map.get("📋 Dados Detalhados")
-    tab_historico = tabs_map.get("📊 Histórico") 
-    tab_config = tabs_map.get("⚙️ Configurações")
+    /* Estilo de cada "Aba" INATIVA (separadas umas das outras) */
+    div[data-testid="stSegmentedControl"] label {
+        background-color: var(--secondary-background-color) !important;
+        border: 1px solid rgba(128, 128, 128, 0.2) !important;
+        border-radius: 8px !important;
+        min-height: 55px !important;
+        height: 55px !important;
+        padding: 0px 20px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        border-bottom: 3px solid rgba(128, 128, 128, 0.2) !important;
+        margin-right: 5px !important;
+    }
+    
+    /* Fonte das abas */
+    div[data-testid="stSegmentedControl"] p,
+    div[data-testid="stSegmentedControl"] span {
+        font-size: 15px !important;
+        font-weight: 600 !important;
+        color: var(--text-color) !important;
+        opacity: 0.8 !important;
+    }
+    
+    /* Estilo da aba ATIVA usando as cores primárias do Streamlit */
+    div[data-testid="stSegmentedControl"] label[data-checked="true"],
+    div[data-testid="stSegmentedControl"] label:has(input:checked) {
+        border: 1px solid var(--primary-color) !important;
+        border-bottom: 3px solid var(--primary-color) !important;
+    }
+    
+    div[data-testid="stSegmentedControl"] label[data-checked="true"] p,
+    div[data-testid="stSegmentedControl"] label:has(input:checked) p,
+    div[data-testid="stSegmentedControl"] label[data-checked="true"] span,
+    div[data-testid="stSegmentedControl"] label:has(input:checked) span {
+        color: var(--primary-color) !important;
+        opacity: 1 !important;
+    }
+    
+    /* Aumenta a margem abaixo da linha divisória (---) para afastar os cards ainda mais */
+    hr {
+        margin-top: 10px !important;
+        margin-bottom: 35px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    chosen_tab = st.segmented_control("Navegação", abas, default=default_tab, key="active_tab_nav", label_visibility="collapsed", width="stretch")
+    
+    # Se o usuário não selecionar nada (desmarcar), forçamos para a aba padrão para evitar tela em branco
+    if not chosen_tab:
+        chosen_tab = default_tab
+        
+    st.markdown("---")
 
     # --- RENDERIZAÇÃO DAS ABAS ---
     
     # ABA: CALENDÁRIO
-    if tab_calendario:
-        with tab_calendario:
+    if chosen_tab == "📅 Calendário":
+        with st.container():
             render_tab_calendario()
 
     # --- ABA 0: EQUIPE (DIVISÃO DE TRABALHO) ---
-    with tab_equipe:
-        st.subheader("Análise por Responsável (Divisão de Trabalho)")
-        
-        # Agrupamento por Responsável
-        df_equipe_agg = df_filtered.copy()
-        # Encurtamento de nomes local para exibição
-        def short_name(name):
-            if not isinstance(name, str) or not name: return name
-            parts = name.split()
-            return f"{parts[0]} {parts[1][0]}." if len(parts) >= 2 else name
-
-        df_equipe_agg['Responsavel'] = df_equipe_agg['Responsavel'].apply(short_name)
-        df_equipe_agg = df_equipe_agg.groupby('Responsavel').agg(
-            Total=('Status_Prazo', 'count'),
-            Em_Elaboracao=('Is_Elaboracao', 'sum'),
-            Atrasadas=('Status_Prazo', lambda x: x.isin(['Atrasada']).sum()),
-            Urgencia=('Status_Prazo', lambda x: x.isin(['Urgência']).sum()),
-            Alertas=('Status_Prazo', lambda x: (x == 'Alerta de Prazo').sum())
-        ).reset_index()
-
-        # Garante que as colunas sejam numéricas para evitar erros de cálculo
-        for col in ['Total', 'Em_Elaboracao', 'Atrasadas', 'Urgencia', 'Alertas']:
-            df_equipe_agg[col] = pd.to_numeric(df_equipe_agg[col], errors='coerce').fillna(0)
-        df_equipe_agg['Total Critico'] = df_equipe_agg['Atrasadas'] + df_equipe_agg['Urgencia'] + df_equipe_agg['Alertas']
-        df_equipe_agg = df_equipe_agg.sort_values('Total', ascending=False)
-
-        if not df_equipe_agg.empty:
-            col_e1, col_e2 = st.columns(2)
-            current_theme = st.session_state.get('control_theme', 'Dark')
-            with col_e1: render_volume_by_responsible(df_equipe_agg, theme=current_theme)
-            with col_e2: render_delays_by_responsible(df_equipe_agg, theme=current_theme)
-
-        st.markdown("##### Detalhamento por Equipe")
-        st.dataframe(df_equipe_agg, use_container_width=True, hide_index=True)
+    if chosen_tab == "👥 Responsáveis":
+        with st.container():
+            st.subheader("Análise por Responsável (Divisão de Trabalho)")
+            
+            # Agrupamento por Responsável
+            df_equipe_agg = df_filtered.copy()
+            # Encurtamento de nomes local para exibição
+            def short_name(name):
+                if not isinstance(name, str) or not name: return name
+                parts = name.split()
+                return f"{parts[0]} {parts[1][0]}." if len(parts) >= 2 else name
+    
+            df_equipe_agg['Responsavel'] = df_equipe_agg['Responsavel'].apply(short_name)
+            df_equipe_agg = df_equipe_agg.groupby('Responsavel').agg(
+                Total=('Status_Prazo', 'count'),
+                Em_Elaboracao=('Is_Elaboracao', 'sum'),
+                Atrasadas=('Status_Prazo', lambda x: x.isin(['Atrasada']).sum()),
+                Urgencia=('Status_Prazo', lambda x: x.isin(['Urgência']).sum()),
+                Alertas=('Status_Prazo', lambda x: (x == 'Alerta de Prazo').sum())
+            ).reset_index()
+    
+            # Garante que as colunas sejam numéricas para evitar erros de cálculo
+            for col in ['Total', 'Em_Elaboracao', 'Atrasadas', 'Urgencia', 'Alertas']:
+                df_equipe_agg[col] = pd.to_numeric(df_equipe_agg[col], errors='coerce').fillna(0)
+            df_equipe_agg['Total Critico'] = df_equipe_agg['Atrasadas'] + df_equipe_agg['Urgencia'] + df_equipe_agg['Alertas']
+            df_equipe_agg = df_equipe_agg.sort_values('Total', ascending=False)
+    
+            if not df_equipe_agg.empty:
+                col_e1, col_e2 = st.columns(2)
+                with col_e1: render_volume_by_responsible(df_equipe_agg)
+                with col_e2: render_delays_by_responsible(df_equipe_agg)
+    
+            st.markdown("##### Detalhamento por Equipe")
+            st.dataframe(df_equipe_agg, use_container_width=True, hide_index=True)
 
     # --- ABA 1: MALHAS ---
-    with tab_malha:
-        st.subheader("Análise Consolidada por Malha")
-        df_malha_agg = df_filtered.groupby(col_malha).agg(
-            Total=('Status_Prazo', 'count'),
-            Atrasadas=('Status_Prazo', lambda x: x.isin(['Atrasada']).sum())
-        ).reset_index()
-        
-        # Garante que as colunas sejam numéricas (evita erro: str / int)
-        df_malha_agg['Total'] = pd.to_numeric(df_malha_agg['Total'], errors='coerce').fillna(0)
-        df_malha_agg['Atrasadas'] = pd.to_numeric(df_malha_agg['Atrasadas'], errors='coerce').fillna(0)
+    if chosen_tab == "🏙️ Visão por Malha":
+        with st.container():
+            st.subheader("Análise Consolidada por Malha")
+            df_malha_agg = df_filtered.groupby(col_malha).agg(
+                Total=('Status_Prazo', 'count'),
+                Atrasadas=('Status_Prazo', lambda x: x.isin(['Atrasada']).sum())
+            ).reset_index()
+            
+            # Garante que as colunas sejam numéricas (evita erro: str / int)
+            df_malha_agg['Total'] = pd.to_numeric(df_malha_agg['Total'], errors='coerce').fillna(0)
+            df_malha_agg['Atrasadas'] = pd.to_numeric(df_malha_agg['Atrasadas'], errors='coerce').fillna(0)
+    
+            df_malha_agg['% Atraso'] = (df_malha_agg['Atrasadas'] / df_malha_agg['Total'] * 100).round(1)
+            df_malha_agg = df_malha_agg.sort_values('Total', ascending=False)
+            
+            if not df_malha_agg.empty:
+                col_m1, col_m2 = st.columns(2)
+                with col_m1: render_volume_by_mesh(df_malha_agg, col_malha)
+                with col_m2: render_delays_by_mesh(df_malha_agg, col_malha)
+    
+            st.dataframe(df_malha_agg, use_container_width=True, hide_index=True)
 
-        df_malha_agg['% Atraso'] = (df_malha_agg['Atrasadas'] / df_malha_agg['Total'] * 100).round(1)
-        df_malha_agg = df_malha_agg.sort_values('Total', ascending=False)
-        
-        if not df_malha_agg.empty:
-            col_m1, col_m2 = st.columns(2)
-            current_theme = st.session_state.get('control_theme', 'Dark')
-            with col_m1: render_volume_by_mesh(df_malha_agg, col_malha, theme=current_theme)
-            with col_m2: render_delays_by_mesh(df_malha_agg, col_malha, theme=current_theme)
-
-        st.dataframe(df_malha_agg, use_container_width=True, hide_index=True)
     # --- ABA 2: REGIÕES ---
-    with tab_regiao:
-        st.subheader("Análise Consolidada por Região")
-        df_regiao_agg = df_filtered.groupby(col_regiao).agg(
-            Total=('Status_Prazo', 'count'),
-            Atrasadas=('Status_Prazo', lambda x: x.isin(['Atrasada']).sum()),
-            Urgencia=('Status_Prazo', lambda x: (x == 'Urgência').sum()),
-            Alertas=('Status_Prazo', lambda x: (x == 'Alerta de Prazo').sum())
-        ).reset_index()
-
-        # Garante que as colunas sejam numéricas
-        for col in ['Total', 'Atrasadas', 'Urgencia', 'Alertas']:
-            df_regiao_agg[col] = pd.to_numeric(df_regiao_agg[col], errors='coerce').fillna(0)
-
-        df_regiao_agg['Total Critico'] = df_regiao_agg['Atrasadas'] + df_regiao_agg['Urgencia'] + df_regiao_agg['Alertas']
-        df_regiao_agg = df_regiao_agg.sort_values('Total', ascending=False)
-        
-        # Filtro de peso se disponível
-        if 'Peso' in df_filtered.columns:
-            regioes_selecionadas = st.multiselect("Regiões para Qtde x Peso", options=df_regiao_agg[col_regiao].tolist(), default=df_regiao_agg[col_regiao].tolist()[:5])
-            if regioes_selecionadas:
-                df_peso_base = df_filtered[df_filtered[col_regiao].isin(regioes_selecionadas)].copy()
-                df_peso_agg = df_peso_base.groupby([col_regiao, 'Peso']).size().reset_index(name='Quantidade')
-                if not df_peso_agg.empty:
-                    current_theme = st.session_state.get('control_theme', 'Dark')
-                    render_qty_x_weight_chart(df_peso_agg, col_regiao, theme=current_theme)
-
-        st.dataframe(df_regiao_agg, use_container_width=True, hide_index=True)
+    if chosen_tab == "🗺️ Visão por Região":
+        with st.container():
+            st.subheader("Análise Consolidada por Região")
+            df_regiao_agg = df_filtered.groupby(col_regiao).agg(
+                Total=('Status_Prazo', 'count'),
+                Atrasadas=('Status_Prazo', lambda x: x.isin(['Atrasada']).sum()),
+                Urgencia=('Status_Prazo', lambda x: (x == 'Urgência').sum()),
+                Alertas=('Status_Prazo', lambda x: (x == 'Alerta de Prazo').sum())
+            ).reset_index()
+    
+            # Garante que as colunas sejam numéricas
+            for col in ['Total', 'Atrasadas', 'Urgencia', 'Alertas']:
+                df_regiao_agg[col] = pd.to_numeric(df_regiao_agg[col], errors='coerce').fillna(0)
+    
+            df_regiao_agg['Total Critico'] = df_regiao_agg['Atrasadas'] + df_regiao_agg['Urgencia'] + df_regiao_agg['Alertas']
+            df_regiao_agg = df_regiao_agg.sort_values('Total', ascending=False)
+            
+            # Filtro de peso se disponível
+            if 'Peso' in df_filtered.columns:
+                regioes_selecionadas = st.multiselect("Regiões para Qtde x Peso", options=df_regiao_agg[col_regiao].tolist(), default=df_regiao_agg[col_regiao].tolist()[:5])
+                if regioes_selecionadas:
+                    df_peso_base = df_filtered[df_filtered[col_regiao].isin(regioes_selecionadas)].copy()
+                    df_peso_agg = df_peso_base.groupby([col_regiao, 'Peso']).size().reset_index(name='Quantidade')
+                    if not df_peso_agg.empty:
+                        render_qty_x_weight_chart(df_peso_agg, col_regiao)
+    
+            st.dataframe(df_regiao_agg, use_container_width=True, hide_index=True)
 
     # --- ABA 3: DETALHES (Modularizado) ---
-    with tab_dados:
-        render_tab_detalhes(df_filtered, col_situacao)
+    if chosen_tab == "📋 Dados Detalhados":
+        with st.container():
+            render_tab_detalhes(df_filtered, col_situacao)
 
     # --- ABA 4: HISTÓRICO & GESTÃO ---
-    if tab_historico:
-        with tab_historico:
+    if chosen_tab == "📊 Histórico":
+        with st.container():
             st.subheader("Histórico de Indicadores (Evolução Diária)")
             df_kpi_hist = db_manager.get_historico_kpis(dias=60)
             
             if not df_kpi_hist.empty:
+                # Converter para data (sem hora) e manter apenas um registro por dia (o último)
+                df_kpi_hist['data_ref'] = pd.to_datetime(df_kpi_hist['data_ref']).dt.date
+                df_kpi_hist = df_kpi_hist.sort_values('data_ref').drop_duplicates(subset=['data_ref'], keep='last')
+                
                 # Gráfico de Tendência
                 import altair as alt
                 
@@ -875,10 +1077,10 @@ if df is not None:
                                             var_name='Indicador', value_name='Quantidade')
                 
                 chart = alt.Chart(df_melted).mark_line(point=True).encode(
-                    x=alt.X('data_ref:T', title='Data'),
+                    x=alt.X('data_ref:T', title='Data', axis=alt.Axis(format='%d/%m/%Y', labelAngle=-45)),
                     y=alt.Y('Quantidade:Q', title='Quantidade de Ocorrências', axis=alt.Axis(format='d')),
                     color=alt.Color('Indicador:N', scale=alt.Scale(domain=['atrasadas', 'alertas', 'urgencias'], range=['#f87171', '#818cf8', '#fbbf24'])),
-                    tooltip=['data_ref', 'Indicador', 'Quantidade']
+                    tooltip=[alt.Tooltip('data_ref:T', title='Data', format='%d/%m/%Y'), 'Indicador', 'Quantidade']
                 ).properties(height=350).interactive()
                 
                 st.altair_chart(chart, use_container_width=True)
@@ -900,19 +1102,11 @@ if df is not None:
                 st.image("https://img.freepik.com/free-vector/data-analysis-concept-illustration_114360-1511.jpg", width=300)
 
     # --- ABA 4: CONFIGURAÇÕES (Modularizado) ---
-    if tab_config:
-        with tab_config:
+    if chosen_tab == "⚙️ Configurações":
+        with st.container():
             render_tab_config()
 
-    st.markdown("---")
-    # Botão de Download
-    csv = df_filtered.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📥 Baixar Dados Filtrados (CSV)",
-        data=csv,
-        file_name='demanda_filtrada.csv',
-        mime='text/csv',
-    )
+
 
 else:
     st.warning("⚠️ Nenhum arquivo de dados encontrado. Execute o `agendador.py` primeiro para gerar o relatório.")
@@ -931,4 +1125,5 @@ else:
             st.error(f"Erro ao executar: {e}")
 
 # --- AUTO REFRESH SILENCIOSO (Sincronização Periódica de Dados) ---
-st_autorefresh(interval=30000, key="datarefresh")
+# Aumentado para 10 minutos para evitar que a aba do usuário seja resetada constantemente
+st_autorefresh(interval=600000, key="datarefresh")
