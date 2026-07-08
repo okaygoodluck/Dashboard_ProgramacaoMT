@@ -1250,39 +1250,51 @@ if df is not None:
                         else:
                             st.info("Nenhum dado encontrado para o usuário e período selecionados.")
                             
-                    # --- Gráfico 3: Evolução do Volume Pendente (KPI) ---
+                    # --- Gráfico 3: Performance Consolidada (D-1) ---
                     st.markdown("---")
-                    df_kpi = db_manager.get_historico_kpis(dias=30)
-                    if not df_kpi.empty:
-                        df_kpi = df_kpi.sort_values(by='data_ref') # Garantir ordem cronológica
-                        df_kpi['data_exibicao'] = pd.to_datetime(df_kpi['data_ref']).dt.strftime('%d/%m/%Y')
+                    st.subheader("Performance Consolidada (D-1)")
+                    
+                    col_d1_filter, col_d1_chart = st.columns([1, 7])
+                    
+                    with col_d1_filter:
+                        st.markdown("#### Filtros D-1")
+                        todos_usuarios_d1 = sorted(df_eventos_all['nome_responsavel'].dropna().unique().tolist())
                         
-                        fig_vol = px.line(
-                            df_kpi,
-                            x='data_exibicao',
-                            y='total_demandas',
-                            title="Evolução do Volume Pendente Geral (Últimos 30 Dias)",
-                            text='total_demandas',
-                            markers=True
-                        )
-                        fig_vol.update_traces(textposition='top center', line=dict(width=3))
-                        fig_vol.update_layout(
-                            xaxis_title="Data",
-                            yaxis_title="Volume Pendente",
-                            yaxis_tickformat="d",
-                            showlegend=False
-                        )
-                        fig_vol.update_xaxes(type='category')
+                        resp_d1 = st.selectbox("Selecione o Responsável:", options=todos_usuarios_d1, key="d1_responsavel")
+                        dias_d1 = st.slider("Histórico (dias):", min_value=7, max_value=60, value=15, step=1, key="d1_dias")
                         
-                        col_vol_vazio, col_vol_chart = st.columns([1, 7])
-                        with col_vol_vazio:
-                            st.markdown("#### Filtro: Geral")
-                            st.info("O volume pendente representa o total da base de dados (não filtrável por região).")
+                        st.info("📊 **D-1**\n\nConsolida as demandas que ENTRARAM (Novas), as FEITAS (Tratadas) e o ESTOQUE (Pendentes) para o dia seguinte.")
                         
-                        with col_vol_chart:
-                            st.plotly_chart(fig_vol, use_container_width=True)
-                    else:
-                        st.info("Ainda não há histórico consolidado de Volume Pendente (KPIs Diários).")
+                    with col_d1_chart:
+                        if resp_d1:
+                            df_perf = db_manager.get_performance_d1(resp_d1, dias=dias_d1)
+                            
+                            if not df_perf.empty:
+                                df_perf['Data_Exibicao'] = pd.to_datetime(df_perf['Data']).dt.strftime('%d/%m/%Y')
+                                
+                                import plotly.graph_objects as go
+                                fig_d1 = go.Figure()
+                                
+                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Novas'], 
+                                                           mode='lines+markers', name='Novas (Entrada)',
+                                                           line=dict(color='#3b82f6', width=3))) # Azul
+                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Tratadas'], 
+                                                           mode='lines+markers', name='Tratadas (Saída)',
+                                                           line=dict(color='#10b981', width=3))) # Verde
+                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Pendentes'], 
+                                                           mode='lines+markers', name='Pendentes (Estoque)',
+                                                           line=dict(color='#f59e0b', width=3, dash='dot'))) # Laranja
+                                                           
+                                fig_d1.update_layout(
+                                    title=f"Evolução D-1: {resp_d1}",
+                                    xaxis_title="Data",
+                                    yaxis_title="Quantidade",
+                                    hovermode='x unified',
+                                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                                )
+                                st.plotly_chart(fig_d1, use_container_width=True)
+                            else:
+                                st.warning(f"Não há dados consolidados de D-1 para {resp_d1} no período selecionado.")
                         
                         
                 else:
