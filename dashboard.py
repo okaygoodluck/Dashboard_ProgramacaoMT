@@ -1171,50 +1171,7 @@ if df is not None:
                     
                     import plotly.express as px
                     
-                    # Gráfico 1: Evolução por Região
-                    col_reg_filter, col_reg_chart = st.columns([1, 7])
-                    
-                    with col_reg_filter:
-                        st.markdown("#### Filtro: Região")
-                        todas_regioes = sorted(df_eventos_all['regiao'].dropna().unique().tolist())
-                        regioes_selecionadas = st.multiselect("Selecione a Região:", options=todas_regioes, default=todas_regioes, key="hist_regiao")
-                        
-                    df_regiao_evol = df_eventos_all[df_eventos_all['regiao'].isin(regioes_selecionadas)] if regioes_selecionadas else pd.DataFrame()
-                    
-                    with col_reg_chart:
-                        if not df_regiao_evol.empty:
-                            df_reg_grouped = df_regiao_evol.groupby(['data', 'regiao']).size().reset_index(name='Total Eventos')
-                            # Formatar data para exibição sem horário (padrão BR) e forçar como string/categoria
-                            df_reg_grouped['data_exibicao'] = pd.to_datetime(df_reg_grouped['data']).dt.strftime('%d/%m/%Y')
-                            
-                            # Obter ordem decrescente das regiões pelo total
-                            ordem_regioes = df_reg_grouped.groupby('regiao')['Total Eventos'].sum().sort_values(ascending=False).index.tolist()
-                            
-                            fig_reg = px.bar(
-                                df_reg_grouped, 
-                                x='data_exibicao', 
-                                y='Total Eventos', 
-                                color='regiao',
-                                barmode='group',
-                                text='regiao',
-                                title="Total de Eventos por Região",
-                                category_orders={"regiao": ordem_regioes}
-                            )
-                            fig_reg.update_traces(textposition='outside')
-                            fig_reg.update_layout(
-                                xaxis_title="Data", 
-                                yaxis_title="Quantidade de Eventos", 
-                                yaxis_tickformat="d",
-                                showlegend=False
-                            )
-                            fig_reg.update_xaxes(type='category')
-                            st.plotly_chart(fig_reg, use_container_width=True)
-                        else:
-                            st.info("Nenhuma região selecionada ou sem dados para exibir.")
-                    
-                    st.markdown("---")
-                    
-                    # Gráfico 2: Evolução por Usuário (Apenas TRATADAS)
+                    # Gráfico: Evolução por Usuário (Apenas TRATADAS)
                     col_usr_filter, col_usr_chart = st.columns([1, 7])
                     
                     df_tratadas = df_eventos_all[df_eventos_all['tipo_evento'] == 'TRATADA'].copy()
