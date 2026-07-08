@@ -782,12 +782,27 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 
         if eventos_para_inserir:
             cursor = conn.cursor()
-            cursor.executemany('''
-                INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel)
-                VALUES (?, ?, ?, ?)
-            ''', eventos_para_inserir)
-            conn.commit()
-            print(f"[DB] {len(eventos_para_inserir)} eventos registrados de produtividade.")
+            
+            # Anti-Duplicação: Verifica quais eventos já foram registrados hoje para essas solicitações
+            cursor.execute("SELECT solicitacao, tipo_evento FROM eventos_diarios WHERE date(data_evento) = date('now', 'localtime')")
+            existentes = set((str(row[0]).strip(), str(row[1]).strip()) for row in cursor.fetchall())
+            
+            eventos_unicos = []
+            for ev in eventos_para_inserir:
+                chave = (str(ev[0]).strip(), str(ev[1]).strip())
+                if chave not in existentes:
+                    eventos_unicos.append(ev)
+                    existentes.add(chave) # Adiciona na lista de existentes para não duplicar caso venha duas vezes na mesma lista
+            
+            if eventos_unicos:
+                cursor.executemany('''
+                    INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel)
+                    VALUES (?, ?, ?, ?)
+                ''', eventos_unicos)
+                conn.commit()
+                print(f"[DB] {len(eventos_unicos)} eventos registrados de produtividade.")
+            else:
+                print(f"[DB] Nenhum evento novo para registrar (todos já existiam hoje).")
             
     except Exception as e:
         print(f"[DB] Erro ao registrar eventos: {e}")
