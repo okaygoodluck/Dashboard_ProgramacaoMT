@@ -701,8 +701,8 @@ if df is not None:
     ].copy()
     
     # Filtra as que o usuário ainda não confirmou leitura e remove duplicações para evitar erro de chaves iguais
-    alertas_pendentes = urgencias_ativas[~urgencias_ativas['Solicitação'].astype(str).isin(st.session_state.control_dismissed)]
-    alertas_pendentes = alertas_pendentes.drop_duplicates(subset=['Solicitação'])
+    alertas_pendentes = urgencias_ativas[~urgencias_ativas[col_sol].astype(str).isin(st.session_state.control_dismissed)]
+    alertas_pendentes = alertas_pendentes.drop_duplicates(subset=[col_sol])
 
     if not alertas_pendentes.empty:
         st.markdown(f'<h3 style="color: #ef4444; font-size: 0.8rem; margin-bottom: var(--space-sm); font-weight: 700; display: flex; align-items: center; gap: 8px;"><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6rem;">!</span> Solicitações Fora do Prazo ({len(alertas_pendentes)})</h3>', unsafe_allow_html=True)
@@ -727,7 +727,7 @@ if df is not None:
                 batch = df_alertas.iloc[i : i + n_cols]
                 
                 for j, (idx, row) in enumerate(batch.iterrows()):
-                    solicit_id = str(row['Solicitação'])
+                    solicit_id = str(row[col_sol])
                     # Tenta capturar o nome do responsável caso o nome da coluna varie
                     responsavel = str(row.get('Responsável', row.get('Técnico Responsável', row.get('Responsavel', 'Não Atribuído'))))
                     
