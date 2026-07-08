@@ -1131,6 +1131,11 @@ if df is not None:
                     
                     # 2. Produtividade Real
                     if not df_eventos_hoje.empty:
+                        # Regra de Sincronia: Se tratou hoje, remove a "INICIADA" do mesmo dia para não duplicar na contagem visual
+                        sol_tratadas = df_eventos_hoje[df_eventos_hoje['tipo_evento'] == 'TRATADA']['solicitacao'].unique()
+                        mask_remover = (df_eventos_hoje['tipo_evento'] == 'INICIADA') & (df_eventos_hoje['solicitacao'].isin(sol_tratadas))
+                        df_eventos_hoje = df_eventos_hoje[~mask_remover]
+
                         df_prod_atual = pd.crosstab(
                             index=[df_eventos_hoje['regiao'], df_eventos_hoje['nome_responsavel']],
                             columns=df_eventos_hoje['tipo_evento']
