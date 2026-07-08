@@ -1117,8 +1117,6 @@ if df is not None:
                     
                     # 1. Base oficial de Regiões/Responsáveis
                     df_regioes = db_manager.get_mapeamento_regioes()
-                    df_users = db_manager.get_usuarios()
-                    mapa_nomes = df_users.set_index('matricula')['nome'].to_dict() if not df_users.empty else {}
                     
                     siglas_filtro = [str(r).strip()[:2].upper() for r in filtro_regiao] if filtro_regiao else []
                     df_base = df_regioes[df_regioes['sigla_regiao'].isin(siglas_filtro)] if (not df_regioes.empty and siglas_filtro) else df_regioes
@@ -1127,8 +1125,7 @@ if df is not None:
                     if not df_base.empty:
                         for _, row in df_base.iterrows():
                             sigla = row['sigla_regiao']
-                            mat = row['matricula_responsavel']
-                            nome = mapa_nomes.get(mat, "Não Atribuído")
+                            nome = row['responsavel'] if pd.notna(row['responsavel']) and row['responsavel'] else "Não Atribuído"
                             base_records.append({'Região': sigla, 'Responsável': nome})
                     df_base_final = pd.DataFrame(base_records) if base_records else pd.DataFrame(columns=['Região', 'Responsável'])
                     
