@@ -6,7 +6,7 @@ import os
 # Nomes dos arquivos de banco de dados (Oficiais: CCP - Centro de Controle da Programação)
 DB_APP_NAME = "ccp_app.db"    # Persistente (Usuários, Configs)
 DB_DATA_NAME = "ccp_data.db"  # Volátil (Dados da Demanda)
-LOCAL_DB_NAME = "demanda.db"  # Temporário Local para o Extrator
+LOCAL_DB_NAME = os.environ.get("CCP_LOCAL_DB_PATH", "demanda.db")  # Temporário Local para o Extrator
 
 # Caminhos Mestres na Rede
 try:
@@ -129,6 +129,7 @@ def salvar_dados(df, regioes_confirmadas_vazias=None):
         return
     
     # --- SMART MERGE: MEMÓRIA DE SEGURANÇA (Camada 3) ---
+    df_antigo = None
     try:
         df_antigo = carregar_dados_recentes()
         if df_antigo is not None and not df_antigo.empty:
@@ -150,6 +151,12 @@ def salvar_dados(df, regioes_confirmadas_vazias=None):
                 print(f"[DB] {len(df_preservado)} registros antigos preservados na tabela atual.")
     except Exception as e:
         print(f"[DB] Falha no Smart Merge (ignorando e salvando apenas dados novos): {e}")
+
+    # --- REGISTRO DE EVENTOS DE PRODUTIVIDADE ---
+    try:
+        registrar_eventos_diarios(df_antigo, df)
+    except Exception as e:
+        print(f"[DB] Erro ao disparar registro de eventos: {e}")
 
     conn = get_connection_write()
     try:
@@ -477,7 +484,17 @@ def init_database():
             )
         ''')
 
-        # 3. Tabela de Sessões Persistentes
+        # 3. Tabela de Travamento de Responsabilidade (Option A)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS solicitacoes_travadas (
+                solicitacao TEXT PRIMARY KEY,
+                matricula TEXT NOT NULL,
+                data_trava TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (matricula) REFERENCES usuarios (matricula)
+            )
+        ''')
+
+        # 4. Tabela de Sessões Persistentes
         conn.execute('''
             CREATE TABLE IF NOT EXISTS sessoes_persistentes (
                 token TEXT PRIMARY KEY,
@@ -498,6 +515,18 @@ def init_database():
                 no_prazo INTEGER,
                 confirmadas_total INTEGER,
                 timestamp_captura TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+        # 5. Tabela de Eventos Diários
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS eventos_diarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                solicitacao TEXT NOT NULL,
+                tipo_evento TEXT NOT NULL,
+                regiao TEXT,
+                matricula_responsavel TEXT,
+                data_evento TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
 
@@ -629,5 +658,132 @@ def get_historico_kpis(dias=30):
     finally:
         conn.close()
 
+def get_solicitacoes_travadas():
+    """Retorna as solicitações que já estão travadas em um responsável (Em elaboração)."""
+    conn = get_connection_config()
+    try:
+        query = """
+        SELECT st.solicitacao, u.nome as responsavel_travado, st.matricula as matricula_travada
+        FROM solicitacoes_travadas st
+        LEFT JOIN usuarios u ON st.matricula = u.matricula
+        """
+        return pd.read_sql(query, conn)
+    except Exception as e:
+        print(f"[DB] Erro ao buscar solicitacoes travadas: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+def travar_solicitacoes(df_novas):
+    """Insere no banco as solicitações que devem ser travadas a um responsável.
+    df_novas deve ter as colunas 'Solicitação' e 'Matricula'.
+    """
+    if df_novas is None or df_novas.empty:
+        return False
+        
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        for _, row in df_novas.iterrows():
+            solicitacao = str(row['Solicitação']).strip()
+            matricula = str(row['Matricula']).strip()
+            
+            cursor.execute('''
+                INSERT INTO solicitacoes_travadas (solicitacao, matricula)
+                VALUES (?, ?)
+                ON CONFLICT(solicitacao) DO NOTHING
+            ''', (solicitacao, matricula))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"[DB] Erro ao travar solicitacoes: {e}")
+        return False
+    finally:
+        conn.close()
+
 # Inicializa o banco de dados completo ao carregar o módulo
 init_database()
+
+def registrar_eventos_diarios(df_antigo, df_novo):
+    """Gera eventos de produtividade baseados na diferença entre extrações."""
+    if df_novo is None or df_novo.empty:
+        return
+        
+    if df_antigo is None or df_antigo.empty:
+        import pandas as pd
+        df_antigo = pd.DataFrame(columns=['Solicitação', 'Ref_Regiao', 'Situação'])
+        
+    try:
+        conn = get_connection_config()
+        # Carrega dicionarios
+        df_travadas = pd.read_sql("SELECT solicitacao, matricula FROM solicitacoes_travadas", conn)
+        travadas_dict = df_travadas.set_index('solicitacao')['matricula'].to_dict() if not df_travadas.empty else {}
+        
+        df_regioes = pd.read_sql("SELECT sigla_regiao, matricula_responsavel FROM regioes_responsaveis", conn)
+        regioes_dict = df_regioes.set_index('sigla_regiao')['matricula_responsavel'].to_dict() if not df_regioes.empty else {}
+        
+        def get_responsavel(sol_id, regiao_str):
+            sol_id_str = str(sol_id).strip()
+            if sol_id_str in travadas_dict:
+                return travadas_dict[sol_id_str]
+            
+            sigla = str(regiao_str).strip()[:2].upper() if pd.notna(regiao_str) else ""
+            if sigla in regioes_dict:
+                return regioes_dict[sigla]
+                
+            return "Não Atribuído"
+
+        # Garante a existência da coluna Ref_Regiao em ambos para evitar KeyError
+        if 'Ref_Regiao' not in df_antigo.columns:
+            df_antigo['Ref_Regiao'] = ''
+        if 'Ref_Regiao' not in df_novo.columns:
+            df_novo['Ref_Regiao'] = ''
+            
+        antigas_dict = df_antigo.set_index('Solicitação').to_dict('index')
+        novas_dict = df_novo.set_index('Solicitação').to_dict('index')
+        
+        eventos_para_inserir = []
+        
+        # 1. Novas e Iniciadas
+        for sol_id, row_nova in novas_dict.items():
+            if sol_id not in antigas_dict:
+                regiao = row_nova.get('Ref_Regiao', '')
+                sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
+                matricula = get_responsavel(sol_id, regiao)
+                eventos_para_inserir.append((sol_id, 'NOVA', sigla, matricula))
+            else:
+                row_antiga = antigas_dict[sol_id]
+                sit_antiga = str(row_antiga.get('Situação', '')).upper()
+                sit_nova = str(row_nova.get('Situação', '')).upper()
+                
+                was_elaboracao = 'ELABORA' in sit_antiga
+                is_elaboracao = 'ELABORA' in sit_nova
+                
+                if not was_elaboracao and is_elaboracao:
+                    regiao = row_nova.get('Ref_Regiao', '')
+                    sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
+                    matricula = get_responsavel(sol_id, regiao)
+                    eventos_para_inserir.append((sol_id, 'INICIADA', sigla, matricula))
+                    
+        # 2. Tratadas
+        for sol_id, row_antiga in antigas_dict.items():
+            if sol_id not in novas_dict:
+                regiao = row_antiga.get('Ref_Regiao', '')
+                sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
+                matricula = get_responsavel(sol_id, regiao)
+                eventos_para_inserir.append((sol_id, 'TRATADA', sigla, matricula))
+                
+        if eventos_para_inserir:
+            cursor = conn.cursor()
+            cursor.executemany('''
+                INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel)
+                VALUES (?, ?, ?, ?)
+            ''', eventos_para_inserir)
+            conn.commit()
+            print(f"[DB] {len(eventos_para_inserir)} eventos registrados de produtividade.")
+            
+    except Exception as e:
+        print(f"[DB] Erro ao registrar eventos: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()

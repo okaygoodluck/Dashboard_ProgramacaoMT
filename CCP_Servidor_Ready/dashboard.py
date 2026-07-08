@@ -449,17 +449,43 @@ if df is not None:
     else:
         df['Is_Elaboracao'] = False
 
-    # --- MAPEAMENTO GLOBAL DO RESPONSÁVEL (Real-time via Banco) ---
+    # --- MAPEAMENTO GLOBAL DO RESPONSÁVEL (Real-time via Banco + Travas) ---
     df['temp_sigla'] = df[col_regiao].astype(str).str.strip().str[:2].str.upper()
     df_map = db_manager.get_mapeamento_regioes()
     
+    # 1. Mapeamento por Região (Padrão)
     if not df_map.empty:
-        df = df.merge(df_map[['sigla_regiao', 'responsavel']], left_on='temp_sigla', right_on='sigla_regiao', how='left')
-        df['Responsavel'] = df['responsavel'].fillna("Não Atribuído")
-        df = df.drop(columns=['temp_sigla', 'sigla_regiao', 'responsavel'])
+        df = df.merge(df_map[['sigla_regiao', 'responsavel', 'matricula']], left_on='temp_sigla', right_on='sigla_regiao', how='left')
+        df['Responsavel_Regiao'] = df['responsavel'].fillna("Não Atribuído")
+        df['Matricula_Regiao'] = df['matricula']
+        df = df.drop(columns=['temp_sigla', 'sigla_regiao', 'responsavel', 'matricula'])
     else:
-        df['Responsavel'] = "Não Atribuído"
+        df['Responsavel_Regiao'] = "Não Atribuído"
+        df['Matricula_Regiao'] = None
         df = df.drop(columns=['temp_sigla'])
+
+    # 2. Verifica se há travas no banco para solicitações em elaboração
+    df_travadas = db_manager.get_solicitacoes_travadas()
+    if not df_travadas.empty:
+        df['Solicitacao_str'] = df['Solicitação'].astype(str).str.strip()
+        df = df.merge(df_travadas, left_on='Solicitacao_str', right_on='solicitacao', how='left')
+        
+        # 3. Define quem é o Responsável Final (Trava prevalece sobre Regiao)
+        df['Responsavel'] = df['responsavel_travado'].fillna(df['Responsavel_Regiao'])
+        df['Matricula'] = df['matricula_travada'].fillna(df['Matricula_Regiao'])
+        
+        df = df.drop(columns=['Solicitacao_str', 'solicitacao', 'responsavel_travado', 'matricula_travada'])
+    else:
+        df['Responsavel'] = df['Responsavel_Regiao']
+        df['Matricula'] = df['Matricula_Regiao']
+
+    # 4. Grava novas travas no banco para solicitações "Em elaboração" que não estavam travadas
+    # Se 'Is_Elaboracao' é True e ainda não estava na tabela de travas, ele salva a trava agora.
+    solicitacoes_ja_travadas = df_travadas['solicitacao'].tolist() if not df_travadas.empty else []
+    novas_para_travar = df[(df['Is_Elaboracao'] == True) & (df['Matricula'].notna()) & (~df['Solicitação'].astype(str).str.strip().isin(solicitacoes_ja_travadas))]
+    
+    if not novas_para_travar.empty:
+        db_manager.travar_solicitacoes(novas_para_travar[['Solicitação', 'Matricula']])
 
     # --- DEFINIÇÃO DE ESCOPO DE KPIs (Regra de Acesso) ---
     if st.session_state.user_nivel == "Usuario":
@@ -871,7 +897,6 @@ if df is not None:
     # Automação de Snapshot Diário (Pós-processamento dos KPIs)
     tratar_snapshot_diario(total_solicitacoes, qtd_atrasadas, qtd_alerta, qtd_urgencia, (total_solicitacoes - qtd_atrasadas))
 
-
     # 3. ABAS DE VISUALIZAÇÃO (Symmetry Mode - Responsivo)
     if st.session_state.user_nivel in ["Gerencial", "ADM"]:
         abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados", "📊 Histórico"]
@@ -1061,45 +1086,229 @@ if df is not None:
     # --- ABA 4: HISTÓRICO & GESTÃO ---
     if chosen_tab == "📊 Histórico":
         with st.container():
-            st.subheader("Histórico de Indicadores (Evolução Diária)")
-            df_kpi_hist = db_manager.get_historico_kpis(dias=60)
-            
-            if not df_kpi_hist.empty:
-                # Converter para data (sem hora) e manter apenas um registro por dia (o último)
-                df_kpi_hist['data_ref'] = pd.to_datetime(df_kpi_hist['data_ref']).dt.date
-                df_kpi_hist = df_kpi_hist.sort_values('data_ref').drop_duplicates(subset=['data_ref'], keep='last')
+            st.subheader("Eventos de Produtividade (Hoje)")
+            try:
+                conn_app = db_manager.get_connection_config()
+                hoje_str = datetime.now().strftime('%Y-%m-%d')
                 
-                # Gráfico de Tendência
-                import altair as alt
+                # Juntar com usuários para ter o nome (trazendo todo o histórico)
+                query_eventos = f"""
+                    SELECT e.*, COALESCE(u.nome, 'Não Atribuído') as nome_responsavel 
+                    FROM eventos_diarios e 
+                    LEFT JOIN usuarios u ON e.matricula_responsavel = u.matricula 
+                """
+                df_eventos_all = pd.read_sql(query_eventos, conn_app)
+                conn_app.close()
                 
-                # Melt para formato longo
-                df_melted = df_kpi_hist.melt(id_vars=['data_ref'], value_vars=['atrasadas', 'alertas', 'urgencias'], 
-                                            var_name='Indicador', value_name='Quantidade')
-                
-                chart = alt.Chart(df_melted).mark_line(point=True).encode(
-                    x=alt.X('data_ref:T', title='Data', axis=alt.Axis(format='%d/%m/%Y', labelAngle=-45)),
-                    y=alt.Y('Quantidade:Q', title='Quantidade de Ocorrências', axis=alt.Axis(format='d')),
-                    color=alt.Color('Indicador:N', scale=alt.Scale(domain=['atrasadas', 'alertas', 'urgencias'], range=['#f87171', '#818cf8', '#fbbf24'])),
-                    tooltip=[alt.Tooltip('data_ref:T', title='Data', format='%d/%m/%Y'), 'Indicador', 'Quantidade']
-                ).properties(height=350).interactive()
-                
-                st.altair_chart(chart, use_container_width=True)
-                
-                st.markdown("##### Tabela Consolidada de Snapshots")
-                st.dataframe(df_kpi_hist.sort_values('data_ref', ascending=False), use_container_width=True, hide_index=True)
-                
-                # Exportação
-                csv_hist = df_kpi_hist.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Exportar Histórico Completo (CSV)",
-                    data=csv_hist,
-                    file_name=f'historico_kpis_{date.today()}.csv',
-                    mime='text/csv',
-                    key='btn_export_hist'
-                )
-            else:
-                st.info("📊 O histórico de indicadores começará a ser construído a partir de hoje.")
-                st.image("https://img.freepik.com/free-vector/data-analysis-concept-illustration_114360-1511.jpg", width=300)
+                if not df_eventos_all.empty:
+                    # Extrair apenas a data (YYYY-MM-DD)
+                    df_eventos_all['data'] = pd.to_datetime(df_eventos_all['data_evento']).dt.strftime('%Y-%m-%d')
+                    
+                    if filtro_responsavel:
+                        df_eventos_all = df_eventos_all[df_eventos_all['nome_responsavel'].isin(filtro_responsavel)]
+                    if filtro_regiao:
+                        siglas_filtro = [str(r).strip()[:2].upper() for r in filtro_regiao]
+                        df_eventos_all = df_eventos_all[df_eventos_all['regiao'].isin(siglas_filtro)]
+                        
+                    # --- TABELA DE HOJE ---
+                    df_eventos_hoje = df_eventos_all[df_eventos_all['data'] == hoje_str]
+                    
+                    if df_eventos_hoje.empty:
+                        st.info("Nenhum evento de produtividade para hoje atende aos filtros atuais.")
+                    else:
+                        # Agrupar por Regiao e Responsável
+                        df_prod = pd.crosstab(
+                            index=[df_eventos_hoje['regiao'], df_eventos_hoje['nome_responsavel']],
+                            columns=df_eventos_hoje['tipo_evento']
+                        ).reset_index()
+                        
+                        # Garante todas as colunas
+                        for c in ['NOVA', 'INICIADA', 'TRATADA']:
+                            if c not in df_prod.columns:
+                                df_prod[c] = 0
+                                
+                        df_prod = df_prod.rename(columns={
+                            'regiao': 'Região',
+                            'nome_responsavel': 'Responsável',
+                            'NOVA': 'Novas',
+                            'INICIADA': 'Iniciadas',
+                            'TRATADA': 'Tratadas'
+                        })
+                        
+                        df_prod['Total'] = df_prod['Novas'] + df_prod['Iniciadas'] + df_prod['Tratadas']
+                        df_prod.columns.name = None
+                        
+                        st.dataframe(df_prod[['Região', 'Responsável', 'Novas', 'Iniciadas', 'Tratadas', 'Total']], use_container_width=True, hide_index=True)
+                    
+                    # --- GRÁFICOS DE EVOLUÇÃO ---
+                    st.markdown("---")
+                    st.subheader("Evolução Histórica (Dia a Dia)")
+                    
+                    import plotly.express as px
+                    
+                    # Gráfico 1: Evolução por Região
+                    col_reg_filter, col_reg_chart = st.columns([1, 7])
+                    
+                    with col_reg_filter:
+                        st.markdown("#### Filtro: Região")
+                        todas_regioes = sorted(df_eventos_all['regiao'].dropna().unique().tolist())
+                        regioes_selecionadas = st.multiselect("Selecione a Região:", options=todas_regioes, default=todas_regioes, key="hist_regiao")
+                        
+                    df_regiao_evol = df_eventos_all[df_eventos_all['regiao'].isin(regioes_selecionadas)] if regioes_selecionadas else pd.DataFrame()
+                    
+                    with col_reg_chart:
+                        if not df_regiao_evol.empty:
+                            df_reg_grouped = df_regiao_evol.groupby(['data', 'regiao']).size().reset_index(name='Total Eventos')
+                            # Formatar data para exibição sem horário (padrão BR) e forçar como string/categoria
+                            df_reg_grouped['data_exibicao'] = pd.to_datetime(df_reg_grouped['data']).dt.strftime('%d/%m/%Y')
+                            
+                            # Obter ordem decrescente das regiões pelo total
+                            ordem_regioes = df_reg_grouped.groupby('regiao')['Total Eventos'].sum().sort_values(ascending=False).index.tolist()
+                            
+                            fig_reg = px.bar(
+                                df_reg_grouped, 
+                                x='data_exibicao', 
+                                y='Total Eventos', 
+                                color='regiao',
+                                barmode='group',
+                                text='regiao',
+                                title="Total de Eventos por Região",
+                                category_orders={"regiao": ordem_regioes}
+                            )
+                            fig_reg.update_traces(textposition='outside')
+                            fig_reg.update_layout(
+                                xaxis_title="Data", 
+                                yaxis_title="Quantidade de Eventos", 
+                                yaxis_tickformat="d",
+                                showlegend=False
+                            )
+                            fig_reg.update_xaxes(type='category')
+                            st.plotly_chart(fig_reg, use_container_width=True)
+                        else:
+                            st.info("Nenhuma região selecionada ou sem dados para exibir.")
+                    
+                    st.markdown("---")
+                    
+                    # Gráfico 2: Evolução por Usuário (Apenas TRATADAS)
+                    col_usr_filter, col_usr_chart = st.columns([1, 7])
+                    
+                    df_tratadas = df_eventos_all[df_eventos_all['tipo_evento'] == 'TRATADA'].copy()
+                    
+                    with col_usr_filter:
+                        st.markdown("#### Filtros: Responsável")
+                        todos_usuarios = sorted(df_tratadas['nome_responsavel'].dropna().unique().tolist())
+                        usuarios_selecionados = st.multiselect("Selecione o Responsável:", options=todos_usuarios, default=todos_usuarios, key="hist_usuario")
+                        
+                        datas_unicas = sorted(df_eventos_all['data'].dropna().unique().tolist())
+                        if datas_unicas:
+                            data_min = pd.to_datetime(datas_unicas[0]).date()
+                            data_max = pd.to_datetime(datas_unicas[-1]).date()
+                        else:
+                            from datetime import date
+                            data_min = data_max = date.today()
+                            
+                        datas_selecionadas = st.date_input(
+                            "Período:", 
+                            value=(data_min, data_max), 
+                            min_value=data_min, 
+                            max_value=data_max,
+                            key="hist_data_usr"
+                        )
+                        
+                        # Tratamento seguro do retorno do date_input
+                        if isinstance(datas_selecionadas, tuple):
+                            d_inicio = datas_selecionadas[0]
+                            d_fim = datas_selecionadas[1] if len(datas_selecionadas) > 1 else datas_selecionadas[0]
+                        else:
+                            d_inicio = d_fim = datas_selecionadas
+                            
+                    # Aplicar filtros no df_tratadas
+                    d_inicio_str = d_inicio.strftime('%Y-%m-%d')
+                    d_fim_str = d_fim.strftime('%Y-%m-%d')
+                    
+                    df_usr_filtered = df_tratadas[
+                        (df_tratadas['nome_responsavel'].isin(usuarios_selecionados)) &
+                        (df_tratadas['data'] >= d_inicio_str) &
+                        (df_tratadas['data'] <= d_fim_str)
+                    ] if usuarios_selecionados else pd.DataFrame()
+                    
+                    with col_usr_chart:
+                        if not df_usr_filtered.empty:
+                            df_user_grouped = df_usr_filtered.groupby(['data', 'nome_responsavel']).size().reset_index(name='Tratadas')
+                            # Formatar data para exibição sem horário (padrão BR)
+                            df_user_grouped['data_exibicao'] = pd.to_datetime(df_user_grouped['data']).dt.strftime('%d/%m/%Y')
+                            
+                            # Criar coluna com primeiro nome para exibir no topo das barras
+                            df_user_grouped['primeiro_nome'] = df_user_grouped['nome_responsavel'].apply(
+                                lambda x: str(x).split()[0] if str(x).split() else ""
+                            )
+                            
+                            # Obter ordem decrescente dos responsáveis pelo total de tratadas
+                            ordem_usuarios = df_user_grouped.groupby('nome_responsavel')['Tratadas'].sum().sort_values(ascending=False).index.tolist()
+                            
+                            fig_user = px.bar(
+                                df_user_grouped, 
+                                x='data_exibicao', 
+                                y='Tratadas', 
+                                color='nome_responsavel',
+                                barmode='group',
+                                text='primeiro_nome',
+                                title="Solicitações Tratadas por Responsável",
+                                category_orders={"nome_responsavel": ordem_usuarios}
+                            )
+                            fig_user.update_traces(textposition='outside')
+                            fig_user.update_layout(
+                                xaxis_title="Data", 
+                                yaxis_title="Quantidade Tratada", 
+                                yaxis_tickformat="d",
+                                showlegend=False
+                            )
+                            fig_user.update_xaxes(type='category')
+                            st.plotly_chart(fig_user, use_container_width=True)
+                        else:
+                            st.info("Nenhum dado encontrado para o usuário e período selecionados.")
+                            
+                    # --- Gráfico 3: Evolução do Volume Pendente (KPI) ---
+                    st.markdown("---")
+                    df_kpi = db_manager.get_historico_kpis(dias=30)
+                    if not df_kpi.empty:
+                        df_kpi = df_kpi.sort_values(by='data_ref') # Garantir ordem cronológica
+                        df_kpi['data_exibicao'] = pd.to_datetime(df_kpi['data_ref']).dt.strftime('%d/%m/%Y')
+                        
+                        fig_vol = px.line(
+                            df_kpi,
+                            x='data_exibicao',
+                            y='total_demandas',
+                            title="Evolução do Volume Pendente Geral (Últimos 30 Dias)",
+                            text='total_demandas',
+                            markers=True
+                        )
+                        fig_vol.update_traces(textposition='top center', line=dict(width=3))
+                        fig_vol.update_layout(
+                            xaxis_title="Data",
+                            yaxis_title="Volume Pendente",
+                            yaxis_tickformat="d",
+                            showlegend=False
+                        )
+                        fig_vol.update_xaxes(type='category')
+                        
+                        col_vol_vazio, col_vol_chart = st.columns([1, 7])
+                        with col_vol_vazio:
+                            st.markdown("#### Filtro: Geral")
+                            st.info("O volume pendente representa o total da base de dados (não filtrável por região).")
+                        
+                        with col_vol_chart:
+                            st.plotly_chart(fig_vol, use_container_width=True)
+                    else:
+                        st.info("Ainda não há histórico consolidado de Volume Pendente (KPIs Diários).")
+                        
+                        
+                else:
+                    st.info("Nenhum evento de produtividade registrado no histórico.")
+            except Exception as e:
+                st.error(f"Não foi possível carregar eventos: {e}")
+
+
 
     # --- ABA 4: CONFIGURAÇÕES (Modularizado) ---
     if chosen_tab == "⚙️ Configurações":
