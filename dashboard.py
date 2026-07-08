@@ -1116,7 +1116,7 @@ if df is not None:
                     df_eventos_hoje = df_eventos_all[df_eventos_all['data'] == hoje_str]
                     
                     # 1. Base oficial de Regiões/Responsáveis
-                    df_regioes = db_manager.get_regioes_responsaveis()
+                    df_regioes = db_manager.get_mapeamento_regioes()
                     df_users = db_manager.get_usuarios()
                     mapa_nomes = df_users.set_index('matricula')['nome'].to_dict() if not df_users.empty else {}
                     
