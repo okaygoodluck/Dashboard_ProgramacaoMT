@@ -77,7 +77,7 @@ def job():
 def main():
     print("=== Agendador Iniciado ===")
     janela_inicio = _parse_hhmm(os.environ.get("AGENDADOR_JANELA_INICIO"), "07:00")
-    janela_fim = _parse_hhmm(os.environ.get("AGENDADOR_JANELA_FIM"), "18:00")
+    janela_fim = _parse_hhmm(os.environ.get("AGENDADOR_JANELA_FIM"), "20:00")
     pausa_entre_execucoes = int(os.environ.get("AGENDADOR_PAUSA_SEGUNDOS", "60"))
     pausa_fora_janela = int(os.environ.get("AGENDADOR_SLEEP_FORA_JANELA_SEGUNDOS", "30"))
     print(f"Janela: {janela_inicio.strftime('%H:%M')} - {janela_fim.strftime('%H:%M')}")
