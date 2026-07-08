@@ -826,3 +826,101 @@ def registrar_eventos_diarios(df_antigo, df_novo):
     finally:
         if 'conn' in locals():
             conn.close()
+
+def get_performance_d1(nome_responsavel, dias=15):
+    """
+    Retorna consolidação D-1 para um responsável específico:
+    Novas, Tratadas e Pendentes (Aprovada/Em elaboração) por dia.
+    """
+    import pandas as pd
+    conn_app = get_connection_config()
+    conn_data = get_connection_write()
+    try:
+        cursor = conn_app.cursor()
+        cursor.execute("SELECT matricula FROM usuarios WHERE nome = ?", (nome_responsavel,))
+        res = cursor.fetchone()
+        if not res:
+            return pd.DataFrame()
+        matricula = res[0]
+        
+        query_eventos = f"""
+            SELECT 
+                date(data_evento) as data,
+                tipo_evento,
+                COUNT(*) as qtd
+            FROM eventos_diarios
+            WHERE matricula_responsavel = '{matricula}'
+            AND date(data_evento) >= date('now', 'localtime', '-{dias} days')
+            GROUP BY date(data_evento), tipo_evento
+        """
+        df_eventos = pd.read_sql(query_eventos, conn_app)
+        
+        if df_eventos.empty:
+            df_perf = pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Pendentes'])
+        else:
+            df_pivot = df_eventos.pivot(index='data', columns='tipo_evento', values='qtd').fillna(0).reset_index()
+            for col in ['NOVA', 'TRATADA']:
+                if col not in df_pivot.columns:
+                    df_pivot[col] = 0
+            df_pivot = df_pivot.rename(columns={'data': 'Data', 'NOVA': 'Novas', 'TRATADA': 'Tratadas'})
+            df_perf = df_pivot[['Data', 'Novas', 'Tratadas']]
+            
+        cursor.execute("SELECT sigla_regiao FROM regioes_responsaveis WHERE matricula_responsavel = ?", (matricula,))
+        regioes = [row[0] for row in cursor.fetchall()]
+        
+        cursor.execute("SELECT solicitacao FROM solicitacoes_travadas WHERE matricula = ?", (matricula,))
+        travadas = [row[0] for row in cursor.fetchall()]
+        
+        where_clauses = []
+        if regioes:
+            regioes_str = "','".join(regioes)
+            where_clauses.append(f"Ref_Regiao IN ('{regioes_str}')")
+        if travadas:
+            travadas_str = "','".join(travadas)
+            where_clauses.append(f"Solicitacao_ID IN ('{travadas_str}')")
+            
+        if not where_clauses:
+            df_perf['Pendentes'] = 0
+        else:
+            where_sql = " OR ".join(where_clauses)
+            
+            query_pendentes = f"""
+                WITH UltimasExtracoes AS (
+                    SELECT date(Data_Extracao) as data, MAX(Data_Extracao) as max_extracao
+                    FROM demanda_historico
+                    WHERE date(Data_Extracao) >= date('now', 'localtime', '-{dias} days')
+                    GROUP BY date(Data_Extracao)
+                )
+                SELECT 
+                    date(dh.Data_Extracao) as Data,
+                    COUNT(*) as Pendentes
+                FROM demanda_historico dh
+                JOIN UltimasExtracoes ue ON dh.Data_Extracao = ue.max_extracao
+                WHERE ({where_sql})
+                AND Situacao_Norm IN ('APROVADA', 'EM ELABORAÇÃO')
+                GROUP BY date(dh.Data_Extracao)
+            """
+            df_pendentes = pd.read_sql(query_pendentes, conn_data)
+            
+            if not df_perf.empty and not df_pendentes.empty:
+                df_perf = pd.merge(df_perf, df_pendentes, on='Data', how='outer').fillna(0)
+            elif not df_pendentes.empty:
+                df_perf = df_pendentes
+                df_perf['Novas'] = 0
+                df_perf['Tratadas'] = 0
+            else:
+                df_perf['Pendentes'] = 0
+                
+        if not df_perf.empty:
+            df_perf['Novas'] = df_perf.get('Novas', 0).astype(int)
+            df_perf['Tratadas'] = df_perf.get('Tratadas', 0).astype(int)
+            df_perf['Pendentes'] = df_perf.get('Pendentes', 0).astype(int)
+            df_perf = df_perf.sort_values('Data')
+            
+        return df_perf
+    except Exception as e:
+        print(f"Erro em get_performance_d1: {e}")
+        return pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Pendentes'])
+    finally:
+        conn_app.close()
+        conn_data.close()
