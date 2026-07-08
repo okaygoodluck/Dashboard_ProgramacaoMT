@@ -646,7 +646,7 @@ def salvar_kpi_diario(kpis):
 
 def get_historico_kpis(dias=30):
     """Recupera o histórico de KPIs dos últimos N dias."""
-    conn = get_connection_read()
+    conn = get_connection_config()
     try:
         query = f"SELECT * FROM vanguard_daily_kpis ORDER BY data_ref DESC LIMIT {dias}"
         df = pd.read_sql(query, conn)
@@ -710,9 +710,7 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         return
         
     if df_antigo is None or df_antigo.empty:
-        import pandas as pd
         df_antigo = pd.DataFrame(columns=['Solicitação', 'Ref_Regiao', 'Situação'])
-        
     try:
         conn = get_connection_config()
         # Carrega dicionarios
@@ -739,8 +737,17 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         if 'Ref_Regiao' not in df_novo.columns:
             df_novo['Ref_Regiao'] = ''
             
-        antigas_dict = df_antigo.set_index('Solicitação').to_dict('index')
-        novas_dict = df_novo.set_index('Solicitação').to_dict('index')
+        # Normaliza os nomes das colunas de chaves (evita problemas com encode utf8/latin1)
+        for df_t in [df_antigo, df_novo]:
+            for col in list(df_t.columns):
+                col_lower = col.lower()
+                if 'solicita' in col_lower and 'vinc' not in col_lower:
+                    df_t.rename(columns={col: 'Solicitacao_ID'}, inplace=True)
+                elif 'situa' in col_lower:
+                    df_t.rename(columns={col: 'Situacao_Norm'}, inplace=True)
+        
+        antigas_dict = df_antigo.set_index('Solicitacao_ID').to_dict('index')
+        novas_dict = df_novo.set_index('Solicitacao_ID').to_dict('index')
         
         eventos_para_inserir = []
         
@@ -753,8 +760,8 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 eventos_para_inserir.append((sol_id, 'NOVA', sigla, matricula))
             else:
                 row_antiga = antigas_dict[sol_id]
-                sit_antiga = str(row_antiga.get('Situação', '')).upper()
-                sit_nova = str(row_nova.get('Situação', '')).upper()
+                sit_antiga = str(row_antiga.get('Situacao_Norm', '')).upper()
+                sit_nova = str(row_nova.get('Situacao_Norm', '')).upper()
                 
                 was_elaboracao = 'ELABORA' in sit_antiga
                 is_elaboracao = 'ELABORA' in sit_nova

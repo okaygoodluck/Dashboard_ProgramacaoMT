@@ -646,7 +646,7 @@ def salvar_kpi_diario(kpis):
 
 def get_historico_kpis(dias=30):
     """Recupera o histórico de KPIs dos últimos N dias."""
-    conn = get_connection_read()
+    conn = get_connection_config()
     try:
         query = f"SELECT * FROM vanguard_daily_kpis ORDER BY data_ref DESC LIMIT {dias}"
         df = pd.read_sql(query, conn)

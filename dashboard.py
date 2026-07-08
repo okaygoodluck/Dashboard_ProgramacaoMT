@@ -1113,32 +1113,53 @@ if df is not None:
                     # --- TABELA DE HOJE ---
                     df_eventos_hoje = df_eventos_all[df_eventos_all['data'] == hoje_str]
                     
-                    if df_eventos_hoje.empty:
-                        st.info("Nenhum evento de produtividade para hoje atende aos filtros atuais.")
-                    else:
-                        # Agrupar por Regiao e Responsável
-                        df_prod = pd.crosstab(
+                    # 1. Base oficial de Regiões/Responsáveis
+                    df_regioes = db_manager.get_regioes_responsaveis()
+                    df_users = db_manager.get_usuarios()
+                    mapa_nomes = df_users.set_index('matricula')['nome'].to_dict() if not df_users.empty else {}
+                    
+                    siglas_filtro = [str(r).strip()[:2].upper() for r in filtro_regiao] if filtro_regiao else []
+                    df_base = df_regioes[df_regioes['sigla_regiao'].isin(siglas_filtro)] if (not df_regioes.empty and siglas_filtro) else df_regioes
+                    
+                    base_records = []
+                    if not df_base.empty:
+                        for _, row in df_base.iterrows():
+                            sigla = row['sigla_regiao']
+                            mat = row['matricula_responsavel']
+                            nome = mapa_nomes.get(mat, "Não Atribuído")
+                            base_records.append({'Região': sigla, 'Responsável': nome})
+                    df_base_final = pd.DataFrame(base_records) if base_records else pd.DataFrame(columns=['Região', 'Responsável'])
+                    
+                    # 2. Produtividade Real
+                    if not df_eventos_hoje.empty:
+                        df_prod_atual = pd.crosstab(
                             index=[df_eventos_hoje['regiao'], df_eventos_hoje['nome_responsavel']],
                             columns=df_eventos_hoje['tipo_evento']
                         ).reset_index()
+                        df_prod_atual = df_prod_atual.rename(columns={'regiao': 'Região', 'nome_responsavel': 'Resp_Antigo'})
+                    else:
+                        df_prod_atual = pd.DataFrame(columns=['Região'])
                         
-                        # Garante todas as colunas
-                        for c in ['NOVA', 'INICIADA', 'TRATADA']:
-                            if c not in df_prod.columns:
-                                df_prod[c] = 0
-                                
-                        df_prod = df_prod.rename(columns={
-                            'regiao': 'Região',
-                            'nome_responsavel': 'Responsável',
-                            'NOVA': 'Novas',
-                            'INICIADA': 'Iniciadas',
-                            'TRATADA': 'Tratadas'
-                        })
+                    for c in ['NOVA', 'INICIADA', 'TRATADA']:
+                        if c not in df_prod_atual.columns:
+                            df_prod_atual[c] = 0
+                            
+                    # 3. Merge Oficial x Real
+                    if not df_base_final.empty:
+                        df_prod = pd.merge(df_base_final, df_prod_atual, on='Região', how='left')
+                    else:
+                        df_prod = df_prod_atual
+                        df_prod['Responsável'] = df_prod.get('Resp_Antigo', 'Não Atribuído')
                         
-                        df_prod['Total'] = df_prod['Novas'] + df_prod['Iniciadas'] + df_prod['Tratadas']
+                    df_prod['Novas'] = df_prod.get('NOVA', 0).fillna(0).astype(int)
+                    df_prod['Iniciadas'] = df_prod.get('INICIADA', 0).fillna(0).astype(int)
+                    df_prod['Tratadas'] = df_prod.get('TRATADA', 0).fillna(0).astype(int)
+                    
+                    if df_prod.empty:
+                        st.info("Nenhuma região cadastrada para exibir.")
+                    else:
                         df_prod.columns.name = None
-                        
-                        st.dataframe(df_prod[['Região', 'Responsável', 'Novas', 'Iniciadas', 'Tratadas', 'Total']], use_container_width=True, hide_index=True)
+                        st.dataframe(df_prod[['Região', 'Responsável', 'Novas', 'Iniciadas', 'Tratadas']], use_container_width=True, hide_index=True)
                     
                     # --- GRÁFICOS DE EVOLUÇÃO ---
                     st.markdown("---")
