@@ -705,14 +705,31 @@ def travar_solicitacoes(df_novas):
 init_database()
 
 def registrar_eventos_diarios(df_antigo, df_novo):
-    """Gera eventos de produtividade baseados na diferença entre extrações."""
-    if df_novo is None or df_novo.empty:
-        return
-        
-    if df_antigo is None or df_antigo.empty:
-        df_antigo = pd.DataFrame(columns=['Solicitação', 'Ref_Regiao', 'Situação'])
+    """
+    Compara o df_antigo com o df_novo para registrar eventos de produtividade
+    no banco de dados (NOVA, INICIADA, TRATADA).
+    Ignora a primeira execução do dia para não herdar tratadas da madrugada.
+    """
     try:
         conn = get_connection_config()
+        cursor = conn.cursor()
+        
+        # --- PREVENÇÃO DA MADRUGADA ---
+        # Verifica se já houve alguma extração salva HOJE no banco
+        cursor.execute("SELECT COUNT(DISTINCT Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) = date('now', 'localtime')")
+        extracoes_hoje = cursor.fetchone()[0]
+        
+        if extracoes_hoje == 0:
+            print("[DB] Primeira extração do dia detectada. Ignorando delta da madrugada para começar produtividade zerada.")
+            conn.close()
+            return
+            
+        if df_antigo is None or df_antigo.empty:
+            df_antigo = pd.DataFrame(columns=['Solicitação', 'Ref_Regiao', 'Situação'])
+            
+        if df_novo is None or df_novo.empty:
+            return
+            
         # Carrega dicionarios
         df_travadas = pd.read_sql("SELECT solicitacao, matricula FROM solicitacoes_travadas", conn)
         travadas_dict = df_travadas.set_index('solicitacao')['matricula'].to_dict() if not df_travadas.empty else {}
