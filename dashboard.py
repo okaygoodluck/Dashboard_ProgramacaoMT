@@ -464,10 +464,12 @@ if df is not None:
         df['Matricula_Regiao'] = None
         df = df.drop(columns=['temp_sigla'])
 
+    col_sol = next((c for c in df.columns if 'Solicit' in c and 'Status' not in c), 'Solicitação')
+
     # 2. Verifica se há travas no banco para solicitações em elaboração
     df_travadas = db_manager.get_solicitacoes_travadas()
     if not df_travadas.empty:
-        df['Solicitacao_str'] = df['Solicitação'].astype(str).str.strip()
+        df['Solicitacao_str'] = df[col_sol].astype(str).str.strip()
         df = df.merge(df_travadas, left_on='Solicitacao_str', right_on='solicitacao', how='left')
         
         # 3. Define quem é o Responsável Final (Trava prevalece sobre Regiao)
@@ -482,10 +484,10 @@ if df is not None:
     # 4. Grava novas travas no banco para solicitações "Em elaboração" que não estavam travadas
     # Se 'Is_Elaboracao' é True e ainda não estava na tabela de travas, ele salva a trava agora.
     solicitacoes_ja_travadas = df_travadas['solicitacao'].tolist() if not df_travadas.empty else []
-    novas_para_travar = df[(df['Is_Elaboracao'] == True) & (df['Matricula'].notna()) & (~df['Solicitação'].astype(str).str.strip().isin(solicitacoes_ja_travadas))]
+    novas_para_travar = df[(df['Is_Elaboracao'] == True) & (df['Matricula'].notna()) & (~df[col_sol].astype(str).str.strip().isin(solicitacoes_ja_travadas))]
     
     if not novas_para_travar.empty:
-        db_manager.travar_solicitacoes(novas_para_travar[['Solicitação', 'Matricula']])
+        db_manager.travar_solicitacoes(novas_para_travar[[col_sol, 'Matricula']].rename(columns={col_sol: 'Solicitação'}))
 
     # --- DEFINIÇÃO DE ESCOPO DE KPIs (Regra de Acesso) ---
     if st.session_state.user_nivel == "Usuario":
