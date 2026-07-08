@@ -383,8 +383,8 @@ def load_latest_data():
                     if 'Solicit' in str(df_mesao.columns.tolist()): 
                         # Identifica as colunas de união dinamicamente (devido a encoding/acentos)
                         # No Mesão, evita-se pegar a coluna "Status Solicitação" para o merge
-                        col_sol_db = next((c for c in df.columns if 'Solicit' in c and 'Status' not in c), 'Solicitação')
-                        col_sol_ms = next((c for c in df_mesao.columns if 'Solicit' in c and 'Status' not in c), 'Solicitação')
+                        col_sol_db = next((c for c in df.columns if 'Solicit' in c and 'Status' not in c), df.columns[0])
+                        col_sol_ms = next((c for c in df_mesao.columns if 'Solicit' in c and 'Status' not in c), df_mesao.columns[0])
                         
                         if col_sol_ms in df_mesao.columns and col_sol_db in df.columns:
                             # Limpa os dados pra evitar erros no merge
@@ -464,7 +464,7 @@ if df is not None:
         df['Matricula_Regiao'] = None
         df = df.drop(columns=['temp_sigla'])
 
-    col_sol = next((c for c in df.columns if 'Solicit' in c and 'Status' not in c), 'Solicitação')
+    col_sol = next((c for c in df.columns if 'Solicit' in c and 'Status' not in c), df.columns[0])
 
     # 2. Verifica se há travas no banco para solicitações em elaboração
     df_travadas = db_manager.get_solicitacoes_travadas()
