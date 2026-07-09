@@ -877,7 +877,7 @@ def get_performance_d1(nome_responsavel, dias=15):
             where_clauses.append(f"Ref_Regiao IN ('{regioes_str}')")
         if travadas:
             travadas_str = "','".join(travadas)
-            where_clauses.append(f"Solicitacao_ID IN ('{travadas_str}')")
+            where_clauses.append(f"\"Solicitação\" IN ('{travadas_str}')")
             
         if not where_clauses:
             df_perf['Pendentes'] = 0
@@ -897,7 +897,7 @@ def get_performance_d1(nome_responsavel, dias=15):
                 FROM demanda_historico dh
                 JOIN UltimasExtracoes ue ON dh.Data_Extracao = ue.max_extracao
                 WHERE ({where_sql})
-                AND Situacao_Norm IN ('APROVADA', 'EM ELABORAÇÃO')
+                AND \"Situação\" IN ('APROVADA', 'EM ELABORAÇÃO')
                 GROUP BY date(dh.Data_Extracao)
             """
             df_pendentes = pd.read_sql(query_pendentes, conn_data)
