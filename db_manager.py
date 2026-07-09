@@ -827,12 +827,19 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         if 'conn' in locals():
             conn.close()
 
-def get_performance_d1(nome_responsavel, dias=15):
+def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
     """
     Retorna consolidação D-1 para um responsável específico:
     Novas, Tratadas e Pendentes (Aprovada/Em elaboração) por dia.
     """
     import pandas as pd
+    import datetime
+    
+    if data_fim is None:
+        data_fim = datetime.date.today().strftime('%Y-%m-%d')
+    if data_inicio is None:
+        data_inicio = (datetime.date.today() - datetime.timedelta(days=15)).strftime('%Y-%m-%d')
+        
     conn_app = get_connection_config()
     conn_data = get_connection_write()
     try:
@@ -850,7 +857,7 @@ def get_performance_d1(nome_responsavel, dias=15):
                 COUNT(*) as qtd
             FROM eventos_diarios
             WHERE matricula_responsavel = '{matricula}'
-            AND date(data_evento) >= date('now', 'localtime', '-{dias} days')
+            AND date(data_evento) BETWEEN '{data_inicio}' AND '{data_fim}'
             GROUP BY date(data_evento), tipo_evento
         """
         df_eventos = pd.read_sql(query_eventos, conn_app)
@@ -888,7 +895,7 @@ def get_performance_d1(nome_responsavel, dias=15):
                 WITH UltimasExtracoes AS (
                     SELECT date(Data_Extracao) as data, MAX(Data_Extracao) as max_extracao
                     FROM demanda_historico
-                    WHERE date(Data_Extracao) >= date('now', 'localtime', '-{dias} days')
+                    WHERE date(Data_Extracao) BETWEEN '{data_inicio}' AND '{data_fim}'
                     GROUP BY date(Data_Extracao)
                 )
                 SELECT 

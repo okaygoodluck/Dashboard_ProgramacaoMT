@@ -1261,13 +1261,23 @@ if df is not None:
                         todos_usuarios_d1 = sorted(df_eventos_all['nome_responsavel'].dropna().unique().tolist())
                         
                         resp_d1 = st.selectbox("Selecione o Responsável:", options=todos_usuarios_d1, key="d1_responsavel")
-                        dias_d1 = st.slider("Histórico (dias):", min_value=7, max_value=60, value=15, step=1, key="d1_dias")
+                        import datetime
+                        hoje = datetime.date.today()
+                        data_inicio_padrao = hoje - datetime.timedelta(days=15)
+                        
+                        datas_d1 = st.date_input(
+                            "Período:",
+                            value=(data_inicio_padrao, hoje),
+                            max_value=hoje,
+                            key="d1_periodo"
+                        )
                         
                         st.info("📊 **D-1**\n\nConsolida as demandas que ENTRARAM (Novas), as FEITAS (Tratadas) e o ESTOQUE (Pendentes) para o dia seguinte.")
                         
                     with col_d1_chart:
-                        if resp_d1:
-                            df_perf = db_manager.get_performance_d1(resp_d1, dias=dias_d1)
+                        if resp_d1 and len(datas_d1) == 2:
+                            d1_inicio, d1_fim = datas_d1
+                            df_perf = db_manager.get_performance_d1(resp_d1, data_inicio=d1_inicio.strftime('%Y-%m-%d'), data_fim=d1_fim.strftime('%Y-%m-%d'))
                             
                             if not df_perf.empty:
                                 df_perf['Data_Exibicao'] = pd.to_datetime(df_perf['Data']).dt.strftime('%d/%m/%Y')
@@ -1297,11 +1307,11 @@ if df is not None:
                                 # Adicionando Tabela Detalhada para Conferência
                                 with st.expander("🔎 Ver Detalhes das Solicitações Tratadas"):
                                     # Filtrar eventos TRATADAS do usuário nos últimos X dias
-                                    data_limite = (pd.Timestamp.now() - pd.Timedelta(days=dias_d1)).strftime('%Y-%m-%d')
                                     df_tratadas_detalhe = df_eventos_all[
                                         (df_eventos_all['nome_responsavel'] == resp_d1) & 
                                         (df_eventos_all['tipo_evento'] == 'TRATADA') &
-                                        (df_eventos_all['data'] >= data_limite)
+                                        (df_eventos_all['data'] >= d1_inicio.strftime('%Y-%m-%d')) &
+                                        (df_eventos_all['data'] <= d1_fim.strftime('%Y-%m-%d'))
                                     ].copy()
                                     
                                     if not df_tratadas_detalhe.empty:
