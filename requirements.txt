@@ -2,7 +2,6 @@ playwright==1.59.0
 pandas==3.0.2
 openpyxl==3.1.5
 streamlit==1.57.0
-schedule==1.2.2
 streamlit-autorefresh==1.0.1
 numpy==2.4.4
 altair==6.1.0

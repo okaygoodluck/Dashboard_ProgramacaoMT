@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
+import sys
 import altair as alt
 import glob
 import os
 import numpy as np
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
 import db_manager
 import extra_streamlit_components as stx
@@ -32,13 +33,18 @@ from views.tab_detalhes import render_tab_detalhes
 from views.tab_config import render_tab_config
 
 # Inicializa banco de dados de sessões no startup
-# Inicializa banco de dados de sessões no startup
 
 # Configuração da página (Deve ser a primeira linha de comando Streamlit)
 st.set_page_config(
     page_title="Centro de Controle da Programação",
     page_icon="📊",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'Get Help': None,
+        'Report a bug': None,
+        'About': None
+    }
 )
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
@@ -61,8 +67,8 @@ if st.session_state.get('clear_token_soon'):
 
 # 1. Tenta reconectar se não estiver logado
 if not st.session_state.logged_in:
-    # Ordem de prioridade: Cookie Manager -> Query Param
-    token_auth = cookie_manager.get("control_token") or st.query_params.get("ctoken")
+    # Ordem de prioridade: Session State (Novo Login) -> Cookie Manager -> Query Param
+    token_auth = st.session_state.get('login_token_ready') or cookie_manager.get("control_token") or st.query_params.get("ctoken")
     
     if token_auth:
         user_data = db_manager.validar_token_sessao(token_auth)
@@ -73,20 +79,25 @@ if not st.session_state.logged_in:
             st.session_state.user_nivel = user_data[2]
             st.session_state.senha_provisoria = bool(user_data[3])
             
-            # Se o token veio pela URL (novo login), assamos ele no Cookie Manager
-            if st.query_params.get("ctoken"):
+            # Se o token for novo (veio da tela de login ou da URL), assamos ele no Cookie Manager
+            if st.session_state.get('login_token_ready') or st.query_params.get("ctoken"):
                 cookie_manager.set("control_token", token_auth, max_age=2592000)
-                # Marcar para limpar a URL no próximo clique, garantindo que o cookie tenha tempo de renderizar
+                # Marcar para limpar a URL e o state no próximo clique, garantindo que o cookie tenha tempo de renderizar
                 st.session_state['clear_token_soon'] = True
+                
+                if 'login_token_ready' in st.session_state:
+                    st.session_state.pop('login_token_ready')
         else:
             # Token inválido: limpa rastros
             cookie_manager.delete("control_token")
             if st.query_params.get("ctoken"):
                 st.query_params.clear()
+            if 'login_token_ready' in st.session_state:
+                st.session_state.pop('login_token_ready')
 
 # 2. Bloqueio de Acesso Global
 if not st.session_state.logged_in:
-    login_screen()
+    login_screen(cookie_manager)
     st.stop()
 
 # 3. Verificação de Senha Provisória
@@ -94,9 +105,7 @@ if st.session_state.get('senha_provisoria'):
     change_password_screen()
     st.stop()
 
-# 4. Sincronização de Manutenção (Oculto)
-if st.session_state.logged_in:
-    pass
+
 
 # --- CONFIGURAÇÃO DE TEMA ---
 # O tema agora é gerenciado nativamente pelo menu do Streamlit (Settings > Theme)
@@ -152,7 +161,7 @@ def calcular_dias_uteis_restantes(data_inicio):
         try:
             # Tenta formatos comuns PT-BR
             data_inicio = pd.to_datetime(data_inicio, dayfirst=True)
-        except:
+        except Exception:
             return None
             
     hoje = pd.Timestamp.now().normalize() # Data de hoje sem hora
@@ -256,7 +265,7 @@ def render_tab_calendario():
             html_content = f.read()
         
         # Sincronização de Tema: Injeta script para forçar o modo escuro se necessário
-        is_dark = st.session_state.get('control_theme', 'Dark') == 'Dark'
+        is_dark = True  # TODO: Detectar tema nativo do Streamlit
         theme_script = """
         <script>
             window.onload = function() {
@@ -281,9 +290,6 @@ def render_tab_calendario():
 # Função para carregar o arquivo mais recente (AGORA VIA BANCO DE DADOS)
 @st.cache_data(ttl=60)  # Cache de 1 minuto para não reler banco toda hora
 def load_latest_data():
-    # Quebra de cache: forçando o Streamlit a ler a nova função de datas atualizada
-    import db_manager
-    
     # 1. Tenta carregar do Banco de Dados
     df = db_manager.carregar_dados_recentes()
     
@@ -304,7 +310,7 @@ def load_latest_data():
             arquivo_mais_recente = max(arquivos, key=os.path.getctime)
             try:
                 df = pd.read_excel(arquivo_mais_recente)
-            except:
+            except Exception:
                 return None, None, None, None, None, None, None
         else:
             return None, None, None, None, None, None, None
@@ -329,11 +335,21 @@ def load_latest_data():
             col_urgencia = next((c for c in cols if 'urg' in c.lower()), None)
             col_finalidade = next((c for c in cols if 'finalidade' in c.lower()), None)
             
-            # Garante que a coluna Finalidade exista para a função (renomeia se achar)
+            # Garante que colunas essenciais existam com os nomes esperados para a função
             if col_finalidade:
                 df['Finalidade'] = df[col_finalidade]
             else:
                 df['Finalidade'] = ''
+                
+            if col_situacao:
+                df['Situação'] = df[col_situacao]
+            else:
+                df['Situação'] = ''
+                
+            if col_urgencia:
+                df['Urgência'] = df[col_urgencia]
+            else:
+                df['Urgência'] = ''
 
             # Aplica regra de status
             df['Status_Prazo'] = df.apply(verificar_status_atraso, axis=1)
@@ -344,14 +360,14 @@ def load_latest_data():
                 # Se veio do banco, pega da primeira linha (assume que todas são iguais do snapshot)
                 try:
                     data_extracao = pd.to_datetime(df['Data_Extracao'].iloc[0])
-                except:
+                except Exception:
                     data_extracao = datetime.now()
             elif 'arquivo_mais_recente' in locals():
                 # Se veio do Excel
                 try:
                     timestamp = os.path.getmtime(arquivo_mais_recente)
                     data_extracao = datetime.fromtimestamp(timestamp)
-                except:
+                except Exception:
                     data_extracao = datetime.now()
             else:
                  # Fallback
@@ -532,7 +548,7 @@ if df is not None:
         if default_max.weekday() == 4:
             default_max += pd.Timedelta(days=2)
             
-    except: 
+    except Exception: 
         default_max = hoje_date + pd.Timedelta(days=15)
         
     min_value_picker = min(min_date, hoje_date)
@@ -620,11 +636,7 @@ if df is not None:
             70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(52, 211, 153, 0); }
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
         }
-        @keyframes pulse-red {
-            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-        }
+        /* pulse-red definido em ccp_ui.py */
         @keyframes glow-green {
             0% { box-shadow: 0 0 5px rgba(16, 185, 129, 0.1); }
             50% { box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
@@ -687,7 +699,6 @@ if df is not None:
 
 
     # --- MOTOR DE ATIVAÇÃO ---
-    inject_ui_assets()
 
     # --- SISTEMA DE ALERTAS (Notificações Persistentes) ---
     if 'control_dismissed' not in st.session_state:
@@ -706,6 +717,10 @@ if df is not None:
 
     if not alertas_pendentes.empty:
         st.markdown(f'<h3 style="color: #ef4444; font-size: 0.8rem; margin-bottom: var(--space-sm); font-weight: 700; display: flex; align-items: center; gap: 8px;"><span style="background: #ef4444; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.6rem;">!</span> Solicitações Fora do Prazo ({len(alertas_pendentes)})</h3>', unsafe_allow_html=True)
+        
+        # Guarda contra ausência da coluna Tem_Email (só existe se o extrator rodou com Outlook)
+        if 'Tem_Email' not in alertas_pendentes.columns:
+            alertas_pendentes['Tem_Email'] = False
         
         # 4. Separar com email vs sem email (comparação explícita para evitar KeyError)
         alertas_com_email = alertas_pendentes[alertas_pendentes['Tem_Email'] == True].copy()
@@ -845,7 +860,7 @@ if df is not None:
             st.info("Nenhuma solicitação encontrada para este filtro.")
         else:
             # Exibir colunas mais relevantes primeiro
-            cols_prioridade = ['Solicitação', 'Responsavel', 'Região', col_malha, 'Status_Prazo', 'Dias_Uteis_Restantes']
+            cols_prioridade = [col_sol, 'Responsavel', col_regiao, col_malha, 'Status_Prazo', 'Dias_Uteis_Restantes']
             cols_exibicao = [c for c in cols_prioridade if c in df_kpi.columns]
             cols_restantes = [c for c in df_kpi.columns if c not in cols_exibicao]
             st.dataframe(df_kpi[cols_exibicao + cols_restantes], use_container_width=True, hide_index=True)
@@ -1186,13 +1201,15 @@ if df is not None:
                             data_min = pd.to_datetime(datas_unicas[0]).date()
                             data_max = pd.to_datetime(datas_unicas[-1]).date()
                         else:
-                            from datetime import date
                             data_min = data_max = date.today()
                             
+                        limite = date(2026, 7, 7)
+                        data_min = max(data_min, limite)
+                        
                         datas_selecionadas = st.date_input(
-                            "Período:", 
-                            value=(data_min, data_max), 
-                            min_value=data_min, 
+                            "Período (a partir de 07/07):", 
+                            value=(max(data_min, data_max - timedelta(days=15)), data_max), 
+                            min_value=limite, 
                             max_value=data_max,
                             key="hist_data_usr"
                         )
@@ -1261,13 +1278,14 @@ if df is not None:
                         todos_usuarios_d1 = sorted(df_eventos_all['nome_responsavel'].dropna().unique().tolist())
                         
                         resp_d1 = st.selectbox("Selecione o Responsável:", options=todos_usuarios_d1, key="d1_responsavel")
-                        import datetime
-                        hoje = datetime.date.today()
-                        data_inicio_padrao = hoje - datetime.timedelta(days=15)
+                        hoje = date.today()
+                        limite_inferior = date(2026, 7, 7)
+                        data_inicio_padrao = max(limite_inferior, hoje - timedelta(days=15))
                         
                         datas_d1 = st.date_input(
-                            "Período:",
+                            "Período (a partir de 07/07):",
                             value=(data_inicio_padrao, hoje),
+                            min_value=limite_inferior,
                             max_value=hoje,
                             key="d1_periodo"
                         )
@@ -1336,7 +1354,10 @@ if df is not None:
                 else:
                     st.info("Nenhum evento de produtividade registrado no histórico.")
             except Exception as e:
-                st.error(f"Não foi possível carregar eventos: {e}")
+                import traceback
+                error_trace = traceback.format_exc()
+                print(f"ERRO CRÍTICO EM CARREGAR EVENTOS:\n{error_trace}")
+                st.error(f"Não foi possível carregar eventos: {e}\n\nDetalhes no console.")
 
 
 

@@ -82,14 +82,30 @@ def build_package():
         else:
             print(f" [!] AVISO: {f} não encontrado.")
 
-    # 3. Copiar pastas modulares
-    essential_folders = ['components', 'views', 'scripts', '.streamlit']
+    # 3. Copiar pastas modulares (apenas as necessárias para rodar)
+    essential_folders = ['components', 'views', '.streamlit']
     for folder in essential_folders:
         src = os.path.join(root_dir, folder)
         if os.path.exists(src):
-            # No caso da pasta scripts, vamos evitar copiar o próprio build_portable para não gerar loop
             shutil.copytree(src, os.path.join(dist_dir, folder), dirs_exist_ok=True)
             print(f" [OK] Pasta {folder}/")
+
+    # 3.1. Copiar apenas os scripts essenciais (excluir scripts de build e github)
+    essential_scripts = [
+        'agendador.py',
+        'iniciar_agendador.bat',
+        'configurar_credenciais.py',
+        'configurar_credenciais.bat',
+        'sync_emails.ps1'
+    ]
+    scripts_dest = os.path.join(dist_dir, 'scripts')
+    os.makedirs(scripts_dest, exist_ok=True)
+    print("[*] Copiando scripts essenciais...")
+    for script in essential_scripts:
+        src = os.path.join(root_dir, 'scripts', script)
+        if os.path.exists(src):
+            shutil.copy2(src, scripts_dest)
+            print(f" [OK] scripts/{script}")
 
     # 4. Sincronizar Python Portátil
     python_src = os.path.join(root_dir, 'python')
@@ -99,6 +115,25 @@ def build_package():
         print("[*] Preparando Runtime Python...")
         shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
         
+        # PRÉ-INSTALAR DEPENDÊNCIAS
+        print(" [*] Pré-instalando dependências no ambiente portátil...")
+        py_exe = os.path.join(python_dest, 'python.exe')
+        req_path = os.path.join(dist_dir, 'requirements.txt')
+        
+        import glob
+        pth_files = glob.glob(os.path.join(python_dest, "python*._pth"))
+        for pth in pth_files:
+            try: os.remove(pth)
+            except: pass
+
+        try:
+            env = os.environ.copy()
+            env["PYTHONNOUSERSITE"] = "1"
+            subprocess.run([py_exe, "-m", "pip", "install", "-r", req_path, "--disable-pip-version-check"], env=env, check=True)
+            print(" [OK] Dependências instaladas com sucesso no pacote portátil!")
+        except Exception as e:
+            print(f" [!] Erro ao instalar dependências: {e}")
+
         # MOVER DLLs para a raiz (Garante que o Windows encontre _socket, _ssl, etc.)
         dlls_dir = os.path.join(python_dest, 'DLLs')
         if os.path.exists(dlls_dir):
@@ -130,18 +165,6 @@ set "PY_EXE=%PY_DIR%\\python.exe"
 set PYTHONNOUSERSITE=1
 set PYTHONPATH=
 
-echo [*] Verificando dependencias (isso pode levar alguns instantes)...
-"%PY_EXE%" -m pip install -r requirements.txt --disable-pip-version-check
-if errorlevel 1 (
-    echo.
-    echo [AVISO] Falha ao checar bibliotecas (possivel bloqueio de rede).
-    echo Tentando iniciar o sistema mesmo assim...
-    echo.
-) else (
-    echo [OK] Todas as dependencias estao prontas.
-)
-
-echo.
 echo [*] Iniciando Dashboard CCP...
 "%PY_EXE%" -m streamlit run dashboard.py --server.fileWatcherType none --browser.gatherUsageStats false --server.headless true
 if errorlevel 1 (
@@ -151,7 +174,7 @@ if errorlevel 1 (
 """
     with open(os.path.join(dist_dir, "Iniciar_CCP.bat"), "w") as f:
         f.write(launch_script)
-    print(" [OK] Iniciar_CCP.bat criado (com auto-instalador).")
+    print(" [OK] Iniciar_CCP.bat criado (otimizado, sem verificacao de pip).")
 
     # 6. Criar Pacote ZIP Final
     print(f"[*] Criando pacote final {zip_name}...")

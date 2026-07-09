@@ -1,7 +1,12 @@
 import sqlite3
-import pandas as pd
 import datetime
+import pandas as pd
 import os
+import sys
+
+def get_agora_br():
+    """Retorna o horário atual em Brasília (UTC-3)."""
+    return datetime.datetime.utcnow() - datetime.timedelta(hours=3)
 
 # Nomes dos arquivos de banco de dados (Oficiais: CCP - Centro de Controle da Programação)
 DB_APP_NAME = "ccp_app.db"    # Persistente (Usuários, Configs)
@@ -162,7 +167,7 @@ def salvar_dados(df, regioes_confirmadas_vazias=None):
     try:
         # Adiciona data de extração apenas para os registros NOVOS (ou sobrescreve geral? O timestamp é do snapshot)
         # É melhor sobrescrever geral para o snapshot
-        timestamp = datetime.datetime.now()
+        timestamp = get_agora_br()
         df['Data_Extracao'] = timestamp
 
         # --- AUTO-MIGRAÇÃO DE COLUNAS ---
@@ -295,9 +300,8 @@ def atualizar_senha(matricula, nova_senha):
         conn.commit()
         return True
     except Exception as e:
-        error_msg = str(e)
-        print(f"[ERRO DB] Falha ao atualizar senha: {error_msg}")
-        return error_msg
+        print(f"[ERRO DB] Falha ao atualizar senha: {e}")
+        return False
     finally:
         conn.close()
 
@@ -504,7 +508,7 @@ def init_database():
             )
         ''')
 
-        # 4. Tabela de Histórico de KPIs Diários
+        # 5. Tabela de Histórico de KPIs Diários
         conn.execute('''
             CREATE TABLE IF NOT EXISTS vanguard_daily_kpis (
                 data_ref TEXT PRIMARY KEY,
@@ -518,7 +522,7 @@ def init_database():
             )
         ''')
 
-        # 5. Tabela de Eventos Diários
+        # 6. Tabela de Eventos Diários
         conn.execute('''
             CREATE TABLE IF NOT EXISTS eventos_diarios (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -530,7 +534,7 @@ def init_database():
             )
         ''')
 
-        # 5. Criar usuário ADM padrão se a tabela de usuários estiver vazia
+        # 7. Criar usuário ADM padrão se a tabela de usuários estiver vazia
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM usuarios")
         if cursor.fetchone()[0] == 0:
@@ -556,7 +560,7 @@ def gerar_token_sessao(matricula):
     import datetime
     
     token = secrets.token_urlsafe(32)
-    expiracao = datetime.datetime.now() + datetime.timedelta(days=30)
+    expiracao = get_agora_br() + datetime.timedelta(days=30)
     
     conn = get_connection_config()
     try:
@@ -581,7 +585,7 @@ def validar_token_sessao(token):
         cursor.execute('''
             SELECT matricula FROM sessoes_persistentes 
             WHERE token = ? AND data_expiracao > ?
-        ''', (token, datetime.datetime.now()))
+        ''', (token, get_agora_br()))
         result = cursor.fetchone()
         
         if result:
@@ -716,13 +720,17 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         
         # --- PREVENÇÃO DA MADRUGADA ---
         # Verifica se já houve alguma extração salva HOJE no banco
-        cursor.execute("SELECT COUNT(DISTINCT Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) = date('now', 'localtime')")
+        hoje_br = get_agora_br().strftime('%Y-%m-%d')
+        cursor.execute("SELECT COUNT(DISTINCT Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) = ?", (hoje_br,))
         extracoes_hoje = cursor.fetchone()[0]
         
+        data_evento_aplicar = get_agora_br().strftime('%Y-%m-%d %H:%M:%S')
         if extracoes_hoje == 0:
-            print("[DB] Primeira extração do dia detectada. Ignorando delta da madrugada para começar produtividade zerada.")
-            conn.close()
-            return
+            print("[DB] Primeira extração do dia detectada. Atribuindo eventos pendentes (madrugada) ao final do dia anterior para preservar estoque de hoje.")
+            cursor.execute("SELECT MAX(Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) < ?", (hoje_br,))
+            ultima_extracao = cursor.fetchone()[0]
+            if ultima_extracao:
+                data_evento_aplicar = ultima_extracao
             
         if df_antigo is None or df_antigo.empty:
             df_antigo = pd.DataFrame(columns=['Solicitação', 'Ref_Regiao', 'Situação'])
@@ -774,7 +782,7 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 regiao = row_nova.get('Ref_Regiao', '')
                 sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
                 matricula = get_responsavel(sol_id, regiao)
-                eventos_para_inserir.append((sol_id, 'NOVA', sigla, matricula))
+                eventos_para_inserir.append((sol_id, 'NOVA', sigla, matricula, data_evento_aplicar))
             else:
                 row_antiga = antigas_dict[sol_id]
                 sit_antiga = str(row_antiga.get('Situacao_Norm', '')).upper()
@@ -787,7 +795,7 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                     regiao = row_nova.get('Ref_Regiao', '')
                     sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
                     matricula = get_responsavel(sol_id, regiao)
-                    eventos_para_inserir.append((sol_id, 'INICIADA', sigla, matricula))
+                    eventos_para_inserir.append((sol_id, 'INICIADA', sigla, matricula, data_evento_aplicar))
                     
         # 2. Tratadas
         for sol_id, row_antiga in antigas_dict.items():
@@ -795,13 +803,14 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 regiao = row_antiga.get('Ref_Regiao', '')
                 sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
                 matricula = get_responsavel(sol_id, regiao)
-                eventos_para_inserir.append((sol_id, 'TRATADA', sigla, matricula))
+                eventos_para_inserir.append((sol_id, 'TRATADA', sigla, matricula, data_evento_aplicar))
                 
         if eventos_para_inserir:
             cursor = conn.cursor()
             
             # Anti-Duplicação: Verifica quais eventos já foram registrados hoje para essas solicitações
-            cursor.execute("SELECT solicitacao, tipo_evento FROM eventos_diarios WHERE date(data_evento) = date('now', 'localtime')")
+            hoje_br_dedup = get_agora_br().strftime('%Y-%m-%d')
+            cursor.execute("SELECT solicitacao, tipo_evento FROM eventos_diarios WHERE date(data_evento) = ?", (hoje_br_dedup,))
             existentes = set((str(row[0]).strip(), str(row[1]).strip()) for row in cursor.fetchall())
             
             eventos_unicos = []
@@ -813,8 +822,8 @@ def registrar_eventos_diarios(df_antigo, df_novo):
             
             if eventos_unicos:
                 cursor.executemany('''
-                    INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel, data_evento)
+                    VALUES (?, ?, ?, ?, ?)
                 ''', eventos_unicos)
                 conn.commit()
                 print(f"[DB] {len(eventos_unicos)} eventos registrados de produtividade.")
@@ -841,7 +850,7 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
         data_inicio = (datetime.date.today() - datetime.timedelta(days=15)).strftime('%Y-%m-%d')
         
     conn_app = get_connection_config()
-    conn_data = get_connection_write()
+    conn_data = get_connection_read()
     try:
         cursor = conn_app.cursor()
         cursor.execute("SELECT matricula FROM usuarios WHERE nome = ?", (nome_responsavel,))
@@ -850,17 +859,17 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             return pd.DataFrame()
         matricula = res[0]
         
-        query_eventos = f"""
+        query_eventos = """
             SELECT 
                 date(data_evento) as data,
                 tipo_evento,
                 COUNT(*) as qtd
             FROM eventos_diarios
-            WHERE matricula_responsavel = '{matricula}'
-            AND date(data_evento) BETWEEN '{data_inicio}' AND '{data_fim}'
+            WHERE matricula_responsavel = ?
+            AND date(data_evento) BETWEEN ? AND ?
             GROUP BY date(data_evento), tipo_evento
         """
-        df_eventos = pd.read_sql(query_eventos, conn_app)
+        df_eventos = pd.read_sql(query_eventos, conn_app, params=[matricula, data_inicio, data_fim])
         
         if df_eventos.empty:
             df_perf = pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Pendentes'])
@@ -879,12 +888,15 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
         travadas = [row[0] for row in cursor.fetchall()]
         
         where_clauses = []
+        params_pendentes = [data_inicio, data_fim]
         if regioes:
-            regioes_str = "','".join(regioes)
-            where_clauses.append(f"Ref_Regiao IN ('{regioes_str}')")
+            placeholders_r = ','.join(['?' for _ in regioes])
+            where_clauses.append(f"Ref_Regiao IN ({placeholders_r})")
+            params_pendentes.extend(regioes)
         if travadas:
-            travadas_str = "','".join(travadas)
-            where_clauses.append(f"\"Solicitação\" IN ('{travadas_str}')")
+            placeholders_t = ','.join(['?' for _ in travadas])
+            where_clauses.append(f"\"Solicitação\" IN ({placeholders_t})")
+            params_pendentes.extend(travadas)
             
         if not where_clauses:
             df_perf['Pendentes'] = 0
@@ -895,7 +907,7 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 WITH UltimasExtracoes AS (
                     SELECT date(Data_Extracao) as data, MAX(Data_Extracao) as max_extracao
                     FROM demanda_historico
-                    WHERE date(Data_Extracao) BETWEEN '{data_inicio}' AND '{data_fim}'
+                    WHERE date(Data_Extracao) BETWEEN ? AND ?
                     GROUP BY date(Data_Extracao)
                 )
                 SELECT 
@@ -904,10 +916,10 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 FROM demanda_historico dh
                 JOIN UltimasExtracoes ue ON dh.Data_Extracao = ue.max_extracao
                 WHERE ({where_sql})
-                AND \"Situação\" IN ('APROVADA', 'EM ELABORAÇÃO')
+                AND "Situação" IN ('APROVADA', 'EM ELABORAÇÃO')
                 GROUP BY date(dh.Data_Extracao)
             """
-            df_pendentes = pd.read_sql(query_pendentes, conn_data)
+            df_pendentes = pd.read_sql(query_pendentes, conn_data, params=params_pendentes)
             
             if not df_perf.empty and not df_pendentes.empty:
                 df_perf = pd.merge(df_perf, df_pendentes, on='Data', how='outer').fillna(0)

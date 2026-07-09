@@ -186,3 +186,9 @@ gerar_link_publico.py
 Erros/
 browsers/
 Pacote_Servidor/
+
+# Artefatos do CCP Build / Sandbox
+*_TESTE.db
+*_HOMOLOG.db
+CCP_*.zip
+CCP_*_Ready/

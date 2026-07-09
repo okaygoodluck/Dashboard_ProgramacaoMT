@@ -5,7 +5,7 @@ def circular_progress_ring(label, value, color="#22d3ee"):
     """Gera um anel de progresso circular dinâmico."""
     try:
         val = float(value.replace('%', '')) if isinstance(value, str) else float(value)
-    except:
+    except Exception:
         val = 0
     
     radius = 35

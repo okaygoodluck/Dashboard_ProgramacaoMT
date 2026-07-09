@@ -152,51 +152,6 @@ def inject_ui_css(theme="Dark"):
             100% {{ box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }}
         }}
 
-        /* Redesenho de Abas (Botões de Comando) */
-        div[data-testid="stTabs"] {{
-            border-bottom: 1px solid var(--border-color) !important;
-            margin-top: 35px !important;
-            margin-bottom: 20px !important;
-            gap: 8px !important;
-        }}
-
-        button[data-baseweb="tab"] {{
-            font-family: 'Space Grotesk', sans-serif !important;
-            font-size: 0.9rem !important;
-            font-weight: 700 !important;
-            text-transform: uppercase !important;
-            letter-spacing: 1.2px !important;
-            padding: 10px 24px !important;
-            background-color: rgba(255, 255, 255, 0.02) !important;
-            border: 1px solid var(--border-color) !important;
-            border-radius: 12px 12px 0 0 !important;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-            color: var(--text-secondary) !important;
-            margin-right: 4px !important;
-            height: 52px !important;
-            border-bottom: none !important;
-        }}
-
-        button[data-baseweb="tab"]:hover {{
-            color: var(--accent-color) !important;
-            background-color: var(--surface-hover) !important;
-            border-color: var(--accent-color) !important;
-            transform: translateY(-2px);
-        }}
-
-        button[aria-selected="true"] {{
-            color: var(--accent-color) !important;
-            background: linear-gradient(180deg, rgba(34, 211, 238, 0.1) 0%, rgba(34, 211, 238, 0) 100%) !important;
-            border-color: var(--accent-color) !important;
-            border-bottom: 2px solid var(--accent-color) !important;
-            box-shadow: 0 -10px 20px rgba(34, 211, 238, 0.05) !important;
-        }}
-
-        /* Ajuste do conteúdo das abas */
-        div[data-baseweb="tab-panel"] {{
-            padding-top: var(--space-md) !important;
-        }}
-
         /* Scrollbar */
         ::-webkit-scrollbar-thumb:hover {{ background: var(--accent-color); }}
 
@@ -276,50 +231,6 @@ def inject_ui_css(theme="Dark"):
         /* Sidebar Icons e Textos */
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
             color: var(--text-primary) !important;
-        }}
-        
-        /* Abas Dinâmicas e Responsivas (Modo Symmetry - Sem Scroll) */
-        div[data-testid="stTabList"] {{
-            flex-wrap: wrap !important;
-            display: flex !important;
-            height: auto !important;
-            gap: 4px !important;
-            border-bottom: none !important;
-            overflow: visible !important;
-        }}
-
-        /* Oculta automaticamente as setas de scroll do Streamlit */
-        div[data-testid="stTabList"] > div:has(button) {{
-            display: none !important;
-        }}
-        
-        div[data-testid="stTabList"] button {{
-            flex: 1 1 auto !important;
-            min-width: 130px !important;
-            max-width: 100% !important;
-            height: 38px !important;
-            margin: 2px !important;
-            border-radius: 8px !important;
-            background-color: var(--surface-color) !important;
-            border: 1px solid var(--border-color) !important;
-            transition: all 0.3s ease !important;
-            padding: 0 10px !important;
-            font-size: 0.85rem !important;
-            white-space: nowrap !important;
-        }}
-
-        div[data-testid="stTabList"] button:hover {{
-            background-color: var(--surface-hover) !important;
-            transform: translateY(-1px) !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
-        }}
-        
-        div[data-testid="stTabList"] button[aria-selected="true"] {{
-            background-color: var(--card-bg) !important;
-            border: 1px solid var(--accent-color) !important;
-            border-bottom: 3px solid var(--accent-color) !important;
-            font-weight: 700 !important;
-            color: var(--accent-color) !important;
         }}
 
         /* Anti-Ghost: Oculta componentes técnicos invisíveis */
@@ -429,15 +340,9 @@ def login_screen(cookie_manager=None):
                     # Gera um TOKEN REAL de persistência no Banco de Dados
                     session_token = db_manager.gerar_token_sessao(matricula)
                     if session_token:
-                        if cookie_manager:
-                            cookie_manager.set("control_token", session_token, max_age=2592000)
-                            # Simula um pequeno atraso para o componente renderizar o cookie no browser
-                            # e recarrega a página automaticamente usando session_state para evitar piscar.
-                            st.session_state['login_efetuado'] = True
-                        else:
-                            st.query_params["ctoken"] = session_token
-                    
-                    st.rerun()
+                        # Passamos o token instantaneamente para o dashboard.py via session_state (100% seguro contra reruns)
+                        st.session_state['login_token_ready'] = session_token
+                        st.rerun()
                 else:
                     st.error("Credenciais inválidas.")
         
@@ -463,9 +368,9 @@ def change_password_screen():
                 st.error("As senhas não coincidem.")
             else:
                 result = db_manager.atualizar_senha(st.session_state.user_matricula, new_pwd)
-                if result is True:
+                if result:
                     st.success("Senha atualizada com sucesso!")
                     st.session_state.senha_provisoria = False
                     st.rerun()
                 else:
-                    st.error(f"Erro ao atualizar senha no banco de dados. Detalhe: {result}")
+                    st.error("Erro ao atualizar senha no banco de dados.")

@@ -43,13 +43,30 @@ def build_server_package():
             shutil.copy2(src, dist_dir)
             print(f" [OK] {f}")
 
-    # 3. Copiar pastas modulares
-    essential_folders = ['components', 'views', 'scripts', '.streamlit']
+    # 3. Copiar pastas modulares (apenas as necessárias para rodar)
+    essential_folders = ['components', 'views', '.streamlit']
     for folder in essential_folders:
         src = os.path.join(root_dir, folder)
         if os.path.exists(src):
             shutil.copytree(src, os.path.join(dist_dir, folder), dirs_exist_ok=True)
             print(f" [OK] Pasta {folder}/")
+
+    # 3.1. Copiar apenas os scripts essenciais (excluir scripts de build e github)
+    essential_scripts = [
+        'agendador.py',
+        'iniciar_agendador.bat',
+        'configurar_credenciais.py',
+        'configurar_credenciais.bat',
+        'sync_emails.ps1'
+    ]
+    scripts_dest = os.path.join(dist_dir, 'scripts')
+    os.makedirs(scripts_dest, exist_ok=True)
+    print("[*] Copiando scripts essenciais...")
+    for script in essential_scripts:
+        src = os.path.join(root_dir, 'scripts', script)
+        if os.path.exists(src):
+            shutil.copy2(src, scripts_dest)
+            print(f" [OK] scripts/{script}")
 
     # 4. Criar ZIP (Sem a pasta python)
     print(f"[*] Criando pacote para servidor {zip_name}...")

@@ -77,7 +77,7 @@ def render_tab_detalhes(df_filtered, col_situacao):
             try:
                 df_detalhe_view[c] = pd.to_datetime(df_detalhe_view[c], dayfirst=True)
                 col_config[c] = st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm")
-            except:
+            except Exception:
                 pass
 
     # 4. Ordenar por padrão pela data início em ordem crescente
