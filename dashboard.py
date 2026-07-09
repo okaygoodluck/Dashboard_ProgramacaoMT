@@ -1293,6 +1293,32 @@ if df is not None:
                                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                                 )
                                 st.plotly_chart(fig_d1, use_container_width=True)
+                                
+                                # Adicionando Tabela Detalhada para Conferência
+                                with st.expander("🔎 Ver Detalhes das Solicitações Tratadas"):
+                                    # Filtrar eventos TRATADAS do usuário nos últimos X dias
+                                    data_limite = (pd.Timestamp.now() - pd.Timedelta(days=dias_d1)).strftime('%Y-%m-%d')
+                                    df_tratadas_detalhe = df_eventos_all[
+                                        (df_eventos_all['nome_responsavel'] == resp_d1) & 
+                                        (df_eventos_all['tipo_evento'] == 'TRATADA') &
+                                        (df_eventos_all['data'] >= data_limite)
+                                    ].copy()
+                                    
+                                    if not df_tratadas_detalhe.empty:
+                                        # Organizar e formatar para exibição
+                                        df_tratadas_detalhe = df_tratadas_detalhe.sort_values(by='data_evento', ascending=False)
+                                        df_tratadas_detalhe['Data/Hora'] = pd.to_datetime(df_tratadas_detalhe['data_evento']).dt.strftime('%d/%m/%Y %H:%M:%S')
+                                        st.dataframe(
+                                            df_tratadas_detalhe[['Data/Hora', 'solicitacao', 'regiao']],
+                                            use_container_width=True,
+                                            hide_index=True,
+                                            column_config={
+                                                "solicitacao": st.column_config.TextColumn("Solicitação"),
+                                                "regiao": st.column_config.TextColumn("Região")
+                                            }
+                                        )
+                                    else:
+                                        st.info("Nenhuma solicitação tratada encontrada nesse período.")
                             else:
                                 st.warning(f"Não há dados consolidados de D-1 para {resp_d1} no período selecionado.")
                         
