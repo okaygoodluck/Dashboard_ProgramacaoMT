@@ -891,7 +891,7 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
         params_pendentes = [data_inicio, data_fim]
         if regioes:
             placeholders_r = ','.join(['?' for _ in regioes])
-            where_clauses.append(f"Ref_Regiao IN ({placeholders_r})")
+            where_clauses.append(f"SUBSTR(Ref_Regiao, 1, 2) IN ({placeholders_r})")
             params_pendentes.extend(regioes)
         if travadas:
             placeholders_t = ','.join(['?' for _ in travadas])
@@ -916,7 +916,7 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 FROM demanda_historico dh
                 JOIN UltimasExtracoes ue ON dh.Data_Extracao = ue.max_extracao
                 WHERE ({where_sql})
-                AND "Situação" IN ('APROVADA', 'EM ELABORAÇÃO')
+                AND "Situação" IN ('APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO')
                 GROUP BY date(dh.Data_Extracao)
             """
             df_pendentes = pd.read_sql(query_pendentes, conn_data, params=params_pendentes)
