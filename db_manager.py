@@ -730,6 +730,11 @@ def registrar_snapshot_pendentes(df_atual):
         cursor = conn.cursor()
         data_hoje = get_agora_br().strftime('%Y-%m-%d')
         
+        # --- BLOQUEIO TEMPORÁRIO (DADO SUJO) ---
+        # Ignora gravações históricas até amanhã, para iniciar do zero.
+        if get_agora_br().strftime('%Y-%m-%d') < '2026-07-11':
+            return
+        
         # Obter todos os usuários com regiões ou travadas
         cursor.execute("SELECT DISTINCT matricula_responsavel FROM regioes_responsaveis")
         users_regioes = set(row[0] for row in cursor.fetchall())
@@ -791,26 +796,12 @@ def registrar_eventos_diarios(df_antigo, df_novo):
     try:
         conn = get_connection_config()
         cursor = conn.cursor()
-        
-        # Para consultar o historico precisamos da conexao de escrita (demanda.db)
-        conn_hist = get_connection_write()
-        cursor_hist = conn_hist.cursor()
-        
-        # --- PREVENÇÃO DA MADRUGADA ---
-        # Verifica se já houve alguma extração salva HOJE no banco
-        hoje_br = get_agora_br().strftime('%Y-%m-%d')
-        cursor_hist.execute("SELECT COUNT(DISTINCT Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) = ?", (hoje_br,))
-        extracoes_hoje = cursor_hist.fetchone()[0]
-        
         data_evento_aplicar = get_agora_br().strftime('%Y-%m-%d %H:%M:%S')
-        if extracoes_hoje == 0:
-            print("[DB] Primeira extração do dia detectada. Atribuindo eventos pendentes (madrugada) ao final do dia anterior para preservar estoque de hoje.")
-            cursor_hist.execute("SELECT MAX(Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) < ?", (hoje_br,))
-            ultima_extracao = cursor_hist.fetchone()[0]
-            if ultima_extracao:
-                data_evento_aplicar = str(ultima_extracao)[:19]
-                
-        conn_hist.close()
+        
+        # --- BLOQUEIO TEMPORÁRIO (DADO SUJO) ---
+        # Ignora gravações históricas até amanhã, para iniciar do zero.
+        if get_agora_br().strftime('%Y-%m-%d') < '2026-07-11':
+            return
             
         if df_antigo is None or df_antigo.empty:
             df_antigo = pd.DataFrame(columns=['Solicitação', 'Ref_Regiao', 'Situação'])
