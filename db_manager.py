@@ -163,6 +163,12 @@ def salvar_dados(df, regioes_confirmadas_vazias=None):
     except Exception as e:
         print(f"[DB] Erro ao disparar registro de eventos: {e}")
 
+    # --- SNAPSHOT DE PENDENTES (Para D-1 independente do histórico) ---
+    try:
+        registrar_snapshot_pendentes(df)
+    except Exception as e:
+        print(f"[DB] Erro ao salvar snapshot de pendentes: {e}")
+
     conn = get_connection_write()
     try:
         # Adiciona data de extração apenas para os registros NOVOS (ou sobrescreve geral? O timestamp é do snapshot)
@@ -534,7 +540,19 @@ def init_database():
             )
         ''')
 
-        # 7. Criar usuário ADM padrão se a tabela de usuários estiver vazia
+        # 7. Tabela de Snapshot de Pendentes (Persistente para D-1)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS pendentes_snapshot (
+                data TEXT NOT NULL,
+                matricula TEXT NOT NULL,
+                pendentes_total INTEGER DEFAULT 0,
+                pendentes_iniciadas INTEGER DEFAULT 0,
+                pendentes_nao_iniciadas INTEGER DEFAULT 0,
+                PRIMARY KEY (data, matricula)
+            )
+        ''')
+
+        # 8. Criar usuário ADM padrão se a tabela de usuários estiver vazia
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM usuarios")
         if cursor.fetchone()[0] == 0:
@@ -705,6 +723,62 @@ def travar_solicitacoes(df_novas):
     finally:
         conn.close()
 
+def registrar_snapshot_pendentes(df_atual):
+    """Calcula e grava o snapshot de pendentes do dia para cada usuário com base nas regiões atribuídas e travadas."""
+    try:
+        conn = get_connection_config()
+        cursor = conn.cursor()
+        data_hoje = get_agora_br().strftime('%Y-%m-%d')
+        
+        # Obter todos os usuários com regiões ou travadas
+        cursor.execute("SELECT DISTINCT matricula_responsavel FROM regioes_responsaveis")
+        users_regioes = set(row[0] for row in cursor.fetchall())
+        
+        cursor.execute("SELECT DISTINCT matricula FROM solicitacoes_travadas")
+        users_travadas = set(row[0] for row in cursor.fetchall())
+        
+        todos_usuarios = users_regioes.union(users_travadas)
+        
+        # Filtra apenas demandas que contam como pendentes
+        df_pendentes = df_atual[df_atual['Situação'].isin(['APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO'])]
+        
+        for matricula in todos_usuarios:
+            cursor.execute("SELECT sigla_regiao FROM regioes_responsaveis WHERE matricula_responsavel = ?", (matricula,))
+            regioes = [row[0] for row in cursor.fetchall()]
+            
+            cursor.execute("SELECT solicitacao FROM solicitacoes_travadas WHERE matricula = ?", (matricula,))
+            travadas = [row[0] for row in cursor.fetchall()]
+            
+            # Filtra df para o usuário
+            mask = pd.Series(False, index=df_pendentes.index)
+            if regioes:
+                mask = mask | df_pendentes['Ref_Regiao'].str[:2].isin(regioes)
+            if travadas:
+                mask = mask | df_pendentes['Solicitação'].isin(travadas)
+                
+            df_user = df_pendentes[mask]
+            
+            total = len(df_user)
+            iniciadas = len(df_user[df_user['Situação'].isin(['EM ELABORAÇÃO', 'EM ELABORACAO'])])
+            nao_iniciadas = len(df_user[df_user['Situação'] == 'APROVADA'])
+            
+            # Insere ou atualiza
+            cursor.execute("""
+                INSERT INTO pendentes_snapshot (data, matricula, pendentes_total, pendentes_iniciadas, pendentes_nao_iniciadas)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(data, matricula) DO UPDATE SET
+                    pendentes_total=excluded.pendentes_total,
+                    pendentes_iniciadas=excluded.pendentes_iniciadas,
+                    pendentes_nao_iniciadas=excluded.pendentes_nao_iniciadas
+            """, (data_hoje, matricula, total, iniciadas, nao_iniciadas))
+            
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Erro no registro de snapshot de pendentes: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
 # Inicializa o banco de dados completo ao carregar o módulo
 init_database()
 
@@ -718,19 +792,25 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         conn = get_connection_config()
         cursor = conn.cursor()
         
+        # Para consultar o historico precisamos da conexao de escrita (demanda.db)
+        conn_hist = get_connection_write()
+        cursor_hist = conn_hist.cursor()
+        
         # --- PREVENÇÃO DA MADRUGADA ---
         # Verifica se já houve alguma extração salva HOJE no banco
         hoje_br = get_agora_br().strftime('%Y-%m-%d')
-        cursor.execute("SELECT COUNT(DISTINCT Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) = ?", (hoje_br,))
-        extracoes_hoje = cursor.fetchone()[0]
+        cursor_hist.execute("SELECT COUNT(DISTINCT Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) = ?", (hoje_br,))
+        extracoes_hoje = cursor_hist.fetchone()[0]
         
         data_evento_aplicar = get_agora_br().strftime('%Y-%m-%d %H:%M:%S')
         if extracoes_hoje == 0:
             print("[DB] Primeira extração do dia detectada. Atribuindo eventos pendentes (madrugada) ao final do dia anterior para preservar estoque de hoje.")
-            cursor.execute("SELECT MAX(Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) < ?", (hoje_br,))
-            ultima_extracao = cursor.fetchone()[0]
+            cursor_hist.execute("SELECT MAX(Data_Extracao) FROM demanda_historico WHERE date(Data_Extracao) < ?", (hoje_br,))
+            ultima_extracao = cursor_hist.fetchone()[0]
             if ultima_extracao:
-                data_evento_aplicar = ultima_extracao
+                data_evento_aplicar = str(ultima_extracao)[:19]
+                
+        conn_hist.close()
             
         if df_antigo is None or df_antigo.empty:
             df_antigo = pd.DataFrame(columns=['Solicitação', 'Ref_Regiao', 'Situação'])
@@ -808,9 +888,9 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         if eventos_para_inserir:
             cursor = conn.cursor()
             
-            # Anti-Duplicação: Verifica quais eventos já foram registrados hoje para essas solicitações
-            hoje_br_dedup = get_agora_br().strftime('%Y-%m-%d')
-            cursor.execute("SELECT solicitacao, tipo_evento FROM eventos_diarios WHERE date(data_evento) = ?", (hoje_br_dedup,))
+            # Anti-Duplicação: Verifica quais eventos já foram registrados para a data-alvo
+            data_dedup = data_evento_aplicar[:10]
+            cursor.execute("SELECT solicitacao, tipo_evento FROM eventos_diarios WHERE date(data_evento) = ?", (data_dedup,))
             existentes = set((str(row[0]).strip(), str(row[1]).strip()) for row in cursor.fetchall())
             
             eventos_unicos = []
@@ -875,51 +955,18 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             df_perf = pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Pendentes'])
         else:
             df_pivot = df_eventos.pivot(index='data', columns='tipo_evento', values='qtd').fillna(0).reset_index()
-            for col in ['NOVA', 'TRATADA']:
+            for col in ['NOVA', 'TRATADA', 'INICIADA']:
                 if col not in df_pivot.columns:
                     df_pivot[col] = 0
-            df_pivot = df_pivot.rename(columns={'data': 'Data', 'NOVA': 'Novas', 'TRATADA': 'Tratadas'})
-            df_perf = df_pivot[['Data', 'Novas', 'Tratadas']]
+            df_pivot = df_pivot.rename(columns={'data': 'Data', 'NOVA': 'Novas', 'TRATADA': 'Tratadas', 'INICIADA': 'Iniciadas'})
+            df_perf = df_pivot[['Data', 'Novas', 'Tratadas', 'Iniciadas']]
             
-        cursor.execute("SELECT sigla_regiao FROM regioes_responsaveis WHERE matricula_responsavel = ?", (matricula,))
-        regioes = [row[0] for row in cursor.fetchall()]
+        # --- PENDENTES: Ler do snapshot persistente (ccp_app.db) ---
+        cursor.execute("SELECT data, pendentes_total, pendentes_iniciadas, pendentes_nao_iniciadas FROM pendentes_snapshot WHERE matricula = ? AND data BETWEEN ? AND ? ORDER BY data", (matricula, data_inicio, data_fim))
+        rows_pend = cursor.fetchall()
         
-        cursor.execute("SELECT solicitacao FROM solicitacoes_travadas WHERE matricula = ?", (matricula,))
-        travadas = [row[0] for row in cursor.fetchall()]
-        
-        where_clauses = []
-        params_pendentes = [data_inicio, data_fim]
-        if regioes:
-            placeholders_r = ','.join(['?' for _ in regioes])
-            where_clauses.append(f"SUBSTR(Ref_Regiao, 1, 2) IN ({placeholders_r})")
-            params_pendentes.extend(regioes)
-        if travadas:
-            placeholders_t = ','.join(['?' for _ in travadas])
-            where_clauses.append(f"\"Solicitação\" IN ({placeholders_t})")
-            params_pendentes.extend(travadas)
-            
-        if not where_clauses:
-            df_perf['Pendentes'] = 0
-        else:
-            where_sql = " OR ".join(where_clauses)
-            
-            query_pendentes = f"""
-                WITH UltimasExtracoes AS (
-                    SELECT date(Data_Extracao) as data, MAX(Data_Extracao) as max_extracao
-                    FROM demanda_historico
-                    WHERE date(Data_Extracao) BETWEEN ? AND ?
-                    GROUP BY date(Data_Extracao)
-                )
-                SELECT 
-                    date(dh.Data_Extracao) as Data,
-                    COUNT(*) as Pendentes
-                FROM demanda_historico dh
-                JOIN UltimasExtracoes ue ON dh.Data_Extracao = ue.max_extracao
-                WHERE ({where_sql})
-                AND "Situação" IN ('APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO')
-                GROUP BY date(dh.Data_Extracao)
-            """
-            df_pendentes = pd.read_sql(query_pendentes, conn_data, params=params_pendentes)
+        if rows_pend:
+            df_pendentes = pd.DataFrame(rows_pend, columns=['Data', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas'])
             
             if not df_perf.empty and not df_pendentes.empty:
                 df_perf = pd.merge(df_perf, df_pendentes, on='Data', how='outer').fillna(0)
@@ -927,19 +974,24 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 df_perf = df_pendentes
                 df_perf['Novas'] = 0
                 df_perf['Tratadas'] = 0
-            else:
-                df_perf['Pendentes'] = 0
+                df_perf['Iniciadas'] = 0
+        else:
+            df_perf['Pendentes'] = 0
+            df_perf['Pendentes_Iniciadas'] = 0
+            df_perf['Pendentes_Nao_Iniciadas'] = 0
                 
         if not df_perf.empty:
             df_perf['Novas'] = df_perf.get('Novas', 0).astype(int)
             df_perf['Tratadas'] = df_perf.get('Tratadas', 0).astype(int)
+            df_perf['Iniciadas'] = df_perf.get('Iniciadas', 0).astype(int)
             df_perf['Pendentes'] = df_perf.get('Pendentes', 0).astype(int)
+            df_perf['Pendentes_Iniciadas'] = df_perf.get('Pendentes_Iniciadas', 0).astype(int)
+            df_perf['Pendentes_Nao_Iniciadas'] = df_perf.get('Pendentes_Nao_Iniciadas', 0).astype(int)
             df_perf = df_perf.sort_values('Data')
             
         return df_perf
     except Exception as e:
         print(f"Erro em get_performance_d1: {e}")
-        return pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Pendentes'])
+        return pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Iniciadas', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas'])
     finally:
         conn_app.close()
-        conn_data.close()

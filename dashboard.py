@@ -1106,7 +1106,7 @@ if df is not None:
             st.subheader("Eventos de Produtividade (Hoje)")
             try:
                 conn_app = db_manager.get_connection_config()
-                hoje_str = datetime.now().strftime('%Y-%m-%d')
+                hoje_str = db_manager.get_agora_br().strftime('%Y-%m-%d')
                 
                 # Juntar com usuários para ter o nome (trazendo todo o histórico)
                 query_eventos = f"""
@@ -1121,14 +1121,14 @@ if df is not None:
                     # Extrair apenas a data (YYYY-MM-DD)
                     df_eventos_all['data'] = pd.to_datetime(df_eventos_all['data_evento']).dt.strftime('%Y-%m-%d')
                     
-                    if filtro_responsavel:
-                        df_eventos_all = df_eventos_all[df_eventos_all['nome_responsavel'].isin(filtro_responsavel)]
-                    if filtro_regiao:
-                        siglas_filtro = [str(r).strip()[:2].upper() for r in filtro_regiao]
-                        df_eventos_all = df_eventos_all[df_eventos_all['regiao'].isin(siglas_filtro)]
-                        
                     # --- TABELA DE HOJE ---
-                    df_eventos_hoje = df_eventos_all[df_eventos_all['data'] == hoje_str]
+                    df_eventos_hoje = df_eventos_all[df_eventos_all['data'] == hoje_str].copy()
+                    
+                    if filtro_responsavel:
+                        df_eventos_hoje = df_eventos_hoje[df_eventos_hoje['nome_responsavel'].isin(filtro_responsavel)]
+                    if filtro_regiao:
+                        siglas_filtro_hoje = [str(r).strip()[:2].upper() for r in filtro_regiao]
+                        df_eventos_hoje = df_eventos_hoje[df_eventos_hoje['regiao'].isin(siglas_filtro_hoje)]
                     
                     # 1. Base oficial de Regiões/Responsáveis
                     df_regioes = db_manager.get_mapeamento_regioes()
@@ -1309,9 +1309,15 @@ if df is not None:
                                 fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Tratadas'], 
                                                            mode='lines+markers', name='Tratadas (Saída)',
                                                            line=dict(color='#10b981', width=3))) # Verde
-                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Pendentes'], 
-                                                           mode='lines+markers', name='Pendentes (Estoque)',
+                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Iniciadas'], 
+                                                           mode='lines+markers', name='Ações Iniciadas',
+                                                           line=dict(color='#8b5cf6', width=3))) # Roxo
+                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Pendentes_Iniciadas'], 
+                                                           mode='lines+markers', name='Iniciadas (Em Elaboração)',
                                                            line=dict(color='#f59e0b', width=3, dash='dot'))) # Laranja
+                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Pendentes_Nao_Iniciadas'], 
+                                                           mode='lines+markers', name='Não Iniciadas (Aprovadas)',
+                                                           line=dict(color='#ef4444', width=3, dash='dot'))) # Vermelho
                                                            
                                 fig_d1.update_layout(
                                     title=f"Evolução D-1: {resp_d1}",
