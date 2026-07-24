@@ -526,7 +526,32 @@ def atribuir_regioes_massa(matricula_responsavel, lista_siglas):
     finally:
         conn.close()
 
-# --- GESTÃO DE SESSÕES PERSISTENTES (VANGUARD STAY) ---
+def deduplicar_historico_eventos():
+    """
+    Remove duplicatas históricas na tabela eventos_diarios, mantendo apenas 
+    a PRIMEIRA OCORRÊNCIA (id mais antigo) para cada par (solicitacao, tipo_evento).
+    """
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            DELETE FROM eventos_diarios
+            WHERE id NOT IN (
+                SELECT MIN(id)
+                FROM eventos_diarios
+                GROUP BY solicitacao, tipo_evento
+            )
+        """)
+        removidos = cursor.rowcount
+        conn.commit()
+        if removidos > 0:
+            print(f"[DB CLEANUP] {removidos} eventos duplicados de manobras foram limpos da tabela 'eventos_diarios'.")
+        return removidos
+    except Exception as e:
+        print(f"[DB CLEANUP] Erro ao deduplicar histórico de eventos: {e}")
+        return 0
+    finally:
+        conn.close()
 
 def init_database():
     """Inicializa o banco de dados do zero se não existir (Auto-Healing)."""
@@ -626,7 +651,8 @@ def init_database():
         cursor.execute("SELECT COUNT(*) FROM pendentes_snapshot")
         if cursor.fetchone()[0] == 0:
             print("[INIT] Tabela 'pendentes_snapshot' vazia. Recompondo histórico inicial de pendentes...")
-            recompor_snapshot_historico()
+        # 10. Auto-deduplicação vitalícia do histórico de eventos
+        deduplicar_historico_eventos()
             
         conn.commit()
     except Exception as e:
@@ -1079,9 +1105,8 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         if eventos_para_inserir:
             cursor = conn.cursor()
             
-            # Anti-Duplicação: Verifica quais eventos já foram registrados para a data-alvo
-            data_dedup = data_evento_aplicar[:10]
-            cursor.execute("SELECT solicitacao, tipo_evento FROM eventos_diarios WHERE date(data_evento) = ?", (data_dedup,))
+            # Anti-Duplicação Vitalícia: Verifica se a solicitação já registrou o evento em qualquer data anterior
+            cursor.execute("SELECT solicitacao, tipo_evento FROM eventos_diarios")
             existentes = set((str(row[0]).strip(), str(row[1]).strip()) for row in cursor.fetchall())
             
             eventos_unicos = []
@@ -1089,7 +1114,7 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 chave = (str(ev[0]).strip(), str(ev[1]).strip())
                 if chave not in existentes:
                     eventos_unicos.append(ev)
-                    existentes.add(chave) # Adiciona na lista de existentes para não duplicar caso venha duas vezes na mesma lista
+                    existentes.add(chave) # Adiciona para evitar duplicatas dentro do próprio lote
             
             if eventos_unicos:
                 cursor.executemany('''
@@ -1097,15 +1122,12 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                     VALUES (?, ?, ?, ?, ?)
                 ''', eventos_unicos)
                 conn.commit()
-                print(f"[DB] {len(eventos_unicos)} eventos registrados de produtividade.")
+                print(f"[DB] {len(eventos_unicos)} eventos únicos registrados de produtividade.")
             else:
-                print(f"[DB] Nenhum evento novo para registrar (todos já existiam hoje).")
+                print(f"[DB] Nenhum evento novo para registrar (todas as manobras já foram contabilizadas anteriormente).")
             
     except Exception as e:
         print(f"[DB] Erro ao registrar eventos: {e}")
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
     """
