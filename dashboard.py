@@ -118,21 +118,7 @@ inject_ui_css()
 inject_ui_assets()
 
 
-# --- SIDEBAR INFO ---
-if st.session_state.user_nivel == "Usuario":
-    st.sidebar.markdown(f"**👤 Usuário:** {st.session_state.user_nome}")
-else:
-    st.sidebar.markdown(f"**🎖️ Administrador:** {st.session_state.user_nome}")
 
-if st.sidebar.button("🚪 Sair", use_container_width=True):
-    # Invalida sessão no DB e no Cookie
-    token_cookie = st.context.cookies.get("control_token")
-    if token_cookie:
-        db_manager.remover_sessao(token_cookie)
-    
-    st.session_state.logged_in = False
-    st.session_state.force_logout = True
-    st.rerun()
 
 # --- CONFIGURAÇÃO DE FERIADOS (Sincronizado com Calendário HTML) ---
 FERIADOS_BASE = [
@@ -569,7 +555,7 @@ if df is not None:
     """, unsafe_allow_html=True)
     
     # 2. BLOCO PERÍODO & ATALHOS
-    st.sidebar.markdown("<div style='font-size:0.75rem; font-weight:800; color:#38bdf8; letter-spacing:0.5px; margin-bottom:6px;'>📅 PERÍODO DE ANÁLISE</div>", unsafe_allow_html=True)
+    st.sidebar.markdown("<div style='font-size:0.75rem; font-weight:800; color:#38bdf8; letter-spacing:0.5px; margin-bottom:4px;'>📅 PERÍODO DE ANÁLISE</div>", unsafe_allow_html=True)
     
     col_filtro_data = next((c for c in df.columns if 'inicio' in c.lower() or 'início' in c.lower()), col_data)
     if col_filtro_data != col_data:
@@ -604,11 +590,12 @@ if df is not None:
         if "v_filter_regiao" in st.session_state: st.session_state.pop("v_filter_regiao")
 
     filtro_data = st.sidebar.date_input(
-        "📅 Período", 
+        "Filtrar por Período", 
         value=(hoje_date, default_max), 
         min_value=min_value_picker, 
         max_value=max_value_picker, 
         format="DD/MM/YYYY",
+        label_visibility="collapsed",
         key="v_filter_date"
     )
 
@@ -639,28 +626,22 @@ if df is not None:
             white-space: nowrap !important;
         }
         </style>
-        <div style='margin-top: -2px; margin-bottom: 6px;'>
+        <div style='margin-top: 4px; margin-bottom: 6px;'>
             <strong style='font-size: 0.72rem; color: var(--text-secondary);'>⚡ Atalhos de Período:</strong>
         </div>
     """, unsafe_allow_html=True)
     
     r1_c1, r1_c2 = st.sidebar.columns(2)
-    with r1_c1:
-        st.sidebar.button("8-11D", key="btn_sb_8_11", use_container_width=True, on_click=set_date_preset, args=(date_du8, date_du11), help="Do 8º ao 11º Dia Útil")
-    with r1_c2:
-        st.sidebar.button("Reset", key="btn_sb_reset", use_container_width=True, on_click=set_date_preset, args=(hoje_date, default_max), help="Resetar Período Padrão")
+    r1_c1.button("8-11D", key="btn_sb_8_11", use_container_width=True, on_click=set_date_preset, args=(date_du8, date_du11), help="Do 8º ao 11º Dia Útil")
+    r1_c2.button("Reset", key="btn_sb_reset", use_container_width=True, on_click=set_date_preset, args=(hoje_date, default_max), help="Resetar Período Padrão")
 
     r2_c1, r2_c2 = st.sidebar.columns(2)
-    with r2_c1:
-        st.sidebar.button("H➔8D", key="btn_sb_h8", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du8), help="Hoje até o 8º Dia Útil")
-    with r2_c2:
-        st.sidebar.button("H➔9D", key="btn_sb_h9", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du9), help="Hoje até o 9º Dia Útil")
+    r2_c1.button("H➔8D", key="btn_sb_h8", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du8), help="Hoje até o 8º Dia Útil")
+    r2_c2.button("H➔9D", key="btn_sb_h9", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du9), help="Hoje até o 9º Dia Útil")
 
     r3_c1, r3_c2 = st.sidebar.columns(2)
-    with r3_c1:
-        st.sidebar.button("H➔10D", key="btn_sb_h10", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du10), help="Hoje até o 10º Dia Útil")
-    with r3_c2:
-        st.sidebar.button("H➔11D", key="btn_sb_h11", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du11), help="Hoje até o 11º Dia Útil")
+    r3_c1.button("H➔10D", key="btn_sb_h10", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du10), help="Hoje até o 10º Dia Útil")
+    r3_c2.button("H➔11D", key="btn_sb_h11", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du11), help="Hoje até o 11º Dia Útil")
 
     st.sidebar.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 12px 0;' />", unsafe_allow_html=True)
     
@@ -684,29 +665,16 @@ if df is not None:
     default_regioes = sorted(df_filtered_resp[col_regiao].unique()) if not df_filtered_resp.empty else []
     filtro_regiao = st.sidebar.multiselect("🗺️ Região", options=lista_regioes_total, default=default_regioes, key="v_filter_regiao")
 
-    # 4. BLOCO FILTROS AVANÇADOS (EXPANDER SANFONA)
-    with st.sidebar.expander("🛠️ Filtros Avançados (Malha)", expanded=False):
-        lista_malhas_total = sorted(df_top[col_malha].unique())
-        default_malhas = sorted(df_filtered_resp[col_malha].unique()) if not df_filtered_resp.empty else []
-        filtro_malha = st.sidebar.multiselect("Filtrar por Malha", options=lista_malhas_total, default=default_malhas, key="v_filter_malha")
+    # Malha padrão (sem filtro no sidebar)
+    filtro_malha = sorted(df_top[col_malha].unique())
 
-    # 5. BOTÃO DE RESET GLOBAL E RODAPÉ
+    # 4. BOTÃO DE RESET GLOBAL E SAIR
     def trigger_reset_all():
         st.session_state["reset_all_signal"] = True
 
     st.sidebar.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     st.sidebar.button("🔄 Resetar Todos os Filtros", key="btn_global_reset", use_container_width=True, on_click=trigger_reset_all, help="Restaura datas, responsáveis e regiões ao estado padrão")
 
-    st.sidebar.markdown("""
-        <hr style="border-color: rgba(255,255,255,0.08); margin: 14px 0 10px 0;" />
-        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94a3b8; padding: 0 4px;">
-            <span style="display: flex; align-items: center; gap: 6px;">
-                <span style="width: 8px; height: 8px; background: #34d399; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #34d399;"></span>
-                Base D-1 Conectada
-            </span>
-        </div>
-    """, unsafe_allow_html=True)
-    
     if st.sidebar.button("🚪 Sair do Sistema", key="btn_logout_sidebar", use_container_width=True, help="Encerrar sessão de usuário"):
         st.session_state.authenticated = False
         st.session_state.user_nome = ""
