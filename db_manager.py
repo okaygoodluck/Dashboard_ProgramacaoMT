@@ -1,6 +1,7 @@
 import sqlite3
 import datetime
 import pandas as pd
+import numpy as np
 import os
 import sys
 
@@ -95,32 +96,89 @@ def publicar_db_rede():
     return False
 
 def get_connection_read():
-    """Conexão para leitura de dados de demanda (Prioriza Rede)."""
+    """Conexão resiliente para leitura de dados de demanda (Prioriza Rede com Fallback Local)."""
     path = get_data_db_path()
+    
+    # 1. Se for banco de rede, tenta URI modo leitura-apenas
+    if path and "I:" in path.upper():
+        try:
+            clean_path = path.replace("\\", "/").lstrip("/")
+            uri = f"file:///{clean_path}?mode=ro"
+            return sqlite3.connect(uri, uri=True, timeout=15)
+        except Exception:
+            pass
+
+    # 2. Tenta conexão padrão com o path encontrado
+    if path:
+        try:
+            return sqlite3.connect(path, timeout=15)
+        except Exception as e:
+            print(f"[DB READ] Falha na conexão de leitura ({e}). Acionando fallback local...")
+
+    # 3. Fallback local absoluto no diretório do projeto
     try:
-        # Se for banco de rede, usa URI para modo leitura-apenas e evitar bloqueios
-        if "I:" in path.upper():
-            uri = f"file:{path.replace('\\','/')}?mode=ro&immutable=1"
-            return sqlite3.connect(uri, uri=True, timeout=10)
-        return sqlite3.connect(path, timeout=10)
-    except Exception:
-        return sqlite3.connect(path, timeout=10)
+        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), LOCAL_DB_NAME)
+        return sqlite3.connect(local_path, timeout=15)
+    except Exception as e_local:
+        print(f"[CRÍTICO DB READ] Falha no fallback local: {e_local}")
+        raise e_local
 
 def get_connection_write():
     """Conexão para escrita (EXTRATOR). Sempre salva no banco local 'demanda.db'."""
     return sqlite3.connect(LOCAL_DB_NAME, timeout=30)
 
-def get_connection_config():
-    """Conexão para sistema (Usuários/Config). Prioriza 'ccp_app.db' na rede."""
+def get_connection_config(*args, **kwargs):
+    """
+    Conexão resiliente para a base do sistema (ccp_app.db).
+    Aceita quaisquer argumentos (posicionais ou nomeados) sem falhar por variação de assinatura.
+    Prioriza arquivo de rede com 3 níveis de proteção:
+      1. Tenta abrir em modo leitura URI (mode=ro) se estiver no drive I:
+      2. Tenta conexão padrão com timeout de 30s
+      3. Fallback automático para o banco local 'ccp_app.db'
+    """
+    read_only = kwargs.get('read_only', False)
+    if len(args) > 0:
+        read_only = bool(args[0])
+
     path = get_app_db_path()
-    conn = sqlite3.connect(path, timeout=30)
+    
+    # 1. Se for leitura e estiver no drive de rede I:, tenta primeiro o modo leitura URI (evita lock de arquivo)
+    if read_only and path and "I:" in path.upper():
+        try:
+            clean_path = path.replace("\\", "/").lstrip("/")
+            uri = f"file:///{clean_path}?mode=ro"
+            return sqlite3.connect(uri, uri=True, timeout=15)
+        except Exception:
+            pass
+
+    # 2. Tenta conexão padrão com o arquivo
     try:
-        # Resolve 'disk I/O error' em unidades de rede evitando a criação do arquivo -journal
-        conn.execute("PRAGMA journal_mode = MEMORY")
-        conn.execute("PRAGMA synchronous = NORMAL")
-    except Exception:
-        pass
-    return conn
+        conn = sqlite3.connect(path, timeout=30)
+        try:
+            conn.execute("PRAGMA journal_mode = MEMORY")
+            conn.execute("PRAGMA synchronous = NORMAL")
+        except Exception:
+            pass
+        return conn
+    except Exception as e:
+        print(f"[DB] Falha na conexão ccp_app.db na rede ({e}). Acionando fallback local...")
+        
+    # 3. Fallback absoluto para o banco local no diretório do projeto
+    try:
+        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), DB_APP_NAME)
+        conn = sqlite3.connect(local_path, timeout=30)
+        try:
+            conn.execute("PRAGMA journal_mode = MEMORY")
+        except Exception:
+            pass
+        return conn
+    except Exception as e_local:
+        print(f"[CRÍTICO DB] Falha no fallback local ccp_app.db: {e_local}")
+        raise e_local
+
+def get_connection_config_read():
+    """Conexão para leitura de sistema (Usuários/Config/Eventos)."""
+    return get_connection_config(read_only=True)
 
 def salvar_dados(df, regioes_confirmadas_vazias=None):
     """
@@ -564,8 +622,12 @@ def init_database():
                 INSERT INTO usuarios (matricula, nome, password_hash, nivel, senha_provisoria)
                 VALUES ('c057573', 'Kennedy Garito', ?, 'ADM', 1)
             """, (senha_hash,))
-            print("[INIT] Banco de dados novo detectado. Usuário ADM 'c057573' criado (senha: 12345).")
-        
+        # 9. Auto-recomposição do histórico de pendentes se a tabela estiver vazia
+        cursor.execute("SELECT COUNT(*) FROM pendentes_snapshot")
+        if cursor.fetchone()[0] == 0:
+            print("[INIT] Tabela 'pendentes_snapshot' vazia. Recompondo histórico inicial de pendentes...")
+            recompor_snapshot_historico()
+            
         conn.commit()
     except Exception as e:
         print(f"[ERRO INIT] Falha ao inicializar tabelas: {e}")
@@ -725,49 +787,69 @@ def travar_solicitacoes(df_novas):
 
 def registrar_snapshot_pendentes(df_atual):
     """Calcula e grava o snapshot de pendentes do dia para cada usuário com base nas regiões atribuídas e travadas."""
+    if df_atual is None or df_atual.empty:
+        return
+
     try:
         conn = get_connection_config()
         cursor = conn.cursor()
         data_hoje = get_agora_br().strftime('%Y-%m-%d')
         
-        # --- BLOQUEIO TEMPORÁRIO (DADO SUJO) ---
-        # Ignora gravações históricas até amanhã, para iniciar do zero.
-        if get_agora_br().strftime('%Y-%m-%d') < '2026-07-11':
-            return
-        
         # Obter todos os usuários com regiões ou travadas
-        cursor.execute("SELECT DISTINCT matricula_responsavel FROM regioes_responsaveis")
-        users_regioes = set(row[0] for row in cursor.fetchall())
+        cursor.execute("SELECT DISTINCT matricula_responsavel FROM regioes_responsaveis WHERE matricula_responsavel IS NOT NULL")
+        users_regioes = set(row[0] for row in cursor.fetchall() if row[0])
         
-        cursor.execute("SELECT DISTINCT matricula FROM solicitacoes_travadas")
-        users_travadas = set(row[0] for row in cursor.fetchall())
+        cursor.execute("SELECT DISTINCT matricula FROM solicitacoes_travadas WHERE matricula IS NOT NULL")
+        users_travadas = set(row[0] for row in cursor.fetchall() if row[0])
         
         todos_usuarios = users_regioes.union(users_travadas)
+        if not todos_usuarios:
+            return
         
+        df_pend = df_atual.copy()
+        
+        # Coalesce e normaliza a coluna de Situação
+        sit_cols = [c for c in df_pend.columns if 'situa' in c.lower()]
+        sit_series = pd.Series('', index=df_pend.index)
+        for c in sit_cols:
+            v = df_pend[c].fillna('').astype(str).str.strip().str.upper()
+            mask = (sit_series == '') & (~v.isin(['NONE', '', 'NAN']))
+            sit_series.loc[mask] = v.loc[mask]
+        df_pend['Situacao_Clean'] = sit_series
+        
+        # Coalesce e normaliza a coluna de Solicitação ID
+        sol_cols = [c for c in df_pend.columns if 'solicita' in c.lower() and 'vinc' not in c.lower()]
+        sol_series = pd.Series('', index=df_pend.index)
+        for c in sol_cols:
+            v = df_pend[c].fillna('').astype(str).str.strip().str.lstrip('0')
+            mask = (sol_series == '') & (~v.isin(['NONE', '', 'NAN']))
+            sol_series.loc[mask] = v.loc[mask]
+        df_pend['Solicitacao_Clean'] = sol_series
+
+        resp_cols = [c for c in df_pend.columns if 'resp' in c.lower()]
+        resp_col = resp_cols[0] if resp_cols else df_pend.columns[2]
+        df_pend['Resp_Clean'] = df_pend[resp_col].astype(str).str.strip()
+
+        reg_col = 'Ref_Regiao' if 'Ref_Regiao' in df_pend.columns else df_pend.columns[1]
+        df_pend['Regiao_Sigla'] = df_pend[reg_col].astype(str).str.strip().str[:2].str.upper()
+
         # Filtra apenas demandas que contam como pendentes
-        df_pendentes = df_atual[df_atual['Situação'].isin(['APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO'])]
+        df_pendentes = df_pend[df_pend['Situacao_Clean'].isin(['APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO'])].copy()
         
         for matricula in todos_usuarios:
-            cursor.execute("SELECT sigla_regiao FROM regioes_responsaveis WHERE matricula_responsavel = ?", (matricula,))
-            regioes = [row[0] for row in cursor.fetchall()]
-            
             cursor.execute("SELECT solicitacao FROM solicitacoes_travadas WHERE matricula = ?", (matricula,))
-            travadas = [row[0] for row in cursor.fetchall()]
+            travadas = [str(row[0]).strip().lstrip('0') for row in cursor.fetchall() if str(row[0]).strip() and str(row[0]).strip() not in ['None', 'nan', '0']]
             
-            # Filtra df para o usuário
-            mask = pd.Series(False, index=df_pendentes.index)
-            if regioes:
-                mask = mask | df_pendentes['Ref_Regiao'].str[:2].isin(regioes)
+            mask = (df_pendentes['Resp_Clean'] == matricula)
             if travadas:
-                mask = mask | df_pendentes['Solicitação'].isin(travadas)
+                mask = mask | ((df_pendentes['Solicitacao_Clean'] != '') & (df_pendentes['Solicitacao_Clean'] != 'None') & df_pendentes['Solicitacao_Clean'].isin(travadas))
                 
             df_user = df_pendentes[mask]
             
             total = len(df_user)
-            iniciadas = len(df_user[df_user['Situação'].isin(['EM ELABORAÇÃO', 'EM ELABORACAO'])])
-            nao_iniciadas = len(df_user[df_user['Situação'] == 'APROVADA'])
+            iniciadas = len(df_user[df_user['Situacao_Clean'].str.contains('ELABORA', na=False)])
+            nao_iniciadas = len(df_user[df_user['Situacao_Clean'] == 'APROVADA'])
             
-            # Insere ou atualiza
             cursor.execute("""
                 INSERT INTO pendentes_snapshot (data, matricula, pendentes_total, pendentes_iniciadas, pendentes_nao_iniciadas)
                 VALUES (?, ?, ?, ?, ?)
@@ -783,6 +865,120 @@ def registrar_snapshot_pendentes(df_atual):
     finally:
         if 'conn' in locals():
             conn.close()
+
+def recompor_snapshot_historico():
+    """
+    Recompõe e backfila o histórico de pendentes_snapshot lendo a tabela demanda_historico
+    para todas as datas disponíveis.
+    """
+    try:
+        conn_data = get_connection_read()
+        cursor_data = conn_data.cursor()
+        
+        # Verifica se demanda_historico existe
+        cursor_data.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='demanda_historico';")
+        if not cursor_data.fetchone():
+            conn_data.close()
+            return
+
+        df_hist = pd.read_sql("SELECT * FROM demanda_historico", conn_data)
+        conn_data.close()
+
+        if df_hist.empty:
+            return
+
+        df_hist['Data_Ref'] = pd.to_datetime(df_hist['Data_Extracao']).dt.strftime('%Y-%m-%d')
+        datas = sorted(df_hist['Data_Ref'].unique())
+
+        conn_app = get_connection_config(read_only=False)
+        cursor_app = conn_app.cursor()
+
+        cursor_app.execute("SELECT DISTINCT matricula FROM usuarios WHERE matricula IS NOT NULL")
+        users_app = set(row[0] for row in cursor_app.fetchall() if row[0])
+        
+        resp_cols_all = [c for c in df_hist.columns if 'resp' in c.lower()]
+        resp_col_all = resp_cols_all[0] if resp_cols_all else df_hist.columns[2]
+        users_hist = set(df_hist[resp_col_all].dropna().astype(str).str.strip().unique())
+        
+        todos_usuarios = users_app.union(users_hist) - {'', 'None', 'nan', '-'}
+
+        if not todos_usuarios:
+            conn_app.close()
+            return
+
+        # Pre-carrega todas as travas em memória para evitar queries repetidas dentro do loop
+        cursor_app.execute("SELECT matricula, solicitacao FROM solicitacoes_travadas WHERE matricula IS NOT NULL")
+        travadas_map = {}
+        for row_mat, row_sol in cursor_app.fetchall():
+            mat_clean = str(row_mat).strip()
+            sol_clean = str(row_sol).strip().lstrip('0')
+            if sol_clean and sol_clean not in ['None', 'nan', '0']:
+                travadas_map.setdefault(mat_clean, set()).add(sol_clean)
+
+        rows_to_insert = []
+
+        for d in datas:
+            df_day_all = df_hist[df_hist['Data_Ref'] == d]
+            max_dt = df_day_all['Data_Extracao'].max()
+            df_day = df_day_all[df_day_all['Data_Extracao'] == max_dt].copy()
+
+            resp_cols = [c for c in df_day.columns if 'resp' in c.lower()]
+            resp_col = resp_cols[0] if resp_cols else df_day.columns[2]
+            df_day['Resp_Clean'] = df_day[resp_col].astype(str).str.strip()
+
+            sit_cols = [c for c in df_day.columns if 'situa' in c.lower()]
+            sit_series = pd.Series('', index=df_day.index)
+            for c in sit_cols:
+                v = df_day[c].fillna('').astype(str).str.strip().str.upper()
+                mask = (sit_series == '') & (~v.isin(['NONE', '', 'NAN']))
+                sit_series.loc[mask] = v.loc[mask]
+            df_day['Situacao_Clean'] = sit_series
+
+            sol_cols = [c for c in df_day.columns if 'solicita' in c.lower() and 'vinc' not in c.lower()]
+            sol_series = pd.Series('', index=df_day.index)
+            for c in sol_cols:
+                v = df_day[c].fillna('').astype(str).str.strip().str.lstrip('0')
+                mask = (sol_series == '') & (~v.isin(['NONE', '', 'NAN']))
+                sol_series.loc[mask] = v.loc[mask]
+            df_day['Solicitacao_Clean'] = sol_series
+
+            reg_col = 'Ref_Regiao' if 'Ref_Regiao' in df_day.columns else df_day.columns[1]
+            df_day['Regiao_Sigla'] = df_day[reg_col].astype(str).str.strip().str[:2].str.upper()
+
+            df_pendentes = df_day[df_day['Situacao_Clean'].isin(['APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO'])].copy()
+
+            for matricula in todos_usuarios:
+                travadas = travadas_map.get(matricula, set())
+
+                mask = (df_pendentes['Resp_Clean'] == matricula)
+                if travadas:
+                    mask = mask | ((df_pendentes['Solicitacao_Clean'] != '') & (df_pendentes['Solicitacao_Clean'] != 'None') & df_pendentes['Solicitacao_Clean'].isin(travadas))
+
+                df_user = df_pendentes[mask]
+                total = len(df_user)
+                iniciadas = len(df_user[df_user['Situacao_Clean'].str.contains('ELABORA', na=False)])
+                nao_iniciadas = len(df_user[df_user['Situacao_Clean'] == 'APROVADA'])
+
+                rows_to_insert.append((d, matricula, total, iniciadas, nao_iniciadas))
+
+        if rows_to_insert:
+            cursor_app.executemany("""
+                INSERT INTO pendentes_snapshot (data, matricula, pendentes_total, pendentes_iniciadas, pendentes_nao_iniciadas)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(data, matricula) DO UPDATE SET
+                    pendentes_total=excluded.pendentes_total,
+                    pendentes_iniciadas=excluded.pendentes_iniciadas,
+                    pendentes_nao_iniciadas=excluded.pendentes_nao_iniciadas
+            """, rows_to_insert)
+            conn_app.commit()
+            print(f"[DB] Snapshots de pendentes recompostos com sucesso: {len(rows_to_insert)} registros de {len(datas)} datas.")
+
+    except Exception as e:
+        print(f"[DB] Erro ao recompor histórico de pendentes: {e}")
+    finally:
+        if 'conn_app' in locals():
+            conn_app.close()
+
 
 # Inicializa o banco de dados completo ao carregar o módulo
 init_database()
@@ -809,6 +1005,10 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         if df_novo is None or df_novo.empty:
             return
             
+        # Protege as tabelas originais na memória
+        df_antigo_copy = df_antigo.copy()
+        df_novo_copy = df_novo.copy()
+            
         # Carrega dicionarios
         df_travadas = pd.read_sql("SELECT solicitacao, matricula FROM solicitacoes_travadas", conn)
         travadas_dict = df_travadas.set_index('solicitacao')['matricula'].to_dict() if not df_travadas.empty else {}
@@ -828,13 +1028,13 @@ def registrar_eventos_diarios(df_antigo, df_novo):
             return "Não Atribuído"
 
         # Garante a existência da coluna Ref_Regiao em ambos para evitar KeyError
-        if 'Ref_Regiao' not in df_antigo.columns:
-            df_antigo['Ref_Regiao'] = ''
-        if 'Ref_Regiao' not in df_novo.columns:
-            df_novo['Ref_Regiao'] = ''
+        if 'Ref_Regiao' not in df_antigo_copy.columns:
+            df_antigo_copy['Ref_Regiao'] = ''
+        if 'Ref_Regiao' not in df_novo_copy.columns:
+            df_novo_copy['Ref_Regiao'] = ''
             
         # Normaliza os nomes das colunas de chaves (evita problemas com encode utf8/latin1)
-        for df_t in [df_antigo, df_novo]:
+        for df_t in [df_antigo_copy, df_novo_copy]:
             for col in list(df_t.columns):
                 col_lower = col.lower()
                 if 'solicita' in col_lower and 'vinc' not in col_lower:
@@ -842,8 +1042,8 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 elif 'situa' in col_lower:
                     df_t.rename(columns={col: 'Situacao_Norm'}, inplace=True)
         
-        antigas_dict = df_antigo.set_index('Solicitacao_ID').to_dict('index')
-        novas_dict = df_novo.set_index('Solicitacao_ID').to_dict('index')
+        antigas_dict = df_antigo_copy.set_index('Solicitacao_ID').to_dict('index')
+        novas_dict = df_novo_copy.set_index('Solicitacao_ID').to_dict('index')
         
         eventos_para_inserir = []
         
@@ -985,4 +1185,100 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
         print(f"Erro em get_performance_d1: {e}")
         return pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Iniciadas', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas'])
     finally:
-        conn_app.close()
+        if 'conn_app' in locals() and conn_app:
+            try:
+                conn_app.close()
+            except Exception:
+                pass
+        if 'conn_data' in locals() and conn_data:
+            try:
+                conn_data.close()
+            except Exception:
+                pass
+
+def get_lista_regioes_eventos():
+    """Retorna lista ordenada de todas as regiões presentes em eventos_diarios e demanda_atual."""
+    conn_app = get_connection_config()
+    regioes = set()
+    try:
+        cursor = conn_app.cursor()
+        try:
+            cursor.execute("SELECT DISTINCT regiao FROM eventos_diarios WHERE regiao IS NOT NULL AND regiao != ''")
+            for row in cursor.fetchall():
+                if row[0] and str(row[0]).strip():
+                    regioes.add(str(row[0]).strip().upper())
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"Erro em get_lista_regioes_eventos: {e}")
+    finally:
+        if 'conn_app' in locals() and conn_app:
+            try: conn_app.close()
+            except Exception: pass
+            
+    # Complementa com regiões disponíveis dos dados gerais
+    try:
+        reg_data = get_regioes_disponiveis_data()
+        regioes.update(reg_data)
+    except Exception:
+        pass
+        
+    return sorted(list(regioes - {'', 'NONE', 'NAN', '-'}))
+
+def get_fluxo_diario_novas_tratadas(data_inicio=None, data_fim=None, regiao=None):
+    """
+    Retorna consolidação diária global ou por região de solicitações Novas e Tratadas.
+    """
+    import pandas as pd
+    import datetime
+    
+    if data_fim is None:
+        data_fim = datetime.date.today().strftime('%Y-%m-%d')
+    if data_inicio is None:
+        data_inicio = (datetime.date.today() - datetime.timedelta(days=15)).strftime('%Y-%m-%d')
+        
+    conn_app = get_connection_config()
+    try:
+        query = """
+            SELECT 
+                date(data_evento) as data,
+                tipo_evento,
+                COUNT(*) as qtd
+            FROM eventos_diarios
+            WHERE date(data_evento) BETWEEN ? AND ?
+            AND tipo_evento IN ('NOVA', 'TRATADA')
+        """
+        params = [data_inicio, data_fim]
+        
+        if regiao and str(regiao).upper() not in ['TODAS', 'GLOBAL', 'TODAS (VISÃO GLOBAL)', 'TODAS (VISAO GLOBAL)']:
+            reg_clean = str(regiao).strip().upper()
+            sigla = reg_clean[:2]
+            query += " AND (UPPER(regiao) = ? OR UPPER(substr(regiao, 1, 2)) = ?)"
+            params.extend([reg_clean, sigla])
+            
+        query += " GROUP BY date(data_evento), tipo_evento"
+        
+        df_ev = pd.read_sql(query, conn_app, params=params)
+        
+        if df_ev.empty:
+            return pd.DataFrame(columns=['Data', 'Novas', 'Tratadas'])
+            
+        df_pivot = df_ev.pivot(index='data', columns='tipo_evento', values='qtd').fillna(0).reset_index()
+        for col in ['NOVA', 'TRATADA']:
+            if col not in df_pivot.columns:
+                df_pivot[col] = 0
+                
+        df_pivot = df_pivot.rename(columns={'data': 'Data', 'NOVA': 'Novas', 'TRATADA': 'Tratadas'})
+        df_pivot['Novas'] = df_pivot['Novas'].astype(int)
+        df_pivot['Tratadas'] = df_pivot['Tratadas'].astype(int)
+        df_pivot = df_pivot.sort_values('Data')
+        
+        return df_pivot
+    except Exception as e:
+        print(f"Erro em get_fluxo_diario_novas_tratadas: {e}")
+        return pd.DataFrame(columns=['Data', 'Novas', 'Tratadas'])
+    finally:
+        if 'conn_app' in locals() and conn_app:
+            try: conn_app.close()
+            except Exception: pass
+

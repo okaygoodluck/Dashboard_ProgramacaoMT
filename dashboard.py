@@ -8,6 +8,8 @@ import numpy as np
 from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
 import db_manager
+import importlib
+importlib.reload(db_manager)
 import extra_streamlit_components as stx
 
 # --- IMPORTAÇÃO DOS MÓDULOS CCP (Centro de Controle da Programação) ---
@@ -505,6 +507,9 @@ if df is not None:
     if not novas_para_travar.empty:
         db_manager.travar_solicitacoes(novas_para_travar[[col_sol, 'Matricula']].rename(columns={col_sol: 'Solicitação'}))
 
+    # 5. Atualiza o snapshot de pendentes do dia com os dados atuais mapeados
+    db_manager.registrar_snapshot_pendentes(df)
+
     # --- DEFINIÇÃO DE ESCOPO DE KPIs (Regra de Acesso) ---
     if st.session_state.user_nivel == "Usuario":
         # Usuário comum vê apenas seus próprios dados no topo
@@ -523,6 +528,13 @@ if df is not None:
     qtd_alerta = 0
 
     # --- 2. FILTROS (No Sidebar) ---
+    # Sincroniza preset de data selecionado pelos botões de atalho no sidebar
+    if "date_period_preset" in st.session_state:
+        st.session_state["v_filter_date"] = st.session_state.pop("date_period_preset")
+
+    def set_date_preset(start_d, end_d):
+        st.session_state["date_period_preset"] = (start_d, end_d)
+
     st.sidebar.markdown("### 🔍 Filtros")
     
     # 1. Filtro de Data (Movido para o topo)
@@ -563,6 +575,60 @@ if df is not None:
         format="DD/MM/YYYY",
         key="v_filter_date"
     )
+
+    # Cálculo das datas exatas dos dias úteis para os botões de atalho no sidebar
+    try:
+        get_du_date = lambda offset: pd.to_datetime(
+            np.busday_offset(hoje_date, offset, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
+        ).date()
+        date_du8 = get_du_date(8)
+        date_du9 = get_du_date(9)
+        date_du10 = get_du_date(10)
+        date_du11 = get_du_date(11)
+    except Exception:
+        date_du8 = hoje_date + timedelta(days=10)
+        date_du9 = hoje_date + timedelta(days=11)
+        date_du10 = hoje_date + timedelta(days=12)
+        date_du11 = hoje_date + timedelta(days=13)
+
+    # Botões de atalho rápido de período no sidebar (Grade de 2 Colunas conforme Imagem 2)
+    st.sidebar.markdown("""
+        <style>
+        div[data-testid="stSidebar"] div[data-testid="stButton"] button {
+            padding: 4px 6px !important;
+            font-size: 0.78rem !important;
+            font-weight: 700 !important;
+            min-height: 32px !important;
+            height: 32px !important;
+            border-radius: 6px !important;
+            white-space: nowrap !important;
+        }
+        </style>
+        <div style='margin-top: -4px; margin-bottom: 6px;'>
+            <strong style='font-size: 0.75rem; color: var(--text-secondary);'>⚡ Atalhos de Período:</strong>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Linha 1: 8-11D e Reset
+    r1_c1, r1_c2 = st.sidebar.columns(2)
+    with r1_c1:
+        st.sidebar.button("8-11D", key="btn_sb_8_11", use_container_width=True, on_click=set_date_preset, args=(date_du8, date_du11), help="Do 8º ao 11º Dia Útil")
+    with r1_c2:
+        st.sidebar.button("Reset", key="btn_sb_reset", use_container_width=True, on_click=set_date_preset, args=(hoje_date, default_max), help="Resetar Período Padrão")
+
+    # Linha 2: H➔8D e H➔9D
+    r2_c1, r2_c2 = st.sidebar.columns(2)
+    with r2_c1:
+        st.sidebar.button("H➔8D", key="btn_sb_h8", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du8), help="Hoje até o 8º Dia Útil")
+    with r2_c2:
+        st.sidebar.button("H➔9D", key="btn_sb_h9", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du9), help="Hoje até o 9º Dia Útil")
+
+    # Linha 3: H➔10D e H➔11D
+    r3_c1, r3_c2 = st.sidebar.columns(2)
+    with r3_c1:
+        st.sidebar.button("H➔10D", key="btn_sb_h10", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du10), help="Hoje até o 10º Dia Útil")
+    with r3_c2:
+        st.sidebar.button("H➔11D", key="btn_sb_h11", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du11), help="Hoje até o 11º Dia Útil")
 
     st.sidebar.markdown("---")
     
@@ -916,7 +982,7 @@ if df is not None:
 
     # 3. ABAS DE VISUALIZAÇÃO (Symmetry Mode - Responsivo)
     if st.session_state.user_nivel in ["Gerencial", "ADM"]:
-        abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados", "📊 Histórico"]
+        abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados", "📊 Relatórios"]
     else:
         abas = ["📅 Calendário", "🗺️ Visão por Região", "📋 Dados Detalhados"]
     
@@ -1100,12 +1166,12 @@ if df is not None:
         with st.container():
             render_tab_detalhes(df_filtered, col_situacao)
 
-    # --- ABA 4: HISTÓRICO & GESTÃO ---
-    if chosen_tab == "📊 Histórico":
+    # --- ABA 4: RELATÓRIOS & GESTÃO ---
+    if chosen_tab == "📊 Relatórios":
         with st.container():
             st.subheader("Eventos de Produtividade (Hoje)")
             try:
-                conn_app = db_manager.get_connection_config()
+                conn_app = db_manager.get_connection_config(read_only=True)
                 hoje_str = db_manager.get_agora_br().strftime('%Y-%m-%d')
                 
                 # Juntar com usuários para ter o nome (trazendo todo o histórico)
@@ -1115,7 +1181,6 @@ if df is not None:
                     LEFT JOIN usuarios u ON e.matricula_responsavel = u.matricula 
                 """
                 df_eventos_all = pd.read_sql(query_eventos, conn_app)
-                conn_app.close()
                 
                 if not df_eventos_all.empty:
                     # Extrair apenas a data (YYYY-MM-DD)
@@ -1291,7 +1356,6 @@ if df is not None:
                         )
                         
                         st.info("📊 **D-1**\n\nConsolida as demandas que ENTRARAM (Novas), as FEITAS (Tratadas) e o ESTOQUE (Pendentes) para o dia seguinte.")
-                        
                     with col_d1_chart:
                         if resp_d1 and len(datas_d1) == 2:
                             d1_inicio, d1_fim = datas_d1
@@ -1303,29 +1367,40 @@ if df is not None:
                                 import plotly.graph_objects as go
                                 fig_d1 = go.Figure()
                                 
-                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Novas'], 
-                                                           mode='lines+markers', name='Novas (Entrada)',
-                                                           line=dict(color='#3b82f6', width=3))) # Azul
-                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Tratadas'], 
-                                                           mode='lines+markers', name='Tratadas (Saída)',
-                                                           line=dict(color='#10b981', width=3))) # Verde
-                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Iniciadas'], 
-                                                           mode='lines+markers', name='Ações Iniciadas',
-                                                           line=dict(color='#8b5cf6', width=3))) # Roxo
-                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Pendentes_Iniciadas'], 
-                                                           mode='lines+markers', name='Iniciadas (Em Elaboração)',
-                                                           line=dict(color='#f59e0b', width=3, dash='dot'))) # Laranja
-                                fig_d1.add_trace(go.Scatter(x=df_perf['Data_Exibicao'], y=df_perf['Pendentes_Nao_Iniciadas'], 
-                                                           mode='lines+markers', name='Não Iniciadas (Aprovadas)',
-                                                           line=dict(color='#ef4444', width=3, dash='dot'))) # Vermelho
-                                                           
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf['Novas'], 
+                                    name='Novas (Entrada)',
+                                    marker_color='#3b82f6',
+                                    text=df_perf['Novas'],
+                                    textposition='outside'
+                                ))
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf['Tratadas'], 
+                                    name='Tratadas (Saída)',
+                                    marker_color='#10b981',
+                                    text=df_perf['Tratadas'],
+                                    textposition='outside'
+                                ))
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf['Pendentes_Iniciadas'], 
+                                    name='Iniciadas (Em Elaboração)',
+                                    marker_color='#f59e0b',
+                                    text=df_perf['Pendentes_Iniciadas'],
+                                    textposition='outside'
+                                ))
+                                                            
                                 fig_d1.update_layout(
                                     title=f"Evolução D-1: {resp_d1}",
                                     xaxis_title="Data",
                                     yaxis_title="Quantidade",
+                                    barmode='group',
                                     hovermode='x unified',
                                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                                 )
+                                fig_d1.update_xaxes(type='category')
                                 st.plotly_chart(fig_d1, use_container_width=True)
                                 
                                 # Adicionando Tabela Detalhada para Conferência
@@ -1356,6 +1431,88 @@ if df is not None:
                             else:
                                 st.warning(f"Não há dados consolidados de D-1 para {resp_d1} no período selecionado.")
                         
+                    # --- Gráfico 4: Fluxo Diário de Demandas (Novas x Tratadas) ---
+                    st.markdown("---")
+                    st.subheader("📊 Fluxo Diário de Demandas (Novas vs. Tratadas)")
+                    st.caption("Acompanhe o volume global ou por região de solicitações que entraram e que foram concluídas a cada dia.")
+
+                    col_fluxo_filter, col_fluxo_chart = st.columns([1, 7])
+
+                    with col_fluxo_filter:
+                        st.markdown("#### Filtros de Fluxo")
+                        
+                        regioes_opcoes = ["Todas (Visão Global)"] + db_manager.get_lista_regioes_eventos()
+                        regiao_sel = st.selectbox("Selecione a Região:", options=regioes_opcoes, key="fluxo_regiao")
+                        
+                        hoje_fluxo = date.today()
+                        limite_fluxo = date(2026, 7, 7)
+                        data_inicio_fluxo_padrao = max(limite_fluxo, hoje_fluxo - timedelta(days=15))
+                        
+                        datas_fluxo = st.date_input(
+                            "Período de Análise:",
+                            value=(data_inicio_fluxo_padrao, hoje_fluxo),
+                            min_value=limite_fluxo,
+                            max_value=hoje_fluxo,
+                            key="fluxo_periodo"
+                        )
+                        
+                    with col_fluxo_chart:
+                        if len(datas_fluxo) == 2:
+                            flx_inicio, flx_fim = datas_fluxo
+                            df_fluxo = db_manager.get_fluxo_diario_novas_tratadas(
+                                data_inicio=flx_inicio.strftime('%Y-%m-%d'),
+                                data_fim=flx_fim.strftime('%Y-%m-%d'),
+                                regiao=regiao_sel
+                            )
+                            
+                            if not df_fluxo.empty:
+                                df_fluxo['Data_Exibicao'] = pd.to_datetime(df_fluxo['Data']).dt.strftime('%d/%m/%Y')
+                                
+                                tot_novas = int(df_fluxo['Novas'].sum())
+                                tot_tratadas = int(df_fluxo['Tratadas'].sum())
+                                saldo = tot_novas - tot_tratadas
+                                
+                                # Cards KPI
+                                kpi1, kpi2, kpi3 = st.columns(3)
+                                with kpi1:
+                                    st.metric("🔵 Novas no Período", f"{tot_novas:,}".replace(",", "."))
+                                with kpi2:
+                                    st.metric("🟢 Tratadas no Período", f"{tot_tratadas:,}".replace(",", "."))
+                                with kpi3:
+                                    delta_cor = "inverse" if saldo > 0 else "normal"
+                                    st.metric("⚖️ Saldo do Período", f"{saldo:+,}".replace(",", "."), delta=f"{saldo:+} manobras", delta_color=delta_cor)
+                                
+                                # Gráfico de Barras Agrupadas Lado a Lado
+                                df_melted = df_fluxo.melt(
+                                    id_vars=['Data_Exibicao'],
+                                    value_vars=['Novas', 'Tratadas'],
+                                    var_name='Tipo',
+                                    value_name='Quantidade'
+                                )
+                                
+                                fig_fluxo = px.bar(
+                                    df_melted,
+                                    x='Data_Exibicao',
+                                    y='Quantidade',
+                                    color='Tipo',
+                                    barmode='group',
+                                    text='Quantidade',
+                                    color_discrete_map={'Novas': '#3b82f6', 'Tratadas': '#10b981'},
+                                    title=f"Fluxo Diário: Novas x Tratadas ({regiao_sel})"
+                                )
+                                fig_fluxo.update_traces(textposition='outside')
+                                fig_fluxo.update_layout(
+                                    xaxis_title="Data",
+                                    yaxis_title="Quantidade de Manobras",
+                                    yaxis_tickformat="d",
+                                    legend_title_text="Tipo de Demanda",
+                                    hovermode='x unified',
+                                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                                )
+                                fig_fluxo.update_xaxes(type='category')
+                                st.plotly_chart(fig_fluxo, use_container_width=True)
+                            else:
+                                st.info("Nenhum dado de fluxo encontrado para a região e período selecionados.")
                         
                 else:
                     st.info("Nenhum evento de produtividade registrado no histórico.")
@@ -1364,6 +1521,12 @@ if df is not None:
                 error_trace = traceback.format_exc()
                 print(f"ERRO CRÍTICO EM CARREGAR EVENTOS:\n{error_trace}")
                 st.error(f"Não foi possível carregar eventos: {e}\n\nDetalhes no console.")
+            finally:
+                if 'conn_app' in locals() and conn_app:
+                    try:
+                        conn_app.close()
+                    except Exception:
+                        pass
 
 
 
