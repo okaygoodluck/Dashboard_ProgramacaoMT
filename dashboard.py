@@ -527,7 +527,7 @@ if df is not None:
     qtd_urgencia = 0
     qtd_alerta = 0
 
-    # --- 2. FILTROS (No Sidebar) ---
+    # --- 2. FILTROS (No Sidebar - Redesign UI/UX Pro Max) ---
     # Sincroniza preset de data selecionado pelos botões de atalho no sidebar
     if "date_period_preset" in st.session_state:
         st.session_state["v_filter_date"] = st.session_state.pop("date_period_preset")
@@ -535,11 +535,43 @@ if df is not None:
     def set_date_preset(start_d, end_d):
         st.session_state["date_period_preset"] = (start_d, end_d)
 
-    st.sidebar.markdown("### 🔍 Filtros")
+    # 1. CARD DE PERFIL DO USUÁRIO NO TOPO DO SIDEBAR
+    user_nome = getattr(st.session_state, "user_nome", "Usuário")
+    user_nivel = getattr(st.session_state, "user_nivel", "Usuario")
     
-    # 1. Filtro de Data (Movido para o topo)
+    partes_nome = user_nome.split()
+    iniciais = (partes_nome[0][0] + (partes_nome[-1][0] if len(partes_nome) > 1 else "")).upper()
+    
+    if user_nivel == "ADM":
+        badge_style = "background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;"
+        badge_label = "👑 ADM"
+    elif user_nivel == "Gerencial":
+        badge_style = "background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff;"
+        badge_label = "📊 GERENCIAL"
+    else:
+        badge_style = "background: linear-gradient(135deg, #10b981, #047857); color: #fff;"
+        badge_label = "👤 OPERACIONAL"
+
+    st.sidebar.markdown(f"""
+        <div style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.08); padding: 12px; border-radius: 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+            <div style="width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #06b6d4, #3b82f6); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.95rem; color: #fff; box-shadow: 0 0 10px rgba(6,182,212,0.4); flex-shrink: 0;">
+                {iniciais}
+            </div>
+            <div style="flex: 1; min-width: 0;">
+                <div style="font-weight: 700; font-size: 0.85rem; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {user_nome}
+                </div>
+                <span style="display: inline-block; margin-top: 2px; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; letter-spacing: 0.5px; {badge_style}">
+                    {badge_label}
+                </span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # 2. BLOCO PERÍODO & ATALHOS
+    st.sidebar.markdown("<div style='font-size:0.75rem; font-weight:800; color:#38bdf8; letter-spacing:0.5px; margin-bottom:6px;'>📅 PERÍODO DE ANÁLISE</div>", unsafe_allow_html=True)
+    
     col_filtro_data = next((c for c in df.columns if 'inicio' in c.lower() or 'início' in c.lower()), col_data)
-    
     if col_filtro_data != col_data:
          df[col_filtro_data] = pd.to_datetime(df[col_filtro_data], dayfirst=True, errors='coerce')
 
@@ -555,20 +587,24 @@ if df is not None:
     try:
         decimo_primeiro_dia_util = np.busday_offset(hoje_date, 11, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
         default_max = pd.to_datetime(decimo_primeiro_dia_util).date()
-        
-        # Se cair na sexta-feira (weekday == 4), estende até domingo (+2 dias)
         if default_max.weekday() == 4:
             default_max += pd.Timedelta(days=2)
-            
     except Exception: 
         default_max = hoje_date + pd.Timedelta(days=15)
         
     min_value_picker = min(min_date, hoje_date)
     max_value_picker = max(max_date, default_max)
     
-    # Filtro de Data com PERSISTÊNCIA (Session State key)
+    # Se o sinal de Reset Global foi acionado
+    if "reset_all_signal" in st.session_state:
+        st.session_state.pop("reset_all_signal")
+        st.session_state["v_filter_date"] = (hoje_date, default_max)
+        if "v_filter_resp" in st.session_state: st.session_state.pop("v_filter_resp")
+        if "v_filter_malha" in st.session_state: st.session_state.pop("v_filter_malha")
+        if "v_filter_regiao" in st.session_state: st.session_state.pop("v_filter_regiao")
+
     filtro_data = st.sidebar.date_input(
-        "📅 Filtrar por Período", 
+        "📅 Período", 
         value=(hoje_date, default_max), 
         min_value=min_value_picker, 
         max_value=max_value_picker, 
@@ -576,7 +612,6 @@ if df is not None:
         key="v_filter_date"
     )
 
-    # Cálculo das datas exatas dos dias úteis para os botões de atalho no sidebar
     try:
         get_du_date = lambda offset: pd.to_datetime(
             np.busday_offset(hoje_date, offset, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
@@ -591,7 +626,7 @@ if df is not None:
         date_du10 = hoje_date + timedelta(days=12)
         date_du11 = hoje_date + timedelta(days=13)
 
-    # Botões de atalho rápido de período no sidebar (Grade de 2 Colunas conforme Imagem 2)
+    # Botões de atalho rápido de período (Grade 2 Colunas)
     st.sidebar.markdown("""
         <style>
         div[data-testid="stSidebar"] div[data-testid="stButton"] button {
@@ -604,59 +639,79 @@ if df is not None:
             white-space: nowrap !important;
         }
         </style>
-        <div style='margin-top: -4px; margin-bottom: 6px;'>
-            <strong style='font-size: 0.75rem; color: var(--text-secondary);'>⚡ Atalhos de Período:</strong>
+        <div style='margin-top: -2px; margin-bottom: 6px;'>
+            <strong style='font-size: 0.72rem; color: var(--text-secondary);'>⚡ Atalhos de Período:</strong>
         </div>
     """, unsafe_allow_html=True)
     
-    # Linha 1: 8-11D e Reset
     r1_c1, r1_c2 = st.sidebar.columns(2)
     with r1_c1:
         st.sidebar.button("8-11D", key="btn_sb_8_11", use_container_width=True, on_click=set_date_preset, args=(date_du8, date_du11), help="Do 8º ao 11º Dia Útil")
     with r1_c2:
         st.sidebar.button("Reset", key="btn_sb_reset", use_container_width=True, on_click=set_date_preset, args=(hoje_date, default_max), help="Resetar Período Padrão")
 
-    # Linha 2: H➔8D e H➔9D
     r2_c1, r2_c2 = st.sidebar.columns(2)
     with r2_c1:
         st.sidebar.button("H➔8D", key="btn_sb_h8", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du8), help="Hoje até o 8º Dia Útil")
     with r2_c2:
         st.sidebar.button("H➔9D", key="btn_sb_h9", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du9), help="Hoje até o 9º Dia Útil")
 
-    # Linha 3: H➔10D e H➔11D
     r3_c1, r3_c2 = st.sidebar.columns(2)
     with r3_c1:
         st.sidebar.button("H➔10D", key="btn_sb_h10", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du10), help="Hoje até o 10º Dia Útil")
     with r3_c2:
         st.sidebar.button("H➔11D", key="btn_sb_h11", use_container_width=True, on_click=set_date_preset, args=(hoje_date, date_du11), help="Hoje até o 11º Dia Útil")
 
-    st.sidebar.markdown("---")
+    st.sidebar.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 12px 0;' />", unsafe_allow_html=True)
     
-    # 2. Filtro de Responsável (Foco Operacional)
+    # 3. BLOCO FOCO OPERACIONAL
+    st.sidebar.markdown("<div style='font-size:0.75rem; font-weight:800; color:#38bdf8; letter-spacing:0.5px; margin-bottom:6px;'>🎯 FOCO OPERACIONAL</div>", unsafe_allow_html=True)
+    
     lista_responsaveis = sorted(df_top['Responsavel'].unique())
-    
     if st.session_state.user_nivel == "Usuario":
         if st.session_state.user_nome in lista_responsaveis:
             filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável (Travado)", options=lista_responsaveis, default=[st.session_state.user_nome], key="v_filter_resp", disabled=True)
         else:
             st.sidebar.error(f"Seu nome ({st.session_state.user_nome}) não foi encontrado como responsável.")
-            filtro_responsavel = st.sidebar.multiselect("👩‍💻 Filtrar por Responsável", options=lista_responsaveis, default=lista_responsaveis, key="v_filter_resp")
+            filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável", options=lista_responsaveis, default=lista_responsaveis, key="v_filter_resp")
     else:
         filtro_responsaveis_all = sorted(df['Responsavel'].unique())
-        filtro_responsavel = st.sidebar.multiselect("👩‍💻 Filtrar por Responsável", options=filtro_responsaveis_all, default=filtro_responsaveis_all, key="v_filter_resp")
+        filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável", options=filtro_responsaveis_all, default=filtro_responsaveis_all, key="v_filter_resp")
         
     df_filtered_resp = df[df['Responsavel'].isin(filtro_responsavel)]
 
-    # 3. Filtro de Malha (Opções sempre visíveis)
-    lista_malhas_total = sorted(df_top[col_malha].unique())
-    default_malhas = sorted(df_filtered_resp[col_malha].unique()) if not df_filtered_resp.empty else []
-    filtro_malha = st.sidebar.multiselect("Filtrar por Malha", options=lista_malhas_total, default=default_malhas, key="v_filter_malha")
-    
-    # 4. Filtro de Região (Opções sempre visíveis)
     lista_regioes_total = sorted(df_top[col_regiao].unique())
-    df_filtered_temp = df_filtered_resp[df_filtered_resp[col_malha].isin(filtro_malha)] if not df_filtered_resp.empty else pd.DataFrame()
-    default_regioes = sorted(df_filtered_temp[col_regiao].unique()) if not df_filtered_temp.empty else []
-    filtro_regiao = st.sidebar.multiselect("Filtrar por Região", options=lista_regioes_total, default=default_regioes, key="v_filter_regiao")
+    default_regioes = sorted(df_filtered_resp[col_regiao].unique()) if not df_filtered_resp.empty else []
+    filtro_regiao = st.sidebar.multiselect("🗺️ Região", options=lista_regioes_total, default=default_regioes, key="v_filter_regiao")
+
+    # 4. BLOCO FILTROS AVANÇADOS (EXPANDER SANFONA)
+    with st.sidebar.expander("🛠️ Filtros Avançados (Malha)", expanded=False):
+        lista_malhas_total = sorted(df_top[col_malha].unique())
+        default_malhas = sorted(df_filtered_resp[col_malha].unique()) if not df_filtered_resp.empty else []
+        filtro_malha = st.sidebar.multiselect("Filtrar por Malha", options=lista_malhas_total, default=default_malhas, key="v_filter_malha")
+
+    # 5. BOTÃO DE RESET GLOBAL E RODAPÉ
+    def trigger_reset_all():
+        st.session_state["reset_all_signal"] = True
+
+    st.sidebar.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+    st.sidebar.button("🔄 Resetar Todos os Filtros", key="btn_global_reset", use_container_width=True, on_click=trigger_reset_all, help="Restaura datas, responsáveis e regiões ao estado padrão")
+
+    st.sidebar.markdown("""
+        <hr style="border-color: rgba(255,255,255,0.08); margin: 14px 0 10px 0;" />
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #94a3b8; padding: 0 4px;">
+            <span style="display: flex; align-items: center; gap: 6px;">
+                <span style="width: 8px; height: 8px; background: #34d399; border-radius: 50%; display: inline-block; box-shadow: 0 0 6px #34d399;"></span>
+                Base D-1 Conectada
+            </span>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    if st.sidebar.button("🚪 Sair do Sistema", key="btn_logout_sidebar", use_container_width=True, help="Encerrar sessão de usuário"):
+        st.session_state.authenticated = False
+        st.session_state.user_nome = ""
+        st.session_state.user_nivel = ""
+        st.rerun()
 
     # Aplica filtros finais para gerar o df_filtered
     df_filtered = df[df['Responsavel'].isin(filtro_responsavel)]
