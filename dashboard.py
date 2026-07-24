@@ -1536,6 +1536,70 @@ if df is not None:
                                 st.plotly_chart(fig_fluxo, use_container_width=True)
                             else:
                                 st.info("Nenhum dado de fluxo encontrado para a região e período selecionados.")
+
+                    # --- Seção 5: Retrato de Transição de Regiões (Handover Snapshot) ---
+                    st.markdown("---")
+                    st.subheader("📸 Retrato de Transição de Regiões (Handover Snapshot)")
+                    st.caption("Consulte o retrato congelado do passivo de uma região no momento exato da troca de responsabilidade entre técnicos.")
+
+                    df_trans = db_manager.get_historico_transicoes()
+                    
+                    if not df_trans.empty:
+                        col_t_filter, col_t_content = st.columns([1, 7])
+                        
+                        with col_t_filter:
+                            st.markdown("#### Filtros Handover")
+                            regioes_trans = ["Todas (Visão Global)"] + sorted(df_trans['sigla_regiao'].unique().tolist())
+                            reg_handover_sel = st.selectbox("Selecione a Região:", options=regioes_trans, key="handover_regiao")
+                            
+                            df_trans_filtered = df_trans.copy()
+                            if reg_handover_sel != "Todas (Visão Global)":
+                                df_trans_filtered = df_trans_filtered[df_trans_filtered['sigla_regiao'] == reg_handover_sel]
+
+                        with col_t_content:
+                            st.markdown(f"##### Registros de Transição Encontrados: **{len(df_trans_filtered)}**")
+                            
+                            # Tabela de Histórico de Transições
+                            df_trans_display = df_trans_filtered.copy()
+                            df_trans_display['Data / Hora da Troca'] = pd.to_datetime(df_trans_display['data_transicao']).dt.strftime('%d/%m/%Y %H:%M')
+                            
+                            st.dataframe(
+                                df_trans_display[['Data / Hora da Troca', 'sigla_regiao', 'nome_anterior', 'nome_novo', 'total_pendentes', 'atrasadas', 'em_elaboracao', 'urgencias']],
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "sigla_regiao": st.column_config.TextColumn("Região"),
+                                    "nome_anterior": st.column_config.TextColumn("Técnico Anterior"),
+                                    "nome_novo": st.column_config.TextColumn("Novo Técnico"),
+                                    "total_pendentes": st.column_config.NumberColumn("Total Pendentes Herdado"),
+                                    "atrasadas": st.column_config.NumberColumn("Atrasadas"),
+                                    "em_elaboracao": st.column_config.NumberColumn("Em Elaboração"),
+                                    "urgencias": st.column_config.NumberColumn("Urgências")
+                                }
+                            )
+
+                            # Comparativo com o Estado Atual da Região no Live Dataset
+                            if len(df_trans_filtered) > 0:
+                                ultima_troca = df_trans_filtered.iloc[0]
+                                sigla_u = ultima_troca['sigla_regiao']
+                                
+                                # Busca estado atual no live dataset
+                                df_reg_atual = df[df[col_regiao].astype(str).str.strip().str[:2].str.upper() == sigla_u] if df is not None else pd.DataFrame()
+                                total_atual = len(df_reg_atual)
+                                
+                                st.markdown(f"#### 📊 Comparativo da Última Transição (Região **{sigla_u}**)")
+                                st.caption(f"Troca realizada em {pd.to_datetime(ultima_troca['data_transicao']).strftime('%d/%m/%Y %H:%M')}: De **{ultima_troca['nome_anterior']}** ➔ **{ultima_troca['nome_novo']}**")
+                                
+                                k1, k2, k3 = st.columns(3)
+                                with k1:
+                                    st.metric("📦 Passivo Herdado (Na Troca)", f"{ultima_troca['total_pendentes']} solicitações")
+                                with k2:
+                                    st.metric("📍 Passivo Atual do Novo Técnico", f"{total_atual} solicitações")
+                                with k3:
+                                    diff = total_atual - ultima_troca['total_pendentes']
+                                    st.metric("⚖️ Variação do Passivo", f"{diff:+} demandas", delta=f"{diff:+} desde a troca", delta_color="inverse" if diff > 0 else "normal")
+                    else:
+                        st.info("Nenhuma transição de região foi registrada ainda. As trocas efetuadas no painel de configurações gravarão automaticamente o retrato da transição.")
                         
                 else:
                     st.info("Nenhum evento de produtividade registrado no histórico.")

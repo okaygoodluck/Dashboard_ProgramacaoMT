@@ -502,17 +502,110 @@ def get_regioes_disponiveis_data():
 
     return sorted(list(regioes))
 
-def atribuir_regioes_massa(matricula_responsavel, lista_siglas):
-    """Atribui uma lista de regiões a um único responsável."""
+def registrar_transicao_regiao(sigla_regiao, matricula_nova):
+    """
+    Grava um retrato congelado da região quando ocorre troca de responsabilidade.
+    """
+    sigla_clean = str(sigla_regiao).strip().upper()[:2]
     conn = get_connection_config()
     try:
         cursor = conn.cursor()
         
-        # 1. Primeiro, remove todas as atribuições atuais deste técnico
-        # Isso permite que, se o usuário desmarcar uma região, ela seja removida
-        cursor.execute("DELETE FROM regioes_responsaveis WHERE matricula_responsavel = ?", (matricula_responsavel,))
+        # Pega responsável anterior
+        cursor.execute("SELECT matricula_responsavel FROM regioes_responsaveis WHERE UPPER(sigla_regiao) = ?", (sigla_clean,))
+        res_ant = cursor.fetchone()
+        matricula_anterior = res_ant[0] if res_ant and res_ant[0] else None
         
-        # 2. Agora insere as novas seleções
+        if matricula_anterior == matricula_nova:
+            return # Sem alteração real de responsável
+            
+        # Pega nomes dos usuários
+        cursor.execute("SELECT nome FROM usuarios WHERE matricula = ?", (matricula_nova,))
+        res_novo_nome = cursor.fetchone()
+        nome_novo = res_novo_nome[0] if res_novo_nome else matricula_nova
+        
+        nome_anterior = "Não Atribuído"
+        if matricula_anterior:
+            cursor.execute("SELECT nome FROM usuarios WHERE matricula = ?", (matricula_anterior,))
+            res_ant_nome = cursor.fetchone()
+            if res_ant_nome:
+                nome_anterior = res_ant_nome[0]
+
+        # Calcula passivo atual congelado da região lendo os dados mais recentes
+        df = carregar_dados_recentes()
+        total_pendentes = 0
+        atrasadas = 0
+        urgencias = 0
+        alertas = 0
+        em_elaboracao = 0
+        
+        if df is not None and not df.empty:
+            col_reg = 'Ref_Regiao' if 'Ref_Regiao' in df.columns else df.columns[1]
+            df_reg = df[df[col_reg].astype(str).str.strip().str[:2].str.upper() == sigla_clean]
+            
+            if not df_reg.empty:
+                total_pendentes = len(df_reg)
+                if 'Status_Prazo' in df_reg.columns:
+                    atrasadas = len(df_reg[df_reg['Status_Prazo'] == 'Atrasada'])
+                    urgencias = len(df_reg[df_reg['Status_Prazo'] == 'Urgência'])
+                    alertas = len(df_reg[df_reg['Status_Prazo'] == 'Alerta de Prazo'])
+                if 'Is_Elaboracao' in df_reg.columns:
+                    em_elaboracao = len(df_reg[df_reg['Is_Elaboracao'] == True])
+
+        # Insere fotografia no histórico de transição
+        cursor.execute('''
+            INSERT INTO historico_transicao_regioes (
+                sigla_regiao, matricula_anterior, nome_anterior, matricula_nova, nome_novo,
+                total_pendentes, atrasadas, urgencias, alertas, em_elaboracao
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (sigla_clean, matricula_anterior, nome_anterior, matricula_nova, nome_novo,
+              total_pendentes, atrasadas, urgencias, alertas, em_elaboracao))
+        conn.commit()
+        print(f"[HANDOVER] Transição registrada: Região {sigla_clean} ({nome_anterior} -> {nome_novo}) - Pendentes: {total_pendentes}")
+    except Exception as e:
+        print(f"[HANDOVER ERRO] Falha ao registrar transição de região: {e}")
+    finally:
+        conn.close()
+
+def get_historico_transicoes(regiao=None, matricula=None):
+    """
+    Retorna o histórico de transições de regiões gravado no ccp_app.db.
+    """
+    import pandas as pd
+    conn = get_connection_config()
+    try:
+        query = "SELECT * FROM historico_transicao_regioes WHERE 1=1"
+        params = []
+        if regiao and str(regiao).upper() not in ['TODAS', 'GLOBAL', 'TODAS (VISÃO GLOBAL)']:
+            sigla = str(regiao).strip().upper()[:2]
+            query += " AND UPPER(sigla_regiao) = ?"
+            params.append(sigla)
+        if matricula:
+            query += " AND (matricula_anterior = ? OR matricula_nova = ?)"
+            params.extend([matricula, matricula])
+            
+        query += " ORDER BY id DESC"
+        df = pd.read_sql(query, conn, params=params)
+        return df
+    except Exception as e:
+        print(f"[HANDOVER ERRO] Falha ao buscar histórico de transições: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
+
+def atribuir_regioes_massa(matricula_responsavel, lista_siglas):
+    """Atribui uma lista de regiões a um único responsável gravando a transição."""
+    # Tira a foto de transição para cada nova região atribuída
+    for sigla in lista_siglas:
+        try:
+            registrar_transicao_regiao(sigla, matricula_responsavel)
+        except Exception:
+            pass
+
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM regioes_responsaveis WHERE matricula_responsavel = ?", (matricula_responsavel,))
         for sigla in lista_siglas:
             cursor.execute('''
                 INSERT INTO regioes_responsaveis (sigla_regiao, matricula_responsavel)
@@ -632,6 +725,24 @@ def init_database():
                 pendentes_iniciadas INTEGER DEFAULT 0,
                 pendentes_nao_iniciadas INTEGER DEFAULT 0,
                 PRIMARY KEY (data, matricula)
+            )
+        ''')
+
+        # 8. Tabela de Histórico de Transição de Regiões (Handover Snapshot)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS historico_transicao_regioes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sigla_regiao TEXT NOT NULL,
+                matricula_anterior TEXT,
+                nome_anterior TEXT,
+                matricula_nova TEXT NOT NULL,
+                nome_novo TEXT NOT NULL,
+                data_transicao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                total_pendentes INTEGER DEFAULT 0,
+                atrasadas INTEGER DEFAULT 0,
+                urgencias INTEGER DEFAULT 0,
+                alertas INTEGER DEFAULT 0,
+                em_elaboracao INTEGER DEFAULT 0
             )
         ''')
 
