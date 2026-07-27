@@ -5,6 +5,8 @@ import numpy as np
 import os
 import sys
 
+FERIADOS_BASE = ["2026-01-01", "2026-04-03", "2026-04-21", "2026-05-01", "2026-06-04", "2026-08-15", "2026-09-07", "2026-10-12", "2026-11-02", "2026-11-15", "2026-11-20", "2026-12-25"]
+
 def get_agora_br():
     """Retorna o horário atual em Brasília (UTC-3)."""
     return datetime.datetime.utcnow() - datetime.timedelta(hours=3)
@@ -539,10 +541,16 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova):
         urgencias = 0
         alertas = 0
         em_elaboracao = 0
+        aprovadas_herdadas = 0
+        atrasadas_herdadas = 0
+        du8_herdadas = 0
+        du9_herdadas = 0
+        du10_herdadas = 0
+        du11_herdadas = 0
         
         if df is not None and not df.empty:
             col_reg = 'Ref_Regiao' if 'Ref_Regiao' in df.columns else df.columns[1]
-            df_reg = df[df[col_reg].astype(str).str.strip().str[:2].str.upper() == sigla_clean]
+            df_reg = df[df[col_reg].astype(str).str.strip().str[:2].str.upper() == sigla_clean].copy()
             
             if not df_reg.empty:
                 total_pendentes = len(df_reg)
@@ -552,15 +560,54 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova):
                     alertas = len(df_reg[df_reg['Status_Prazo'] == 'Alerta de Prazo'])
                 if 'Is_Elaboracao' in df_reg.columns:
                     em_elaboracao = len(df_reg[df_reg['Is_Elaboracao'] == True])
+                
+                # REGRA NEGOCIAL: Solicitações em elaboração pertencem ao técnico que iniciou.
+                # O novo técnico herda as solicitações Aprovadas da região.
+                if 'Is_Aprovada' in df_reg.columns:
+                    df_aprov = df_reg[df_reg['Is_Aprovada'] == True].copy()
+                elif 'Is_Elaboracao' in df_reg.columns:
+                    df_aprov = df_reg[df_reg['Is_Elaboracao'] != True].copy()
+                else:
+                    df_aprov = df_reg.copy()
+                    
+                aprovadas_herdadas = len(df_aprov)
+                if 'Status_Prazo' in df_aprov.columns:
+                    atrasadas_herdadas = len(df_aprov[df_aprov['Status_Prazo'] == 'Atrasada'])
+                    
+                col_data_inicio = next((c for c in df_aprov.columns if 'início' in c.lower() or 'inicio' in c.lower()), None)
+                if col_data_inicio and not df_aprov.empty:
+                    try:
+                        feriados_np = np.array(FERIADOS_BASE, dtype='datetime64[D]')
+                        hoje_dt = datetime.date.today()
+                        hoje_util = np.busday_offset(hoje_dt, 0, roll='backward', weekmask='1111100', holidays=feriados_np)
+                        
+                        def _calc_du(val_d):
+                            try:
+                                d_obj = pd.to_datetime(val_d, dayfirst=True, errors='coerce')
+                                if pd.isna(d_obj): return None
+                                d_util = np.busday_offset(d_obj.date(), 0, roll='backward', weekmask='1111100', holidays=feriados_np)
+                                return int(np.busday_count(hoje_util, d_util, weekmask='1111100', holidays=feriados_np))
+                            except Exception:
+                                return None
+                                
+                        df_aprov['du_calc'] = df_aprov[col_data_inicio].apply(_calc_du)
+                        du8_herdadas = len(df_aprov[df_aprov['du_calc'] == 8])
+                        du9_herdadas = len(df_aprov[df_aprov['du_calc'] == 9])
+                        du10_herdadas = len(df_aprov[df_aprov['du_calc'] == 10])
+                        du11_herdadas = len(df_aprov[df_aprov['du_calc'] == 11])
+                    except Exception as e_du:
+                        print(f"[HANDOVER] Aviso ao calcular DU: {e_du}")
 
         # Insere fotografia no histórico de transição
         cursor.execute('''
             INSERT INTO historico_transicao_regioes (
                 sigla_regiao, matricula_anterior, nome_anterior, matricula_nova, nome_novo,
-                total_pendentes, atrasadas, urgencias, alertas, em_elaboracao
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                total_pendentes, atrasadas, urgencias, alertas, em_elaboracao,
+                aprovadas_herdadas, atrasadas_herdadas, du8_herdadas, du9_herdadas, du10_herdadas, du11_herdadas
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (sigla_clean, matricula_anterior, nome_anterior, matricula_nova, nome_novo,
-              total_pendentes, atrasadas, urgencias, alertas, em_elaboracao))
+              total_pendentes, atrasadas, urgencias, alertas, em_elaboracao,
+              aprovadas_herdadas, atrasadas_herdadas, du8_herdadas, du9_herdadas, du10_herdadas, du11_herdadas))
         conn.commit()
         print(f"[HANDOVER] Transição registrada: Região {sigla_clean} ({nome_anterior} -> {nome_novo}) - Pendentes: {total_pendentes}")
     except Exception as e:
@@ -757,9 +804,22 @@ def init_database():
                 atrasadas INTEGER DEFAULT 0,
                 urgencias INTEGER DEFAULT 0,
                 alertas INTEGER DEFAULT 0,
-                em_elaboracao INTEGER DEFAULT 0
+                em_elaboracao INTEGER DEFAULT 0,
+                aprovadas_herdadas INTEGER DEFAULT 0,
+                atrasadas_herdadas INTEGER DEFAULT 0,
+                du8_herdadas INTEGER DEFAULT 0,
+                du9_herdadas INTEGER DEFAULT 0,
+                du10_herdadas INTEGER DEFAULT 0,
+                du11_herdadas INTEGER DEFAULT 0
             )
         ''')
+
+        # Migração automática de schema para bancos pré-existentes
+        for col_n in ['aprovadas_herdadas', 'atrasadas_herdadas', 'du8_herdadas', 'du9_herdadas', 'du10_herdadas', 'du11_herdadas']:
+            try:
+                conn.execute(f"ALTER TABLE historico_transicao_regioes ADD COLUMN {col_n} INTEGER DEFAULT 0")
+            except Exception:
+                pass
 
         # 8. Criar usuário ADM padrão se a tabela de usuários estiver vazia
         cursor = conn.cursor()

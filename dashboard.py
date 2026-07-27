@@ -1602,22 +1602,33 @@ if df is not None:
                         with col_t_content:
                             st.markdown(f"##### Registros de Transição Encontrados: **{len(df_trans_filtered)}**")
                             
-                            # Tabela de Histórico de Transições
+                            # Tabela de Histórico de Transições com Detalhamento de Herdadas
                             df_trans_display = df_trans_filtered.copy()
                             df_trans_display['Data / Hora da Troca'] = pd.to_datetime(df_trans_display['data_transicao']).dt.strftime('%d/%m/%Y %H:%M')
                             
+                            # Garante existência das novas colunas de detecção de herdadas
+                            for col_def in ['aprovadas_herdadas', 'atrasadas_herdadas', 'du8_herdadas', 'du9_herdadas', 'du10_herdadas', 'du11_herdadas']:
+                                if col_def not in df_trans_display.columns:
+                                    df_trans_display[col_def] = 0
+                                else:
+                                    df_trans_display[col_def] = df_trans_display[col_def].fillna(0).astype(int)
+                                    
                             st.dataframe(
-                                df_trans_display[['Data / Hora da Troca', 'sigla_regiao', 'nome_anterior', 'nome_novo', 'total_pendentes', 'atrasadas', 'em_elaboracao', 'urgencias']],
+                                df_trans_display[['Data / Hora da Troca', 'sigla_regiao', 'nome_anterior', 'nome_novo', 'aprovadas_herdadas', 'atrasadas_herdadas', 'du8_herdadas', 'du9_herdadas', 'du10_herdadas', 'du11_herdadas', 'em_elaboracao', 'total_pendentes']],
                                 use_container_width=True,
                                 hide_index=True,
                                 column_config={
                                     "sigla_regiao": st.column_config.TextColumn("Região"),
                                     "nome_anterior": st.column_config.TextColumn("Técnico Anterior"),
                                     "nome_novo": st.column_config.TextColumn("Novo Técnico"),
-                                    "total_pendentes": st.column_config.NumberColumn("Total Pendentes Herdado"),
-                                    "atrasadas": st.column_config.NumberColumn("Atrasadas"),
-                                    "em_elaboracao": st.column_config.NumberColumn("Em Elaboração"),
-                                    "urgencias": st.column_config.NumberColumn("Urgências")
+                                    "aprovadas_herdadas": st.column_config.NumberColumn("Aprovadas Herdadas"),
+                                    "atrasadas_herdadas": st.column_config.NumberColumn("Atrasadas Herdadas"),
+                                    "du8_herdadas": st.column_config.NumberColumn("8 Dias Úteis"),
+                                    "du9_herdadas": st.column_config.NumberColumn("9 Dias Úteis"),
+                                    "du10_herdadas": st.column_config.NumberColumn("10 Dias Úteis"),
+                                    "du11_herdadas": st.column_config.NumberColumn("11 Dias Úteis"),
+                                    "em_elaboracao": st.column_config.NumberColumn("Em Elaboração (Fica c/ Antigo)"),
+                                    "total_pendentes": st.column_config.NumberColumn("Total Geral Região")
                                 }
                             )
 
@@ -1632,15 +1643,17 @@ if df is not None:
                                 
                                 st.markdown(f"#### 📊 Comparativo da Última Transição (Região **{sigla_u}**)")
                                 st.caption(f"Troca realizada em {pd.to_datetime(ultima_troca['data_transicao']).strftime('%d/%m/%Y %H:%M')}: De **{ultima_troca['nome_anterior']}** ➔ **{ultima_troca['nome_novo']}**")
+                                st.caption("🔒 *Nota de Trava:* Solicitações 'Em Elaboração' permanecem travadas com o técnico de origem. O novo técnico herda as manobras **Aprovadas** da região.")
                                 
-                                k1, k2, k3 = st.columns(3)
+                                k1, k2, k3, k4 = st.columns(4)
                                 with k1:
-                                    st.metric("📦 Passivo Herdado (Na Troca)", f"{ultima_troca['total_pendentes']} solicitações")
+                                    st.metric("📦 Aprovadas Herdadas", f"{ultima_troca.get('aprovadas_herdadas', 0)} manobras")
                                 with k2:
-                                    st.metric("📍 Passivo Atual do Novo Técnico", f"{total_atual} solicitações")
+                                    st.metric("🚨 Atrasadas Herdadas", f"{ultima_troca.get('atrasadas_herdadas', 0)} manobras")
                                 with k3:
-                                    diff = total_atual - ultima_troca['total_pendentes']
-                                    st.metric("⚖️ Variação do Passivo", f"{diff:+} demandas", delta=f"{diff:+} desde a troca", delta_color="inverse" if diff > 0 else "normal")
+                                    st.metric("📅 Prazos (8D / 9D / 10D / 11D)", f"{ultima_troca.get('du8_herdadas',0)} | {ultima_troca.get('du9_herdadas',0)} | {ultima_troca.get('du10_herdadas',0)} | {ultima_troca.get('du11_herdadas',0)}")
+                                with k4:
+                                    st.metric("🔒 Em Elaboração (Técnico Antigo)", f"{ultima_troca.get('em_elaboracao', 0)} manobras")
                             
                             # Opção de exclusão para administradores caso ocorra algum registro indevido
                             if st.session_state.get("user_nivel") == "ADM":
