@@ -1457,3 +1457,40 @@ def get_fluxo_diario_novas_tratadas(data_inicio=None, data_fim=None, regiao=None
             try: conn_app.close()
             except Exception: pass
 
+def get_rank_saldo_regioes(data_inicio=None, data_fim=None):
+    """
+    Retorna o ranking de regiões por Saldo do Período (Novas - Tratadas),
+    ordenado do maior saldo positivo (pior acúmulo de passivo) para o menor.
+    """
+    import pandas as pd
+    import datetime
+    
+    if data_fim is None:
+        data_fim = datetime.date.today().strftime('%Y-%m-%d')
+    if data_inicio is None:
+        data_inicio = (datetime.date.today() - datetime.timedelta(days=15)).strftime('%Y-%m-%d')
+        
+    conn_app = get_connection_config()
+    try:
+        query = """
+            SELECT 
+                UPPER(TRIM(regiao)) as Regiao,
+                SUM(CASE WHEN tipo_evento = 'NOVA' THEN 1 ELSE 0 END) as Novas,
+                SUM(CASE WHEN tipo_evento = 'TRATADA' THEN 1 ELSE 0 END) as Tratadas,
+                (SUM(CASE WHEN tipo_evento = 'NOVA' THEN 1 ELSE 0 END) - SUM(CASE WHEN tipo_evento = 'TRATADA' THEN 1 ELSE 0 END)) as Saldo
+            FROM eventos_diarios
+            WHERE date(data_evento) BETWEEN ? AND ?
+              AND regiao IS NOT NULL AND TRIM(regiao) != ''
+            GROUP BY UPPER(TRIM(regiao))
+            ORDER BY Saldo DESC, Novas DESC
+        """
+        df_rank = pd.read_sql(query, conn_app, params=[data_inicio, data_fim])
+        return df_rank
+    except Exception as e:
+        print(f"Erro em get_rank_saldo_regioes: {e}")
+        return pd.DataFrame(columns=['Regiao', 'Novas', 'Tratadas', 'Saldo'])
+    finally:
+        if 'conn_app' in locals() and conn_app:
+            try: conn_app.close()
+            except Exception: pass
+

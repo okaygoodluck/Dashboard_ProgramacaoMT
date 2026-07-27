@@ -1541,6 +1541,42 @@ if df is not None:
                                 )
                                 fig_fluxo.update_xaxes(type='category')
                                 st.plotly_chart(fig_fluxo, use_container_width=True)
+
+                                # --- Gráfico de Rank das Piores Regiões pelo Saldo do Período ---
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                st.markdown("#### 🚨 Rank das Piores Regiões pelo Saldo do Período (Entradas - Saídas)")
+                                st.caption("Regiões com maior acúmulo positivo de passivo no período selecionado (onde entraram mais demandas do que foram tratadas).")
+                                
+                                df_rank_saldo = db_manager.get_rank_saldo_regioes(
+                                    data_inicio=flx_inicio.strftime('%Y-%m-%d'),
+                                    data_fim=flx_fim.strftime('%Y-%m-%d')
+                                )
+                                
+                                if not df_rank_saldo.empty:
+                                    df_rank_top = df_rank_saldo.head(15).copy()
+                                    df_rank_top['Texto_Barra'] = df_rank_top['Saldo'].apply(lambda x: f"+{x}" if x > 0 else str(x))
+                                    
+                                    fig_rank = px.bar(
+                                        df_rank_top,
+                                        x='Regiao',
+                                        y='Saldo',
+                                        text='Texto_Barra',
+                                        color='Saldo',
+                                        color_continuous_scale=['#10b981', '#f59e0b', '#ef4444'],
+                                        title=f"Rank das Piores Regiões por Saldo ({flx_inicio.strftime('%d/%m/%Y')} a {flx_fim.strftime('%d/%m/%Y')})"
+                                    )
+                                    fig_rank.update_traces(textposition='outside')
+                                    fig_rank.update_layout(
+                                        xaxis_title="Região",
+                                        yaxis_title="Saldo de Manobras (Novas - Tratadas)",
+                                        yaxis_tickformat="d",
+                                        showlegend=False,
+                                        coloraxis_showscale=False
+                                    )
+                                    fig_rank.update_xaxes(type='category')
+                                    st.plotly_chart(fig_rank, use_container_width=True)
+                                else:
+                                    st.info("Nenhum dado de saldo por região para o período selecionado.")
                             else:
                                 st.info("Nenhum dado de fluxo encontrado para a região e período selecionados.")
 
