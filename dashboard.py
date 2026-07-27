@@ -1295,6 +1295,53 @@ if df is not None:
                             )
                             fig_user.update_xaxes(type='category')
                             st.plotly_chart(fig_user, use_container_width=True)
+
+                            # Expander para ver os detalhes das solicitações tratadas
+                            with st.expander("🔎 Ver Detalhes das Solicitações Tratadas"):
+                                df_detalhes_tratadas = df_usr_filtered.copy()
+                                if not df_detalhes_tratadas.empty:
+                                    df_detalhes_tratadas['solic_clean'] = df_detalhes_tratadas['solicitacao'].astype(str).str.strip().str.lstrip('0')
+                                    
+                                    col_sol_main = 'Solicitacao_ID' if 'Solicitacao_ID' in df.columns else (col_sol if 'col_sol' in locals() and col_sol in df.columns else df.columns[0])
+                                    col_manobra = 'Manobra' if 'Manobra' in df.columns else None
+                                    col_data_inicio = col_data if 'col_data' in locals() and col_data in df.columns else next((c for c in df.columns if 'início' in c.lower() or 'inicio' in c.lower()), None)
+                                    
+                                    # Merge com dataset principal se disponível
+                                    df_main_subset = df.copy()
+                                    df_main_subset['solic_clean'] = df_main_subset[col_sol_main].astype(str).str.strip().str.lstrip('0')
+                                    
+                                    cols_to_merge = ['solic_clean']
+                                    if col_manobra and col_manobra in df_main_subset.columns:
+                                        cols_to_merge.append(col_manobra)
+                                    if col_data_inicio and col_data_inicio in df_main_subset.columns:
+                                        cols_to_merge.append(col_data_inicio)
+                                        
+                                    df_merged_det = df_detalhes_tratadas.merge(
+                                        df_main_subset[cols_to_merge].drop_duplicates(subset=['solic_clean']),
+                                        on='solic_clean',
+                                        how='left'
+                                    )
+                                    
+                                    df_merged_det['Número da Solicitação'] = df_merged_det['solicitacao']
+                                    df_merged_det['Número da Manobra'] = df_merged_det[col_manobra].fillna('-') if col_manobra and col_manobra in df_merged_det.columns else '-'
+                                    df_merged_det['Responsável'] = df_merged_det['nome_responsavel']
+                                    
+                                    if col_data_inicio and col_data_inicio in df_merged_det.columns:
+                                        df_merged_det['Data de Início'] = pd.to_datetime(df_merged_det[col_data_inicio], dayfirst=True, errors='coerce').dt.strftime('%d/%m/%Y').fillna('-')
+                                    else:
+                                        df_merged_det['Data de Início'] = '-'
+                                        
+                                    df_merged_det['Dia que foi Enviado'] = pd.to_datetime(df_merged_det['data_evento'], dayfirst=True, errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
+                                    
+                                    df_merged_det = df_merged_det.sort_values(by='data_evento', ascending=False)
+                                    
+                                    st.dataframe(
+                                        df_merged_det[['Número da Solicitação', 'Número da Manobra', 'Responsável', 'Data de Início', 'Dia que foi Enviado']],
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+                                else:
+                                    st.info("Nenhuma solicitação tratada para o filtro selecionado.")
                         else:
                             st.info("Nenhum dado encontrado para o usuário e período selecionados.")
                             
