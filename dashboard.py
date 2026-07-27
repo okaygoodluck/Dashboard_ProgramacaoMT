@@ -1000,26 +1000,26 @@ if df is not None:
         premium_metric_card("Solicitações Atrasadas", qtd_atrasadas, icon_name="timer", color="#f87171")
         if st.button("Atrasadas", key="kpi_btn_atrasados", use_container_width=True):
             show_kpi_dialog("Solicitações Atrasadas", df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
-        
-    with kpi_col3:
-        premium_metric_card("Total de Aprovadas", qtd_aprovadas, icon_name="tick", color="#34d399")
-        if st.button("Aprovadas", key="kpi_btn_aprovadas", use_container_width=True):
-            show_kpi_dialog("Total de Aprovadas", df_filtered[df_filtered['Is_Aprovada'] == True])
 
-    with kpi_col4:
-        premium_metric_card("Total Em elaboração", qtd_elaboracao, icon_name="edit", color="#38bdf8")
-        if st.button("Em elaboração", key="kpi_btn_elaboracao", use_container_width=True):
-            show_kpi_dialog("Total Em elaboração", df_filtered[df_filtered['Is_Elaboracao'] == True])
-        
-    with kpi_col5:
+    with kpi_col3:
         premium_metric_card("Foras do Prazo (Caixa)", qtd_urgencia, icon_name="flash", color="#fbbf24")
         if st.button("Fora do Prazo", key="kpi_btn_urgentes", use_container_width=True):
             show_kpi_dialog("Foras do Prazo (Caixa)", df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
         
-    with kpi_col6:
+    with kpi_col4:
         premium_metric_card("8 dias - Prazo p/ Enviar Aviso", qtd_alerta, icon_name="info", color="#818cf8")
         if st.button("Aviso (8 dias)", key="kpi_btn_alertas", use_container_width=True):
             show_kpi_dialog("8 dias - Prazo p/ Enviar Aviso", df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
+        
+    with kpi_col5:
+        premium_metric_card("Total Em elaboração", qtd_elaboracao, icon_name="edit", color="#38bdf8")
+        if st.button("Em elaboração", key="kpi_btn_elaboracao", use_container_width=True):
+            show_kpi_dialog("Total Em elaboração", df_filtered[df_filtered['Is_Elaboracao'] == True])
+        
+    with kpi_col6:
+        premium_metric_card("Total de Aprovadas", qtd_aprovadas, icon_name="tick", color="#34d399")
+        if st.button("Aprovadas", key="kpi_btn_aprovadas", use_container_width=True):
+            show_kpi_dialog("Total de Aprovadas", df_filtered[df_filtered['Is_Aprovada'] == True])
 
     # Automação de Snapshot Diário (Pós-processamento dos KPIs)
     tratar_snapshot_diario(total_solicitacoes, qtd_atrasadas, qtd_alerta, qtd_urgencia, (total_solicitacoes - qtd_atrasadas))
