@@ -980,29 +980,29 @@ if df is not None:
     kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
     
     with kpi_col1:
-        premium_metric_card(f"{prefix_kpi}Fila de Processamento (Total Geral)", total_solicitacoes, icon_name="people", color="#3b82f6", is_vanguard=True)
-        if st.button("Fila", key="kpi_btn_fila", use_container_width=True):
-            show_kpi_dialog("Fila de Processamento (Total Geral)", df_filtered)
+        premium_metric_card(f"{prefix_kpi}Total Geral", total_solicitacoes, icon_name="people", color="#3b82f6", is_vanguard=True)
+        if st.button("Total Geral", key="kpi_btn_fila", use_container_width=True):
+            show_kpi_dialog("Total Geral", df_filtered)
     
     with kpi_col2:
-        premium_metric_card(f"{prefix_kpi}Atrasados", qtd_atrasadas, icon_name="timer", color="#f87171")
-        if st.button("Atrasados", key="kpi_btn_atrasados", use_container_width=True):
-            show_kpi_dialog("Atrasados", df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
+        premium_metric_card(f"{prefix_kpi}Solicitações Atrasadas", qtd_atrasadas, icon_name="timer", color="#f87171")
+        if st.button("Atrasadas", key="kpi_btn_atrasados", use_container_width=True):
+            show_kpi_dialog("Solicitações Atrasadas", df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
         
     with kpi_col3:
-        premium_metric_card(f"{prefix_kpi}Total Aprovadas", qtd_aprovadas, icon_name="tick", color="#34d399")
+        premium_metric_card(f"{prefix_kpi}Total de Aprovadas", qtd_aprovadas, icon_name="tick", color="#34d399")
         if st.button("Aprovadas", key="kpi_btn_aprovadas", use_container_width=True):
-            show_kpi_dialog("Total de Solicitações Aprovadas", df_filtered[df_filtered['Is_Aprovada'] == True])
+            show_kpi_dialog("Total de Aprovadas", df_filtered[df_filtered['Is_Aprovada'] == True])
         
     with kpi_col4:
-        premium_metric_card(f"{prefix_kpi}Urgentes", qtd_urgencia, icon_name="flash", color="#fbbf24")
-        if st.button("Urgentes", key="kpi_btn_urgentes", use_container_width=True):
-            show_kpi_dialog("Urgentes", df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
+        premium_metric_card(f"{prefix_kpi}Foras do Prazo (Caixa)", qtd_urgencia, icon_name="flash", color="#fbbf24")
+        if st.button("Fora do Prazo", key="kpi_btn_urgentes", use_container_width=True):
+            show_kpi_dialog("Foras do Prazo (Caixa)", df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
         
     with kpi_col5:
-        premium_metric_card(f"{prefix_kpi}Alertas", qtd_alerta, icon_name="info", color="#818cf8")
-        if st.button("Alertas", key="kpi_btn_alertas", use_container_width=True):
-            show_kpi_dialog("Alertas", df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
+        premium_metric_card(f"{prefix_kpi}8 dias - Prazo p/ Enviar Aviso", qtd_alerta, icon_name="info", color="#818cf8")
+        if st.button("Aviso (8 dias)", key="kpi_btn_alertas", use_container_width=True):
+            show_kpi_dialog("8 dias - Prazo p/ Enviar Aviso", df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
 
     # Automação de Snapshot Diário (Pós-processamento dos KPIs)
     tratar_snapshot_diario(total_solicitacoes, qtd_atrasadas, qtd_alerta, qtd_urgencia, (total_solicitacoes - qtd_atrasadas))
