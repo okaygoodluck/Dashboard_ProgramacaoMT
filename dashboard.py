@@ -1196,7 +1196,6 @@ if df is not None:
     # --- ABA 4: RELATÓRIOS & GESTÃO ---
     if chosen_tab == "📊 Relatórios":
         with st.container():
-            st.subheader("Eventos de Produtividade (Hoje)")
             try:
                 conn_app = db_manager.get_connection_config(read_only=True)
                 hoje_str = db_manager.get_agora_br().strftime('%Y-%m-%d')
@@ -1213,67 +1212,7 @@ if df is not None:
                     # Extrair apenas a data (YYYY-MM-DD)
                     df_eventos_all['data'] = pd.to_datetime(df_eventos_all['data_evento']).dt.strftime('%Y-%m-%d')
                     
-                    # --- TABELA DE HOJE ---
-                    df_eventos_hoje = df_eventos_all[df_eventos_all['data'] == hoje_str].copy()
-                    
-                    if filtro_responsavel:
-                        df_eventos_hoje = df_eventos_hoje[df_eventos_hoje['nome_responsavel'].isin(filtro_responsavel)]
-                    if filtro_regiao:
-                        siglas_filtro_hoje = [str(r).strip()[:2].upper() for r in filtro_regiao]
-                        df_eventos_hoje = df_eventos_hoje[df_eventos_hoje['regiao'].isin(siglas_filtro_hoje)]
-                    
-                    # 1. Base oficial de Regiões/Responsáveis
-                    df_regioes = db_manager.get_mapeamento_regioes()
-                    
-                    siglas_filtro = [str(r).strip()[:2].upper() for r in filtro_regiao] if filtro_regiao else []
-                    df_base = df_regioes[df_regioes['sigla_regiao'].isin(siglas_filtro)] if (not df_regioes.empty and siglas_filtro) else df_regioes
-                    
-                    base_records = []
-                    if not df_base.empty:
-                        for _, row in df_base.iterrows():
-                            sigla = row['sigla_regiao']
-                            nome = row['responsavel'] if pd.notna(row['responsavel']) and row['responsavel'] else "Não Atribuído"
-                            base_records.append({'Região': sigla, 'Responsável': nome})
-                    df_base_final = pd.DataFrame(base_records) if base_records else pd.DataFrame(columns=['Região', 'Responsável'])
-                    
-                    # 2. Produtividade Real
-                    if not df_eventos_hoje.empty:
-                        # Regra de Sincronia: Se tratou hoje, remove a "INICIADA" do mesmo dia para não duplicar na contagem visual
-                        sol_tratadas = df_eventos_hoje[df_eventos_hoje['tipo_evento'] == 'TRATADA']['solicitacao'].unique()
-                        mask_remover = (df_eventos_hoje['tipo_evento'] == 'INICIADA') & (df_eventos_hoje['solicitacao'].isin(sol_tratadas))
-                        df_eventos_hoje = df_eventos_hoje[~mask_remover]
-
-                        df_prod_atual = pd.crosstab(
-                            index=[df_eventos_hoje['regiao'], df_eventos_hoje['nome_responsavel']],
-                            columns=df_eventos_hoje['tipo_evento']
-                        ).reset_index()
-                        df_prod_atual = df_prod_atual.rename(columns={'regiao': 'Região', 'nome_responsavel': 'Resp_Antigo'})
-                    else:
-                        df_prod_atual = pd.DataFrame(columns=['Região'])
-                        
-                    for c in ['NOVA', 'INICIADA', 'TRATADA']:
-                        if c not in df_prod_atual.columns:
-                            df_prod_atual[c] = 0
-                            
-                    # 3. Merge Oficial x Real
-                    if not df_base_final.empty:
-                        df_prod = pd.merge(df_base_final, df_prod_atual, on='Região', how='left')
-                    else:
-                        df_prod = df_prod_atual
-                        df_prod['Responsável'] = df_prod.get('Resp_Antigo', 'Não Atribuído')
-                        
-                    df_prod['Novas'] = df_prod.get('NOVA', 0).fillna(0).astype(int)
-                    df_prod['Iniciadas'] = df_prod.get('INICIADA', 0).fillna(0).astype(int)
-                    df_prod['Tratadas'] = df_prod.get('TRATADA', 0).fillna(0).astype(int)
-                    
-                    if df_prod.empty:
-                        st.info("Nenhuma região cadastrada para exibir.")
-                    else:
-                        df_prod.columns.name = None
-                        st.dataframe(df_prod[['Região', 'Responsável', 'Novas', 'Iniciadas', 'Tratadas']], use_container_width=True, hide_index=True)
-                    
                     # --- GRÁFICOS DE EVOLUÇÃO ---
-                    st.markdown("---")
                     st.subheader("Evolução Histórica (Dia a Dia)")
                     
                     import plotly.express as px
