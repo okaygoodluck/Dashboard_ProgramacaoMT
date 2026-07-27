@@ -516,8 +516,9 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova):
         res_ant = cursor.fetchone()
         matricula_anterior = res_ant[0] if res_ant and res_ant[0] else None
         
-        if matricula_anterior == matricula_nova:
-            return # Sem alteração real de responsável
+        # Só registra transição se já existia um responsável anterior diferente do novo
+        if not matricula_anterior or matricula_anterior == matricula_nova:
+            return # Sem alteração real de responsável entre dois técnicos
             
         # Pega nomes dos usuários
         cursor.execute("SELECT nome FROM usuarios WHERE matricula = ?", (matricula_nova,))
@@ -564,6 +565,20 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova):
         print(f"[HANDOVER] Transição registrada: Região {sigla_clean} ({nome_anterior} -> {nome_novo}) - Pendentes: {total_pendentes}")
     except Exception as e:
         print(f"[HANDOVER ERRO] Falha ao registrar transição de região: {e}")
+    finally:
+        conn.close()
+
+def deletar_transicao_regiao(id_transicao):
+    """Permite apagar uma transição registrada indevidamente."""
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM historico_transicao_regioes WHERE id = ?", (id_transicao,))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"[HANDOVER ERRO] Falha ao apagar transição: {e}")
+        return False
     finally:
         conn.close()
 

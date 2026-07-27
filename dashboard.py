@@ -1598,6 +1598,21 @@ if df is not None:
                                 with k3:
                                     diff = total_atual - ultima_troca['total_pendentes']
                                     st.metric("⚖️ Variação do Passivo", f"{diff:+} demandas", delta=f"{diff:+} desde a troca", delta_color="inverse" if diff > 0 else "normal")
+                            
+                            # Opção de exclusão para administradores caso ocorra algum registro indevido
+                            if st.session_state.get("user_nivel") == "ADM":
+                                with st.expander("🛠️ Gerenciar / Excluir Registro de Transição (ADM)"):
+                                    opcoes_excluir = {
+                                        f"ID {r['id']} - Região {r['sigla_regiao']} ({r['nome_anterior']} ➔ {r['nome_novo']} em {pd.to_datetime(r['data_transicao']).strftime('%d/%m/%Y %H:%M')})": r['id']
+                                        for _, r in df_trans_filtered.iterrows()
+                                    }
+                                    if opcoes_excluir:
+                                        trans_sel_label = st.selectbox("Selecione o registro para remover:", options=list(opcoes_excluir.keys()), key="sb_delete_handover")
+                                        if st.button("🗑️ Confirmar Exclusão do Registro", key="btn_confirm_del_handover", type="primary"):
+                                            id_del = opcoes_excluir[trans_sel_label]
+                                            if db_manager.deletar_transicao_regiao(id_del):
+                                                st.success("Registro de transição excluído com sucesso!")
+                                                st.rerun()
                     else:
                         st.info("Nenhuma transição de região foi registrada ainda. As trocas efetuadas no painel de configurações gravarão automaticamente o retrato da transição.")
                         
