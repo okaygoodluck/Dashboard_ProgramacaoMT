@@ -980,9 +980,9 @@ if df is not None:
     kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5 = st.columns(5)
     
     with kpi_col1:
-        premium_metric_card(f"{prefix_kpi}Fila de Processamento", total_solicitacoes, icon_name="people", color="#3b82f6", is_vanguard=True)
+        premium_metric_card(f"{prefix_kpi}Fila de Processamento (Total Geral)", total_solicitacoes, icon_name="people", color="#3b82f6", is_vanguard=True)
         if st.button("Fila", key="kpi_btn_fila", use_container_width=True):
-            show_kpi_dialog("Fila de Processamento", df_filtered)
+            show_kpi_dialog("Fila de Processamento (Total Geral)", df_filtered)
     
     with kpi_col2:
         premium_metric_card(f"{prefix_kpi}Atrasados", qtd_atrasadas, icon_name="timer", color="#f87171")
