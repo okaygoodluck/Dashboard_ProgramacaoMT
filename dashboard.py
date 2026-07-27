@@ -447,11 +447,13 @@ def load_latest_data():
 df, col_malha, col_regiao, col_situacao, col_urgencia, col_data, data_extracao = load_latest_data()
 
 if df is not None:
-    # Prepara coluna Em Elaboração para as contagens nas tabelas
+    # Prepara colunas Em Elaboração e Aprovadas para as contagens nas tabelas
     if col_situacao and col_situacao in df.columns:
         df['Is_Elaboracao'] = df[col_situacao].astype(str).str.upper().str.contains('ELABORAÇÃO|ELABORACAO')
+        df['Is_Aprovada'] = df[col_situacao].astype(str).str.upper().str.contains('APROVADA|APROVADO')
     else:
         df['Is_Elaboracao'] = False
+        df['Is_Aprovada'] = False
 
     # --- MAPEAMENTO GLOBAL DO RESPONSÁVEL (Real-time via Banco + Travas) ---
     df['temp_sigla'] = df[col_regiao].astype(str).str.strip().str[:2].str.upper()
@@ -697,6 +699,7 @@ if df is not None:
     qtd_atrasadas = len(df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
     qtd_urgencia = len(df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
     qtd_alerta = len(df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
+    qtd_aprovadas = len(df_filtered[df_filtered['Is_Aprovada'] == True]) if 'Is_Aprovada' in df_filtered.columns else 0
     
     # --- CABEÇALHO DE CONTROLE ---
     st.markdown(f"""
@@ -987,8 +990,9 @@ if df is not None:
             show_kpi_dialog("Atrasados", df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
         
     with kpi_col3:
-        percent_prazo = round((total_solicitacoes - qtd_atrasadas) / total_solicitacoes * 100, 1) if total_solicitacoes > 0 else 100
-        circular_progress_ring("Saúde Operacional", percent_prazo, color="#34d399")
+        premium_metric_card(f"{prefix_kpi}Total Aprovadas", qtd_aprovadas, icon_name="tick", color="#34d399")
+        if st.button("Aprovadas", key="kpi_btn_aprovadas", use_container_width=True):
+            show_kpi_dialog("Total de Solicitações Aprovadas", df_filtered[df_filtered['Is_Aprovada'] == True])
         
     with kpi_col4:
         premium_metric_card(f"{prefix_kpi}Urgentes", qtd_urgencia, icon_name="flash", color="#fbbf24")
