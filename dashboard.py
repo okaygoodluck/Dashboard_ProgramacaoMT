@@ -572,11 +572,20 @@ if df is not None:
     # Data Padrão: Hoje até Hoje + 11 dias úteis
     hoje_date = pd.Timestamp.now().normalize().date()
     feriados_np_filtro = np.array(FERIADOS_BASE, dtype='datetime64[D]')
+
+    def ajustar_fim_periodo(d_end):
+        """Se o dia final for seguido de final de semana ou feriado, estende o período até a véspera do próximo dia útil."""
+        try:
+            prox_du = pd.to_datetime(
+                np.busday_offset(d_end, 1, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
+            ).date()
+            return prox_du - timedelta(days=1)
+        except Exception:
+            return d_end
+
     try:
         decimo_primeiro_dia_util = np.busday_offset(hoje_date, 11, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
-        default_max = pd.to_datetime(decimo_primeiro_dia_util).date()
-        if default_max.weekday() == 4:
-            default_max += pd.Timedelta(days=2)
+        default_max = ajustar_fim_periodo(pd.to_datetime(decimo_primeiro_dia_util).date())
     except Exception: 
         default_max = hoje_date + pd.Timedelta(days=15)
         
@@ -602,18 +611,20 @@ if df is not None:
     )
 
     try:
-        get_du_date = lambda offset: pd.to_datetime(
-            np.busday_offset(hoje_date, offset, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
-        ).date()
+        get_du_date = lambda offset: ajustar_fim_periodo(
+            pd.to_datetime(
+                np.busday_offset(hoje_date, offset, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
+            ).date()
+        )
         date_du8 = get_du_date(8)
         date_du9 = get_du_date(9)
         date_du10 = get_du_date(10)
         date_du11 = get_du_date(11)
     except Exception:
-        date_du8 = hoje_date + timedelta(days=10)
-        date_du9 = hoje_date + timedelta(days=11)
-        date_du10 = hoje_date + timedelta(days=12)
-        date_du11 = hoje_date + timedelta(days=13)
+        date_du8 = ajustar_fim_periodo(hoje_date + timedelta(days=10))
+        date_du9 = ajustar_fim_periodo(hoje_date + timedelta(days=11))
+        date_du10 = ajustar_fim_periodo(hoje_date + timedelta(days=12))
+        date_du11 = ajustar_fim_periodo(hoje_date + timedelta(days=13))
 
     # Botões de atalho rápido de período (Grade 2 Colunas)
     st.sidebar.markdown("""
