@@ -1416,7 +1416,7 @@ if df is not None:
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
                                     y=df_perf['Pendentes_Iniciadas'], 
-                                    name='Iniciadas (Em Elaboração)',
+                                    name='Pendências (Em Elaboração)',
                                     marker_color='#f59e0b',
                                     text=df_perf['Pendentes_Iniciadas'],
                                     textposition='outside'

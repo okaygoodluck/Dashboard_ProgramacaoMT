@@ -1326,7 +1326,34 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             df_perf['Pendentes'] = df_perf.get('Pendentes', 0).astype(int)
             df_perf['Pendentes_Iniciadas'] = df_perf.get('Pendentes_Iniciadas', 0).astype(int)
             df_perf['Pendentes_Nao_Iniciadas'] = df_perf.get('Pendentes_Nao_Iniciadas', 0).astype(int)
+
+        # Garante linha contínua para todas as datas do período (com ffill para o estoque de Pendências/Em Elaboração no FDS)
+        try:
+            all_dates = pd.date_range(start=data_inicio, end=data_fim, freq='D').strftime('%Y-%m-%d')
+            df_full = pd.DataFrame({'Data': all_dates})
+            
+            if not df_perf.empty:
+                df_perf = pd.merge(df_full, df_perf, on='Data', how='left')
+            else:
+                df_perf = df_full
+                df_perf['Novas'] = 0
+                df_perf['Tratadas'] = 0
+                df_perf['Iniciadas'] = 0
+                df_perf['Pendentes'] = 0
+                df_perf['Pendentes_Iniciadas'] = 0
+                df_perf['Pendentes_Nao_Iniciadas'] = 0
+
+            df_perf['Novas'] = df_perf['Novas'].fillna(0).astype(int)
+            df_perf['Tratadas'] = df_perf['Tratadas'].fillna(0).astype(int)
+            df_perf['Iniciadas'] = df_perf['Iniciadas'].fillna(0).astype(int)
+            
+            # Estoque de pendências (Em Elaboração) propaga o valor do dia útil anterior (ffill) se não houver trabalho no FDS
+            df_perf['Pendentes_Iniciadas'] = df_perf['Pendentes_Iniciadas'].replace(0, np.nan).ffill().fillna(0).astype(int)
+            df_perf['Pendentes'] = df_perf['Pendentes'].replace(0, np.nan).ffill().fillna(0).astype(int)
+            df_perf['Pendentes_Nao_Iniciadas'] = df_perf['Pendentes_Nao_Iniciadas'].replace(0, np.nan).ffill().fillna(0).astype(int)
             df_perf = df_perf.sort_values('Data')
+        except Exception:
+            pass
             
         return df_perf
     except Exception as e:
