@@ -114,7 +114,17 @@ async def worker_extração(worker_id, context, queue, resultados_lock, dados_co
     try:
         await page.goto(URL_SISTEMA)
         await navegar_para_programador_frames(page)
-        ctx = await find_frame_with_selector(page, SELETOR_COMBO_MALHA)
+        
+        deadline_w = time.time() + 25
+        ctx = page
+        while time.time() < deadline_w:
+            ctx = await find_frame_with_selector(page, SELETOR_COMBO_MALHA)
+            try:
+                if await ctx.locator(SELETOR_COMBO_MALHA).count() > 0:
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
         
         while not queue.empty():
             try:
@@ -123,14 +133,40 @@ async def worker_extração(worker_id, context, queue, resultados_lock, dados_co
                 break
                 
             malha, regiao_text, regiao_valor = task
-            print(f"[Worker {worker_id}] ⚡ Processando: Malha '{malha}' -> Região '{regiao_text}'...")
+            print(f"[Worker {worker_id}] Processando: Malha '{malha}' -> Regiao '{regiao_text}'...")
             
             try:
-                # Troca Malha na aba do Worker
-                await ctx.select_option(SELETOR_COMBO_MALHA, label=malha)
-                await asyncio.sleep(0.3)
+                # 1. Verifica se a malha selecionada na aba é diferente da desejada
+                try:
+                    malha_atual = await ctx.evaluate(f"() => {{ const el = document.querySelector('{SELETOR_COMBO_MALHA}'); return el && el.selectedIndex >= 0 ? el.options[el.selectedIndex].text.trim() : ''; }}")
+                except Exception:
+                    malha_atual = ""
+                    
+                if malha_atual != malha:
+                    try:
+                        conteudo_antigo = await ctx.evaluate(f"() => document.querySelector('{SELETOR_COMBO_REGIAO}')?.innerHTML || ''")
+                    except Exception:
+                        conteudo_antigo = ""
+                        
+                    await ctx.select_option(SELETOR_COMBO_MALHA, label=malha)
+                    
+                    # Aguarda JSF atualizar o combo de Região
+                    deadline_m = time.time() + 15
+                    while time.time() < deadline_m:
+                        try:
+                            novo_conteudo = await ctx.evaluate(f"() => document.querySelector('{SELETOR_COMBO_REGIAO}')?.innerHTML || ''")
+                            if novo_conteudo != conteudo_antigo:
+                                break
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.3)
+                    await asyncio.sleep(0.5)
                 
-                # Troca Região na aba do Worker
+                # 2. Aguarda e seleciona a Região desejada
+                try:
+                    await ctx.wait_for_selector(f"{SELETOR_COMBO_REGIAO} option[value='{regiao_valor}']", timeout=10000)
+                except Exception:
+                    pass
                 await ctx.select_option(SELETOR_COMBO_REGIAO, value=regiao_valor)
                 await asyncio.sleep(0.2)
                 
@@ -168,21 +204,25 @@ async def worker_extração(worker_id, context, queue, resultados_lock, dados_co
                     }""")
                     
                     if tabela_html:
-                        dfs = pd.read_html(tabela_html)
+                        import io
+                        try:
+                            dfs = pd.read_html(io.StringIO(tabela_html))
+                        except Exception:
+                            dfs = []
                         if dfs:
                             df_reg = dfs[0]
                             df_reg['Ref_Malha'] = malha
                             df_reg['Ref_Regiao'] = regiao_text
                             async with resultados_lock:
                                 dados_consolidados.append(df_reg)
-                            print(f"[Worker {worker_id}] ✅ Sucesso: {len(df_reg)} solicitações extraídas em '{regiao_text}'.")
+                            print(f"[Worker {worker_id}] [OK] {len(df_reg)} solicitacoes extraidas em '{regiao_text}'.")
                 else:
                     async with resultados_lock:
                         regioes_vazias.append(regiao_text)
-                    print(f"[Worker {worker_id}] ℹ️ Vazio: Região '{regiao_text}' sem registros.")
+                    print(f"[Worker {worker_id}] [VAZIO] Regiao '{regiao_text}' sem registros.")
                     
             except Exception as e:
-                print(f"[Worker {worker_id}] ❌ Erro ao extrair '{regiao_text}': {e}")
+                print(f"[Worker {worker_id}] [ERRO] Falha ao extrair '{regiao_text}': {e}")
             finally:
                 queue.task_done()
     finally:
@@ -190,13 +230,13 @@ async def worker_extração(worker_id, context, queue, resultados_lock, dados_co
 
 async def main():
     print("=" * 60)
-    print("🚀 INICIANDO EXTRATOR DE TESTES (POOL PARALELO DE ABAS)")
-    print(f"⚙️ Configuração: {NUM_WORKERS} Workers Concorrentes")
+    print("[INICIO] EXTRATOR DE TESTES (POOL PARALELO DE ABAS)")
+    print(f"[CONFIG] {NUM_WORKERS} Workers Concorrentes")
     print("=" * 60)
     
     usuario, senha = carregar_credenciais()
     if not usuario or not senha:
-        print("❌ ERRO: Credenciais não encontradas em ~/.dashboard_mt/credenciais.json")
+        print("[ERRO] Credenciais nao encontradas em ~/.dashboard_mt/credenciais.json")
         return
 
     start_time = time.time()
@@ -210,30 +250,45 @@ async def main():
     executavel = next((c for c in caminhos_navegador if os.path.exists(c)), None)
     
     async with async_playwright() as p:
-        print("🌐 Abrindo Navegador Mestre...")
+        print("[BROWSER] Abrindo Navegador Mestre...")
         browser = await p.chromium.launch(executable_path=executavel, headless=True)
         context = await browser.new_context()
         page = await context.new_page()
         
-        print("🔑 Realizando Login Único...")
+        print("[LOGIN] Realizando Login Unico...")
         await page.goto(URL_SISTEMA)
         if await page.locator(SELETOR_USUARIO).count() > 0:
             await page.fill(SELETOR_USUARIO, usuario)
             await page.fill(SELETOR_SENHA, senha)
             await page.click(SELETOR_BTN_LOGIN)
-            await page.wait_for_load_state('networkidle')
+            try:
+                await page.wait_for_load_state('networkidle', timeout=15000)
+            except Exception:
+                pass
             
-        print("📍 Navegando para o menu de consulta...")
+        print("[NAV] Navegando para o menu de consulta...")
         await navegar_para_programador_frames(page)
-        ctx = await find_frame_with_selector(page, SELETOR_COMBO_MALHA)
         
+        print("[WAIT] Aguardando tela de consulta carregar...")
+        deadline_malha = time.time() + 30
+        ctx = page
+        while time.time() < deadline_malha:
+            ctx = await find_frame_with_selector(page, SELETOR_COMBO_MALHA)
+            try:
+                if await ctx.locator(SELETOR_COMBO_MALHA).count() > 0:
+                    await ctx.wait_for_selector(SELETOR_COMBO_MALHA, state="visible", timeout=5000)
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+
         # Mapear Malhas
         lista_malhas = await ctx.evaluate(f"""() => {{
             const options = Array.from(document.querySelectorAll("{SELETOR_COMBO_MALHA} option"));
             return options.map(o => o.innerText.trim()).filter(t => t && !t.includes('Selecione'));
         }}""")
         
-        print(f"📋 Malhas Mapeadas ({len(lista_malhas)}): {lista_malhas}")
+        print(f"[MALHAS] Malhas Mapeadas ({len(lista_malhas)}): {lista_malhas}")
         
         # Fila de tarefas para os workers paralelos
         queue = asyncio.Queue()
@@ -250,7 +305,7 @@ async def main():
                 queue.put_nowait((malha, r['text'], r['value']))
                 total_regioes_mapeadas += 1
                 
-        print(f"\n🎯 Total de Regiões Mapeadas para Extração Paralela: {total_regioes_mapeadas}")
+        print(f"\n[TARGET] Total de Regioes Mapeadas para Extracao Paralela: {total_regioes_mapeadas}")
         print("-" * 60)
         
         dados_consolidados = []
@@ -271,11 +326,11 @@ async def main():
         
         tempo_total = time.time() - start_time
         print("=" * 60)
-        print("🏁 EXTRAÇÃO PARALELA CONCLUÍDA COM SUCESSO!")
-        print(f"⏱️ Tempo Total Gasto: {tempo_total:.2f} segundos ({tempo_total/60:.2f} minutos)")
-        print(f"📊 Regiões Processadas: {total_regioes_mapeadas}")
-        print(f"📦 Total de Tabelas Coletadas: {len(dados_consolidados)}")
-        print(f"🔴 Regiões Vazias: {len(regioes_vazias)}")
+        print("[FIM] EXTRACAO PARALELA CONCLUIDA COM SUCESSO!")
+        print(f"[TEMPO] Tempo Total Gasto: {tempo_total:.2f} segundos ({tempo_total/60:.2f} minutos)")
+        print(f"[STATS] Regioes Processadas: {total_regioes_mapeadas}")
+        print(f"[DATA] Total de Tabelas Coletadas: {len(dados_consolidados)}")
+        print(f"[VAZIO] Regioes Vazias: {len(regioes_vazias)}")
         print("=" * 60)
 
 if __name__ == "__main__":
