@@ -1444,7 +1444,9 @@ if df is not None:
                                 legend_title_text="Tipo de Demanda",
                                 hovermode='x unified',
                                 margin=dict(l=10, r=10, t=40, b=10),
-                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                plot_bgcolor="rgba(0,0,0,0)"
                             )
                             fig_fluxo.update_xaxes(type='category')
                             st.plotly_chart(fig_fluxo, use_container_width=True)
@@ -1491,7 +1493,9 @@ if df is not None:
                                         yaxis_tickformat="d",
                                         showlegend=False,
                                         coloraxis_showscale=False,
-                                        margin=dict(l=10, r=10, t=40, b=10)
+                                        margin=dict(l=10, r=10, t=40, b=10),
+                                        paper_bgcolor="rgba(0,0,0,0)",
+                                        plot_bgcolor="rgba(0,0,0,0)"
                                     )
                                     fig_rank_p.update_xaxes(type='category')
                                     st.plotly_chart(fig_rank_p, use_container_width=True)
@@ -1532,7 +1536,9 @@ if df is not None:
                                         yaxis_tickformat="d",
                                         showlegend=False,
                                         coloraxis_showscale=False,
-                                        margin=dict(l=10, r=10, t=40, b=10)
+                                        margin=dict(l=10, r=10, t=40, b=10),
+                                        paper_bgcolor="rgba(0,0,0,0)",
+                                        plot_bgcolor="rgba(0,0,0,0)"
                                     )
                                     fig_rank_m.update_xaxes(type='category')
                                     st.plotly_chart(fig_rank_m, use_container_width=True)

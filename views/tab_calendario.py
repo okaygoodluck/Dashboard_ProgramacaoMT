@@ -234,15 +234,15 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
     title_m1, html_days_m1 = render_month_calendar_html(m1_year, m1_month, hoje)
     title_m2, html_days_m2 = render_month_calendar_html(m2_year, m2_month, hoje)
 
-    # Injeção de CSS nativo padronizado com o Design System
+    # Injeção de CSS nativo padronizado com o Design System (Compatível com Tema Claro e Escuro)
     st.markdown("""
     <style>
     .cal-month-card {
         background: var(--surface-color, #1e293b);
-        border: 1px solid var(--border-color, #334155);
+        border: 1px solid var(--border-color, rgba(128,128,128,0.2));
         border-radius: 16px;
         padding: 20px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        box-shadow: var(--card-shadow, 0 4px 20px rgba(0,0,0,0.15));
     }
     .cal-month-title {
         text-align: center;
@@ -259,7 +259,7 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
         text-align: center;
         font-weight: 700;
         font-size: 0.9rem;
-        color: #94a3b8;
+        color: var(--text-muted, #64748b);
         margin-bottom: 12px;
     }
     .cal-grid {
@@ -270,8 +270,8 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
     .cal-day {
         min-height: 75px;
         border-radius: 10px;
-        background: rgba(255,255,255,0.03);
-        border: 1px solid rgba(255,255,255,0.08);
+        background: var(--surface-hover, rgba(128,128,128,0.08));
+        border: 1px solid var(--border-color, rgba(128,128,128,0.2));
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -283,7 +283,7 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
     }
     .cal-day:not(.empty):hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
     .cal-day.empty {
         background: transparent !important;
@@ -295,26 +295,27 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
         font-weight: 700;
         line-height: 1;
         margin-bottom: 4px;
-    }
-    .cal-legend {
-        font-size: 0.65rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        text-align: center;
-        line-height: 1.1;
-        padding: 2px 4px;
-        border-radius: 4px;
-        word-break: break-word;
-        max-width: 95%;
+        color: var(--text-primary);
     }
     
-    /* Cores de Status */
-    .cal-day.green-day { background-color: #059669; color: white; }
-    .cal-day.red-day { background-color: #dc2626; color: white; }
-    .cal-day.holiday { background-color: #8b5cf6; color: white; }
-    .cal-day.limit-aprovacao { background-color: #b91c1c; color: white; }
-    .cal-day.limit-avisos { background-color: #d97706; color: white; }
-    .cal-day.limit-condis { background-color: #0284c7; color: white; }
+    /* Cores de Status com Texto Branco Garantido */
+    .cal-day.green-day { background-color: #059669 !important; color: white !important; }
+    .cal-day.green-day .cal-number { color: white !important; }
+
+    .cal-day.red-day { background-color: #dc2626 !important; color: white !important; }
+    .cal-day.red-day .cal-number { color: white !important; }
+
+    .cal-day.holiday { background-color: #8b5cf6 !important; color: white !important; }
+    .cal-day.holiday .cal-number { color: white !important; }
+
+    .cal-day.limit-aprovacao { background-color: #b91c1c !important; color: white !important; }
+    .cal-day.limit-aprovacao .cal-number { color: white !important; }
+
+    .cal-day.limit-avisos { background-color: #d97706 !important; color: white !important; }
+    .cal-day.limit-avisos .cal-number { color: white !important; }
+
+    .cal-day.limit-condis { background-color: #0284c7 !important; color: white !important; }
+    .cal-day.limit-condis .cal-number { color: white !important; }
     
     /* Dia Atual (Today) */
     .cal-day.today {
@@ -323,25 +324,26 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
         transform: scale(1.03);
     }
     
-    /* Barra Informativa de Legenda */
+    /* Barra Informativa de Legenda (Sincronizada com o Tema) */
     .cal-info-bar {
         display: flex;
         flex-wrap: wrap;
         gap: 16px;
         justify-content: center;
-        background: rgba(30, 41, 59, 0.6);
-        padding: 12px;
+        background: var(--surface-color, #1e293b);
+        padding: 14px;
         border-radius: 12px;
         margin-top: 20px;
-        border: 1px solid rgba(255,255,255,0.08);
+        border: 1px solid var(--border-color, rgba(128,128,128,0.2));
+        box-shadow: var(--card-shadow, 0 4px 12px rgba(0,0,0,0.1));
     }
     .cal-info-item {
         display: flex;
         align-items: center;
         gap: 6px;
-        font-size: 0.8rem;
+        font-size: 0.82rem;
         font-weight: 600;
-        color: #cbd5e1;
+        color: var(--text-primary);
     }
     .cal-info-dot {
         width: 12px;
