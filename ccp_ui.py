@@ -134,6 +134,25 @@ def inject_ui_css(theme="Dark"):
             transform: translateY(-5px) scale(1.02);
         }}
 
+        /* Classes para preenchimento total dos cards de saldo */
+        .card-saldo-red {{
+            background-color: #dc2626 !important;
+            background-image: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;
+            border: 2px solid #fca5a5 !important;
+            border-left: 6px solid #ffffff !important;
+            box-shadow: 0 4px 20px rgba(239, 68, 68, 0.6) !important;
+            backdrop-filter: none !important;
+        }}
+
+        .card-saldo-green {{
+            background-color: #059669 !important;
+            background-image: linear-gradient(135deg, #10b981 0%, #047857 100%) !important;
+            border: 2px solid #6ee7b7 !important;
+            border-left: 6px solid #ffffff !important;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.6) !important;
+            backdrop-filter: none !important;
+        }}
+
         /* Typography */
         h1, h2, h3 {{
             font-family: 'Space Grotesk', sans-serif !important;

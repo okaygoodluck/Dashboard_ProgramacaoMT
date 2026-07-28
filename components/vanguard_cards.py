@@ -40,18 +40,20 @@ def premium_metric_card(title, value, delta=None, icon_name="info", color=None, 
     title_style = "color: var(--text-muted);"
     val_color_style = "color: var(--text-primary);"
     
+    card_extra_class = ""
     if neon_glow and neon_color:
         is_red = (neon_color == "#ef4444")
+        card_extra_class = "card-saldo-red" if is_red else "card-saldo-green"
         if is_red:
-            bg_style = "background-color: #dc2626 !important; background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;"
+            bg_style = "background-color: #dc2626 !important; background-image: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;"
             border_style = "border: 2px solid #fca5a5 !important; border-left: 6px solid #ffffff !important;"
             shadow_style = "box-shadow: 0 4px 20px rgba(239, 68, 68, 0.6) !important;"
         else:
-            bg_style = "background-color: #059669 !important; background: linear-gradient(135deg, #10b981 0%, #047857 100%) !important;"
+            bg_style = "background-color: #059669 !important; background-image: linear-gradient(135deg, #10b981 0%, #047857 100%) !important;"
             border_style = "border: 2px solid #6ee7b7 !important; border-left: 6px solid #ffffff !important;"
             shadow_style = "box-shadow: 0 4px 20px rgba(16, 185, 129, 0.6) !important;"
             
-        extra_style = f"{bg_style} {border_style} {shadow_style}"
+        extra_style = f"{bg_style} {border_style} {shadow_style} backdrop-filter: none !important;"
         accent = "#ffffff"
         title_style = "color: #ffffff !important; font-weight: 700;"
         val_color_style = "color: #ffffff !important; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.4);"
@@ -63,7 +65,7 @@ def premium_metric_card(title, value, delta=None, icon_name="info", color=None, 
         delta_html = f'<div style="color: {d_color}; font-size: 0.85rem; font-weight: 600; margin-top: 4px;">{d_icon} {abs(delta)}% em relação a ontem</div>'
 
     html = f"""
-    <div class="premium-card {vanguard_class} animate-target" style="{extra_style} display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+    <div class="premium-card {card_extra_class} {vanguard_class} animate-target" style="{extra_style} display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
         <div style="display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); position: relative; z-index: 2;">
             <div style="color: {accent}; display: flex; align-items: center;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
