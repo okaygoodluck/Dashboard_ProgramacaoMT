@@ -1236,7 +1236,6 @@ if df is not None:
                     
                     df_tratadas = df_eventos_all[df_eventos_all['tipo_evento'] == 'TRATADA'].copy()
                     
-                    # Filtro de período posicionado logo abaixo do título do gráfico
                     datas_unicas = sorted(df_eventos_all['data'].dropna().unique().tolist())
                     if datas_unicas:
                         data_min = pd.to_datetime(datas_unicas[0]).date()
@@ -1249,13 +1248,6 @@ if df is not None:
                     
                     col_p1, _ = st.columns([1, 4])
                     with col_p1:
-                        st.markdown("""
-                            <style>
-                            div[data-testid="stDateInput"], div[data-testid="stDateInput"] > div {
-                                max-width: 270px !important;
-                            }
-                            </style>
-                        """, unsafe_allow_html=True)
                         datas_selecionadas = st.date_input(
                             "Período de Análise:", 
                             value=(max(data_min, data_max - timedelta(days=15)), data_max), 
@@ -1303,6 +1295,7 @@ if df is not None:
                             xaxis_title="Data", 
                             yaxis_title="Quantidade Tratada", 
                             yaxis_tickformat="d",
+                            margin=dict(l=10, r=10, t=35, b=10),
                             showlegend=False
                         )
                         fig_user.update_xaxes(type='category')
