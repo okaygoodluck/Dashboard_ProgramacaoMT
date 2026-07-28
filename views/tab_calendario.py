@@ -184,11 +184,12 @@ def render_month_calendar_html(year: int, month: int, today_date: date):
         elif len(applied_colors) == 1:
             style_inline = f'background-color: {applied_colors[0]} !important; color: white !important;'
 
-        legend_text = " / ".join(dict.fromkeys(legends)) # Para tooltip no hover
+        legend_text = " / ".join(dict.fromkeys(legends))
         title_attr = f'title="{legend_text}"' if legend_text else ""
+        legend_html = f'<span class="cal-legend">{legend_text}</span>' if legend_text else ""
         class_str = " ".join(classes)
         
-        day_card = f'<div class="{class_str}" style="{style_inline}" {title_attr}><span class="cal-number">{day_num}</span></div>'
+        day_card = f'<div class="{class_str}" style="{style_inline}" {title_attr}><span class="cal-number">{day_num}</span>{legend_html}</div>'
         days_html_list.append(day_card)
         
     return month_name, "".join(days_html_list)
@@ -323,33 +324,6 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
         box-shadow: 0 0 16px rgba(56, 189, 248, 0.6) !important;
         transform: scale(1.03);
     }
-    
-    /* Barra Informativa de Legenda (Sincronizada com o Tema) */
-    .cal-info-bar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 16px;
-        justify-content: center;
-        background: var(--surface-color, #1e293b);
-        padding: 14px;
-        border-radius: 12px;
-        margin-top: 20px;
-        border: 1px solid var(--border-color, rgba(128,128,128,0.2));
-        box-shadow: var(--card-shadow, 0 4px 12px rgba(0,0,0,0.1));
-    }
-    .cal-info-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.82rem;
-        font-weight: 600;
-        color: var(--text-primary);
-    }
-    .cal-info-dot {
-        width: 12px;
-        height: 12px;
-        border-radius: 4px;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -361,16 +335,3 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
 
     with col2:
         st.markdown(f'<div class="cal-month-card"><div class="cal-month-title">{title_m2}</div><div class="cal-weekdays"><span>DOM</span><span>SEG</span><span>TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span></div><div class="cal-grid">{html_days_m2}</div></div>', unsafe_allow_html=True)
-
-    # Barra Informativa de Legenda
-    st.markdown("""
-    <div class="cal-info-bar">
-        <div class="cal-info-item"><div class="cal-info-dot" style="background:#dc2626;"></div> 🔴 Janela Crítica (Até 11 D.U.)</div>
-        <div class="cal-info-item"><div class="cal-info-dot" style="background:#059669;"></div> 🟢 Janela Segura (> 11 D.U.)</div>
-        <div class="cal-info-item"><div class="cal-info-dot" style="background:#b91c1c;"></div> 🚨 Limite Aprovação (11 D.U.)</div>
-        <div class="cal-info-item"><div class="cal-info-dot" style="background:#d97706;"></div> 🟠 Limite Avisos (8 D.U.)</div>
-        <div class="cal-info-item"><div class="cal-info-dot" style="background:#0284c7;"></div> 🔵 Limite Condis (2 D.U.)</div>
-        <div class="cal-info-item"><div class="cal-info-dot" style="background:#8b5cf6;"></div> 🟣 Feriado (BH)</div>
-        <div class="cal-info-item"><div class="cal-info-dot" style="border: 2px solid #38bdf8; background: transparent;"></div> 🔷 Hoje</div>
-    </div>
-    """, unsafe_allow_html=True)
