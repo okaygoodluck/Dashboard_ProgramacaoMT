@@ -1247,8 +1247,15 @@ if df is not None:
                     limite = date(2026, 7, 7)
                     data_min = max(data_min, limite)
                     
-                    col_p1, _ = st.columns([1, 3])
+                    col_p1, _ = st.columns([1, 4])
                     with col_p1:
+                        st.markdown("""
+                            <style>
+                            div[data-testid="stDateInput"], div[data-testid="stDateInput"] > div {
+                                max-width: 270px !important;
+                            }
+                            </style>
+                        """, unsafe_allow_html=True)
                         datas_selecionadas = st.date_input(
                             "Período de Análise:", 
                             value=(max(data_min, data_max - timedelta(days=15)), data_max), 
