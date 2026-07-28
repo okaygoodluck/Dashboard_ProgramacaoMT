@@ -42,12 +42,19 @@ def premium_metric_card(title, value, delta=None, icon_name="info", color=None, 
     
     if neon_glow and neon_color:
         is_red = (neon_color == "#ef4444")
-        glow_rgba = "rgba(239, 68, 68, 0.55)" if is_red else "rgba(16, 185, 129, 0.55)"
-        bg_gradient = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(153, 27, 27, 0.45) 100%) !important;" if is_red else "background: linear-gradient(135deg, rgba(16, 185, 129, 0.35) 0%, rgba(6, 95, 70, 0.45) 100%) !important;"
-        extra_style = f"{bg_gradient} border: 2px solid {neon_color} !important; border-left: 6px solid {neon_color} !important; box-shadow: 0 0 20px {glow_rgba}, inset 0 0 10px {glow_rgba} !important;"
+        if is_red:
+            bg_style = "background-color: #dc2626 !important; background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;"
+            border_style = "border: 2px solid #fca5a5 !important; border-left: 6px solid #ffffff !important;"
+            shadow_style = "box-shadow: 0 4px 20px rgba(239, 68, 68, 0.6) !important;"
+        else:
+            bg_style = "background-color: #059669 !important; background: linear-gradient(135deg, #10b981 0%, #047857 100%) !important;"
+            border_style = "border: 2px solid #6ee7b7 !important; border-left: 6px solid #ffffff !important;"
+            shadow_style = "box-shadow: 0 4px 20px rgba(16, 185, 129, 0.6) !important;"
+            
+        extra_style = f"{bg_style} {border_style} {shadow_style}"
         accent = "#ffffff"
-        title_style = "color: #f1f5f9 !important; font-weight: 700;"
-        val_color_style = "color: #ffffff !important; text-shadow: 0 0 10px rgba(255, 255, 255, 0.9);"
+        title_style = "color: #ffffff !important; font-weight: 700;"
+        val_color_style = "color: #ffffff !important; font-weight: 800; text-shadow: 0 2px 4px rgba(0,0,0,0.4);"
 
     delta_html = ""
     if delta is not None:
