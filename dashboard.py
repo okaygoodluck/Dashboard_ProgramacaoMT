@@ -1296,8 +1296,7 @@ if df is not None:
                             xaxis_title="Data", 
                             yaxis_title="Quantidade Tratada", 
                             yaxis_tickformat="d",
-                            legend_title_text="Responsável",
-                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                            showlegend=False
                         )
                         fig_user.update_xaxes(type='category')
                         st.plotly_chart(fig_user, use_container_width=True)
