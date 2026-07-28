@@ -1310,104 +1310,84 @@ if df is not None:
                     else:
                         st.info("Nenhuma solicitação tratada encontrada no período selecionado.")
                             
-                    # --- Gráfico 3: Performance Consolidada (D-1) ---
+                    # --- Gráfico 3: Performance por Técnico ---
                     st.markdown("---")
-                    st.subheader("Performance Consolidada (D-1)")
+                    st.subheader("Performance por Técnico")
                     
-                    col_d1_filter, col_d1_chart = st.columns([1, 7])
+                    todos_usuarios_d1 = sorted(df_eventos_all['nome_responsavel'].dropna().unique().tolist())
+                    hoje = date.today()
+                    limite_inferior = date(2026, 7, 7)
+                    data_inicio_padrao = max(limite_inferior, hoje - timedelta(days=15))
                     
-                    with col_d1_filter:
-                        st.markdown("#### Filtros D-1")
-                        todos_usuarios_d1 = sorted(df_eventos_all['nome_responsavel'].dropna().unique().tolist())
-                        
+                    # Disposição dos seletores de Responsável e Período lado a lado abaixo do título
+                    col_resp, col_perio, _ = st.columns([2, 1.5, 3.5])
+                    
+                    with col_resp:
                         resp_d1 = st.selectbox("Selecione o Responsável:", options=todos_usuarios_d1, key="d1_responsavel")
-                        hoje = date.today()
-                        limite_inferior = date(2026, 7, 7)
-                        data_inicio_padrao = max(limite_inferior, hoje - timedelta(days=15))
                         
+                    with col_perio:
+                        st.markdown("""
+                            <style>
+                            div[data-testid="stDateInput"], div[data-testid="stDateInput"] > div {
+                                max-width: 270px !important;
+                            }
+                            </style>
+                        """, unsafe_allow_html=True)
                         datas_d1 = st.date_input(
-                            "Período (a partir de 07/07):",
+                            "Período de Análise:",
                             value=(data_inicio_padrao, hoje),
                             min_value=limite_inferior,
                             max_value=hoje,
                             key="d1_periodo"
                         )
                         
-                        st.info("📊 **D-1**\n\nConsolida as demandas que ENTRARAM (Novas), as FEITAS (Tratadas) e o ESTOQUE (Pendentes) para o dia seguinte.")
-                    with col_d1_chart:
-                        if resp_d1 and len(datas_d1) == 2:
-                            d1_inicio, d1_fim = datas_d1
-                            df_perf = db_manager.get_performance_d1(resp_d1, data_inicio=d1_inicio.strftime('%Y-%m-%d'), data_fim=d1_fim.strftime('%Y-%m-%d'))
+                    if resp_d1 and len(datas_d1) == 2:
+                        d1_inicio, d1_fim = datas_d1
+                        df_perf = db_manager.get_performance_d1(resp_d1, data_inicio=d1_inicio.strftime('%Y-%m-%d'), data_fim=d1_fim.strftime('%Y-%m-%d'))
+                        
+                        if not df_perf.empty:
+                            df_perf['Data_Exibicao'] = pd.to_datetime(df_perf['Data']).dt.strftime('%d/%m/%Y')
                             
-                            if not df_perf.empty:
-                                df_perf['Data_Exibicao'] = pd.to_datetime(df_perf['Data']).dt.strftime('%d/%m/%Y')
-                                
-                                import plotly.graph_objects as go
-                                fig_d1 = go.Figure()
-                                
-                                fig_d1.add_trace(go.Bar(
-                                    x=df_perf['Data_Exibicao'], 
-                                    y=df_perf['Novas'], 
-                                    name='Novas (Entrada)',
-                                    marker_color='#3b82f6',
-                                    text=df_perf['Novas'],
-                                    textposition='outside'
-                                ))
-                                fig_d1.add_trace(go.Bar(
-                                    x=df_perf['Data_Exibicao'], 
-                                    y=df_perf['Tratadas'], 
-                                    name='Tratadas (Saída)',
-                                    marker_color='#10b981',
-                                    text=df_perf['Tratadas'],
-                                    textposition='outside'
-                                ))
-                                fig_d1.add_trace(go.Bar(
-                                    x=df_perf['Data_Exibicao'], 
-                                    y=df_perf['Pendentes_Iniciadas'], 
-                                    name='Pendências (Em Elaboração)',
-                                    marker_color='#f59e0b',
-                                    text=df_perf['Pendentes_Iniciadas'],
-                                    textposition='outside'
-                                ))
-                                                            
-                                fig_d1.update_layout(
-                                    title=f"Evolução D-1: {resp_d1}",
-                                    xaxis_title="Data",
-                                    yaxis_title="Quantidade",
-                                    barmode='group',
-                                    hovermode='x unified',
-                                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                                )
-                                fig_d1.update_xaxes(type='category')
-                                st.plotly_chart(fig_d1, use_container_width=True)
-                                
-                                # Adicionando Tabela Detalhada para Conferência
-                                with st.expander("🔎 Ver Detalhes das Solicitações Tratadas"):
-                                    # Filtrar eventos TRATADAS do usuário nos últimos X dias
-                                    df_tratadas_detalhe = df_eventos_all[
-                                        (df_eventos_all['nome_responsavel'] == resp_d1) & 
-                                        (df_eventos_all['tipo_evento'] == 'TRATADA') &
-                                        (df_eventos_all['data'] >= d1_inicio.strftime('%Y-%m-%d')) &
-                                        (df_eventos_all['data'] <= d1_fim.strftime('%Y-%m-%d'))
-                                    ].copy()
-                                    
-                                    if not df_tratadas_detalhe.empty:
-                                        # Organizar e formatar para exibição
-                                        df_tratadas_detalhe = df_tratadas_detalhe.sort_values(by='data_evento', ascending=False)
-                                        df_tratadas_detalhe['Data/Hora'] = pd.to_datetime(df_tratadas_detalhe['data_evento']).dt.strftime('%d/%m/%Y %H:%M:%S')
-                                        st.dataframe(
-                                            df_tratadas_detalhe[['Data/Hora', 'solicitacao', 'regiao']],
-                                            use_container_width=True,
-                                            hide_index=True,
-                                            column_config={
-                                                "solicitacao": st.column_config.TextColumn("Solicitação"),
-                                                "regiao": st.column_config.TextColumn("Região")
-                                            }
-                                        )
-                                    else:
-                                        st.info("Nenhuma solicitação tratada encontrada nesse período.")
-                            else:
-                                st.warning(f"Não há dados consolidados de D-1 para {resp_d1} no período selecionado.")
+                            import plotly.graph_objects as go
+                            fig_d1 = go.Figure()
+                            
+                            fig_d1.add_trace(go.Bar(
+                                x=df_perf['Data_Exibicao'], 
+                                y=df_perf['Novas'], 
+                                name='Novas (Entrada)',
+                                marker_color='#3b82f6',
+                                text=df_perf['Novas'],
+                                textposition='outside'
+                            ))
+                            fig_d1.add_trace(go.Bar(
+                                x=df_perf['Data_Exibicao'], 
+                                y=df_perf['Tratadas'], 
+                                name='Tratadas (Saída)',
+                                marker_color='#10b981',
+                                text=df_perf['Tratadas'],
+                                textposition='outside'
+                            ))
+                            fig_d1.add_trace(go.Bar(
+                                x=df_perf['Data_Exibicao'], 
+                                y=df_perf['Pendentes_Iniciadas'], 
+                                name='Pendências (Em Elaboração)',
+                                marker_color='#f59e0b',
+                                text=df_perf['Pendentes_Iniciadas'],
+                                textposition='outside'
+                            ))
+                                                        
+                            fig_d1.update_layout(
+                                title=f"Desempenho Individual: {resp_d1} ({d1_inicio.strftime('%d/%m/%Y')} a {d1_fim.strftime('%d/%m/%Y')})",
+                                xaxis_title="Data",
+                                yaxis_title="Quantidade",
+                                barmode='group',
+                                hovermode='x unified',
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                            )
+                            fig_d1.update_xaxes(type='category')
+                            st.plotly_chart(fig_d1, use_container_width=True)
+                        else:
+                            st.warning(f"Não há dados consolidados para {resp_d1} no período selecionado.")
                         
                     # --- Gráfico 4: Fluxo Diário de Demandas (Novas x Tratadas) ---
                     st.markdown("---")
