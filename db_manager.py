@@ -1460,9 +1460,9 @@ def get_lista_regioes_eventos():
         
     return sorted(list(regioes - {'', 'NONE', 'NAN', '-'}))
 
-def get_fluxo_diario_novas_tratadas(data_inicio=None, data_fim=None, regiao=None):
+def get_fluxo_diario_novas_tratadas(data_inicio=None, data_fim=None, regiao=None, responsavel=None):
     """
-    Retorna consolidação diária global ou por região de solicitações Novas e Tratadas.
+    Retorna consolidação diária global ou por região/responsável de solicitações Novas e Tratadas.
     """
     import pandas as pd
     import datetime
@@ -1476,22 +1476,28 @@ def get_fluxo_diario_novas_tratadas(data_inicio=None, data_fim=None, regiao=None
     try:
         query = """
             SELECT 
-                date(data_evento) as data,
-                tipo_evento,
+                date(e.data_evento) as data,
+                e.tipo_evento,
                 COUNT(*) as qtd
-            FROM eventos_diarios
-            WHERE date(data_evento) BETWEEN ? AND ?
-            AND tipo_evento IN ('NOVA', 'TRATADA')
+            FROM eventos_diarios e
+            LEFT JOIN usuarios u ON e.matricula_responsavel = u.matricula
+            WHERE date(e.data_evento) BETWEEN ? AND ?
+            AND e.tipo_evento IN ('NOVA', 'TRATADA')
         """
         params = [data_inicio, data_fim]
         
         if regiao and str(regiao).upper() not in ['TODAS', 'GLOBAL', 'TODAS (VISÃO GLOBAL)', 'TODAS (VISAO GLOBAL)']:
             reg_clean = str(regiao).strip().upper()
             sigla = reg_clean[:2]
-            query += " AND (UPPER(regiao) = ? OR UPPER(substr(regiao, 1, 2)) = ?)"
+            query += " AND (UPPER(e.regiao) = ? OR UPPER(substr(e.regiao, 1, 2)) = ?)"
             params.extend([reg_clean, sigla])
             
-        query += " GROUP BY date(data_evento), tipo_evento"
+        if responsavel and str(responsavel).upper() not in ['TODOS', 'GLOBAL', 'TODOS (VISÃO GLOBAL)', 'TODOS (VISAO GLOBAL)']:
+            resp_clean = str(responsavel).strip().upper()
+            query += " AND UPPER(u.nome) = ?"
+            params.append(resp_clean)
+            
+        query += " GROUP BY date(e.data_evento), e.tipo_evento"
         
         df_ev = pd.read_sql(query, conn_app, params=params)
         
@@ -1517,7 +1523,7 @@ def get_fluxo_diario_novas_tratadas(data_inicio=None, data_fim=None, regiao=None
             try: conn_app.close()
             except Exception: pass
 
-def get_rank_saldo_regioes(data_inicio=None, data_fim=None):
+def get_rank_saldo_regioes(data_inicio=None, data_fim=None, responsavel=None):
     """
     Retorna o ranking de regiões por Saldo do Período (Novas - Tratadas),
     ordenado do maior saldo positivo (pior acúmulo de passivo) para o menor.
@@ -1534,17 +1540,27 @@ def get_rank_saldo_regioes(data_inicio=None, data_fim=None):
     try:
         query = """
             SELECT 
-                UPPER(TRIM(regiao)) as Regiao,
-                SUM(CASE WHEN tipo_evento = 'NOVA' THEN 1 ELSE 0 END) as Novas,
-                SUM(CASE WHEN tipo_evento = 'TRATADA' THEN 1 ELSE 0 END) as Tratadas,
-                (SUM(CASE WHEN tipo_evento = 'NOVA' THEN 1 ELSE 0 END) - SUM(CASE WHEN tipo_evento = 'TRATADA' THEN 1 ELSE 0 END)) as Saldo
-            FROM eventos_diarios
-            WHERE date(data_evento) BETWEEN ? AND ?
-              AND regiao IS NOT NULL AND TRIM(regiao) != ''
-            GROUP BY UPPER(TRIM(regiao))
+                UPPER(TRIM(e.regiao)) as Regiao,
+                SUM(CASE WHEN e.tipo_evento = 'NOVA' THEN 1 ELSE 0 END) as Novas,
+                SUM(CASE WHEN e.tipo_evento = 'TRATADA' THEN 1 ELSE 0 END) as Tratadas,
+                (SUM(CASE WHEN e.tipo_evento = 'NOVA' THEN 1 ELSE 0 END) - SUM(CASE WHEN e.tipo_evento = 'TRATADA' THEN 1 ELSE 0 END)) as Saldo
+            FROM eventos_diarios e
+            LEFT JOIN usuarios u ON e.matricula_responsavel = u.matricula
+            WHERE date(e.data_evento) BETWEEN ? AND ?
+              AND e.regiao IS NOT NULL AND TRIM(e.regiao) != ''
+        """
+        params = [data_inicio, data_fim]
+        
+        if responsavel and str(responsavel).upper() not in ['TODOS', 'GLOBAL', 'TODOS (VISÃO GLOBAL)', 'TODOS (VISAO GLOBAL)']:
+            resp_clean = str(responsavel).strip().upper()
+            query += " AND UPPER(u.nome) = ?"
+            params.append(resp_clean)
+            
+        query += """
+            GROUP BY UPPER(TRIM(e.regiao))
             ORDER BY Saldo DESC, Novas DESC
         """
-        df_rank = pd.read_sql(query, conn_app, params=[data_inicio, data_fim])
+        df_rank = pd.read_sql(query, conn_app, params=params)
         return df_rank
     except Exception as e:
         print(f"Erro em get_rank_saldo_regioes: {e}")

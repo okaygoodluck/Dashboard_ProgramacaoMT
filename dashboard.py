@@ -1387,21 +1387,24 @@ if df is not None:
                         
                     # --- Gráfico 4: Fluxo Diário de Demandas (Novas x Tratadas) ---
                     st.markdown("---")
-                    st.subheader("📊 Fluxo Diário de Demandas (Novas vs. Tratadas)")
-                    st.caption("Acompanhe o volume global ou por região de solicitações que entraram e que foram concluídas a cada dia.")
+                    # --- Seção: Análise de Demanda ---
+                    st.markdown("---")
+                    st.subheader("Análise de Demanda")
 
-                    col_fluxo_filter, col_fluxo_chart = st.columns([1, 7])
+                    regioes_opcoes = ["Todas (Visão Global)"] + db_manager.get_lista_regioes_eventos()
+                    todos_responsaveis_opcoes = ["Todos (Visão Global)"] + sorted(df_eventos_all['nome_responsavel'].dropna().unique().tolist())
 
-                    with col_fluxo_filter:
-                        st.markdown("#### Filtros de Fluxo")
-                        
-                        regioes_opcoes = ["Todas (Visão Global)"] + db_manager.get_lista_regioes_eventos()
+                    hoje_fluxo = date.today()
+                    limite_fluxo = date(2026, 7, 7)
+                    data_inicio_fluxo_padrao = max(limite_fluxo, hoje_fluxo - timedelta(days=15))
+
+                    # 1. Filtros posicionados lado a lado: [FILTRO REGIÃO] [FILTRO RESPONSÁVEL] [PERÍODO DE ANÁLISE]
+                    col_f1, col_f2, col_f3 = st.columns([1.8, 2.2, 1.5])
+                    with col_f1:
                         regiao_sel = st.selectbox("Selecione a Região:", options=regioes_opcoes, key="fluxo_regiao")
-                        
-                        hoje_fluxo = date.today()
-                        limite_fluxo = date(2026, 7, 7)
-                        data_inicio_fluxo_padrao = max(limite_fluxo, hoje_fluxo - timedelta(days=15))
-                        
+                    with col_f2:
+                        resp_sel = st.selectbox("Selecione o Responsável:", options=todos_responsaveis_opcoes, key="fluxo_responsavel")
+                    with col_f3:
                         datas_fluxo = st.date_input(
                             "Período de Análise:",
                             value=(data_inicio_fluxo_padrao, hoje_fluxo),
@@ -1409,135 +1412,169 @@ if df is not None:
                             max_value=hoje_fluxo,
                             key="fluxo_periodo"
                         )
+
+                    if len(datas_fluxo) == 2:
+                        flx_inicio, flx_fim = datas_fluxo
+                        df_fluxo = db_manager.get_fluxo_diario_novas_tratadas(
+                            data_inicio=flx_inicio.strftime('%Y-%m-%d'),
+                            data_fim=flx_fim.strftime('%Y-%m-%d'),
+                            regiao=regiao_sel,
+                            responsavel=resp_sel
+                        )
                         
-                    with col_fluxo_chart:
-                        if len(datas_fluxo) == 2:
-                            flx_inicio, flx_fim = datas_fluxo
-                            df_fluxo = db_manager.get_fluxo_diario_novas_tratadas(
-                                data_inicio=flx_inicio.strftime('%Y-%m-%d'),
-                                data_fim=flx_fim.strftime('%Y-%m-%d'),
-                                regiao=regiao_sel
+                        if not df_fluxo.empty:
+                            df_fluxo['Data_Exibicao'] = pd.to_datetime(df_fluxo['Data']).dt.strftime('%d/%m/%Y')
+                            
+                            tot_novas = int(df_fluxo['Novas'].sum())
+                            tot_tratadas = int(df_fluxo['Tratadas'].sum())
+                            saldo = tot_novas - tot_tratadas
+                            
+                            # 2. CARDS KPI no formato Totais Gerais + Neon para Saldo do Período
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            kpi1, kpi2, kpi3 = st.columns(3)
+                            with kpi1:
+                                premium_metric_card("Novas no Período", f"{tot_novas:,}".replace(",", "."), icon_name="people", color="#3b82f6")
+                            with kpi2:
+                                premium_metric_card("Tratadas no Período", f"{tot_tratadas:,}".replace(",", "."), icon_name="tick", color="#34d399")
+                            with kpi3:
+                                # Card Saldo com Borda Neon (Verde se <= 0, Vermelho se > 0)
+                                neon_color = "#ef4444" if saldo > 0 else "#10b981"
+                                glow_rgba = "rgba(239, 68, 68, 0.65)" if saldo > 0 else "rgba(16, 185, 129, 0.65)"
+                                sign_str = f"+{saldo:,}".replace(",", ".") if saldo > 0 else f"{saldo:,}".replace(",", ".")
+                                flash_icon = ICONS.get("flash", "")
+                                
+                                html_neon = f"""
+                                <div class="premium-card animate-target" style="
+                                    border: 2px solid {neon_color} !important;
+                                    box-shadow: 0 0 16px {glow_rgba}, inset 0 0 6px {glow_rgba} !important;
+                                    border-left: 6px solid {neon_color} !important;
+                                    display: flex; flex-direction: column; justify-content: space-between; height: 100%;
+                                    background: rgba(15, 23, 42, 0.85);
+                                    border-radius: 12px;
+                                    padding: 16px;
+                                ">
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                        <div style="color: {neon_color}; display: flex; align-items: center;">
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                {flash_icon}
+                                            </svg>
+                                        </div>
+                                        <span style="color: #94a3b8; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Saldo do Período</span>
+                                    </div>
+                                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 800; color: {neon_color}; line-height: 1; text-shadow: 0 0 8px {glow_rgba};">
+                                        {sign_str}
+                                    </div>
+                                </div>
+                                """
+                                st.markdown(html_neon, unsafe_allow_html=True)
+                            
+                            # 3. Gráfico de Barras Agrupadas
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            df_melted = df_fluxo.melt(
+                                id_vars=['Data_Exibicao'],
+                                value_vars=['Novas', 'Tratadas'],
+                                var_name='Tipo',
+                                value_name='Quantidade'
                             )
                             
-                            if not df_fluxo.empty:
-                                df_fluxo['Data_Exibicao'] = pd.to_datetime(df_fluxo['Data']).dt.strftime('%d/%m/%Y')
-                                
-                                tot_novas = int(df_fluxo['Novas'].sum())
-                                tot_tratadas = int(df_fluxo['Tratadas'].sum())
-                                saldo = tot_novas - tot_tratadas
-                                
-                                # Cards KPI
-                                kpi1, kpi2, kpi3 = st.columns(3)
-                                with kpi1:
-                                    st.metric("🔵 Novas no Período", f"{tot_novas:,}".replace(",", "."))
-                                with kpi2:
-                                    st.metric("🟢 Tratadas no Período", f"{tot_tratadas:,}".replace(",", "."))
-                                with kpi3:
-                                    delta_cor = "inverse" if saldo > 0 else "normal"
-                                    st.metric("⚖️ Saldo do Período", f"{saldo:+,}".replace(",", "."), delta=f"{saldo:+} manobras", delta_color=delta_cor)
-                                
-                                # Gráfico de Barras Agrupadas Lado a Lado
-                                df_melted = df_fluxo.melt(
-                                    id_vars=['Data_Exibicao'],
-                                    value_vars=['Novas', 'Tratadas'],
-                                    var_name='Tipo',
-                                    value_name='Quantidade'
-                                )
-                                
-                                fig_fluxo = px.bar(
-                                    df_melted,
-                                    x='Data_Exibicao',
-                                    y='Quantidade',
-                                    color='Tipo',
-                                    barmode='group',
-                                    text='Quantidade',
-                                    color_discrete_map={'Novas': '#3b82f6', 'Tratadas': '#10b981'},
-                                    title=f"Fluxo Diário: Novas x Tratadas ({regiao_sel})"
-                                )
-                                fig_fluxo.update_traces(textposition='outside')
-                                fig_fluxo.update_layout(
-                                    xaxis_title="Data",
-                                    yaxis_title="Quantidade de Manobras",
-                                    yaxis_tickformat="d",
-                                    legend_title_text="Tipo de Demanda",
-                                    hovermode='x unified',
-                                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                                )
-                                fig_fluxo.update_xaxes(type='category')
-                                st.plotly_chart(fig_fluxo, use_container_width=True)
+                            fig_fluxo = px.bar(
+                                df_melted,
+                                x='Data_Exibicao',
+                                y='Quantidade',
+                                color='Tipo',
+                                barmode='group',
+                                text='Quantidade',
+                                color_discrete_map={'Novas': '#3b82f6', 'Tratadas': '#10b981'},
+                                title=f"Fluxo de Manobras ({regiao_sel} | {resp_sel})"
+                            )
+                            fig_fluxo.update_traces(textposition='outside')
+                            fig_fluxo.update_layout(
+                                xaxis_title="Data",
+                                yaxis_title="Quantidade de Manobras",
+                                yaxis_tickformat="d",
+                                legend_title_text="Tipo de Demanda",
+                                hovermode='x unified',
+                                margin=dict(l=10, r=10, t=40, b=10),
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                            )
+                            fig_fluxo.update_xaxes(type='category')
+                            st.plotly_chart(fig_fluxo, use_container_width=True)
 
-                                # --- Gráficos de Rank por Saldo do Período ---
-                                df_rank_saldo = db_manager.get_rank_saldo_regioes(
-                                    data_inicio=flx_inicio.strftime('%Y-%m-%d'),
-                                    data_fim=flx_fim.strftime('%Y-%m-%d')
-                                )
+                            # 4. Gráficos de RANK (Rank das Demandas Elevadas & Rank das Demandas Controladas)
+                            df_rank_saldo = db_manager.get_rank_saldo_regioes(
+                                data_inicio=flx_inicio.strftime('%Y-%m-%d'),
+                                data_fim=flx_fim.strftime('%Y-%m-%d'),
+                                responsavel=resp_sel
+                            )
+                            
+                            if not df_rank_saldo.empty:
+                                # RANK 1: Rank das Demandas Elevadas (Saldo > 0)
+                                df_rank_piores = df_rank_saldo[df_rank_saldo['Saldo'] > 0].sort_values(by=['Saldo', 'Novas'], ascending=[False, False]).copy()
                                 
-                                if not df_rank_saldo.empty:
-                                    # 1. PIORES REGIÕES: Todas com Saldo POSITIVO (Saldo > 0)
-                                    df_rank_piores = df_rank_saldo[df_rank_saldo['Saldo'] > 0].sort_values(by=['Saldo', 'Novas'], ascending=[False, False]).copy()
-                                    
-                                    st.markdown("<br>", unsafe_allow_html=True)
-                                    st.markdown("#### 🚨 Rank das Piores Regiões pelo Saldo do Período (Saldo Positivo)")
-                                    st.caption("Todas as regiões com acúmulo positivo de passivo no período selecionado (onde entraram mais demandas do que foram tratadas).")
-                                    
-                                    if not df_rank_piores.empty:
-                                        df_rank_piores['Texto_Barra'] = df_rank_piores['Saldo'].apply(lambda x: f"+{x}")
-                                        fig_rank_p = px.bar(
-                                            df_rank_piores,
-                                            x='Regiao',
-                                            y='Saldo',
-                                            text='Texto_Barra',
-                                            color='Saldo',
-                                            color_continuous_scale=['#f59e0b', '#ef4444'],
-                                            title=f"Rank das Piores Regiões - Saldo Positivo ({flx_inicio.strftime('%d/%m/%Y')} a {flx_fim.strftime('%d/%m/%Y')})"
-                                        )
-                                        fig_rank_p.update_traces(textposition='outside')
-                                        fig_rank_p.update_layout(
-                                            xaxis_title="Região",
-                                            yaxis_title="Saldo de Manobras (Novas - Tratadas)",
-                                            yaxis_tickformat="d",
-                                            showlegend=False,
-                                            coloraxis_showscale=False
-                                        )
-                                        fig_rank_p.update_xaxes(type='category')
-                                        st.plotly_chart(fig_rank_p, use_container_width=True)
-                                    else:
-                                        st.info("Nenhuma região com saldo positivo de passivo no período selecionado.")
-
-                                    # 2. MELHORES REGIÕES: Todas com Saldo NEUTRO ou NEGATIVO (Saldo <= 0)
-                                    df_rank_melhores = df_rank_saldo[df_rank_saldo['Saldo'] <= 0].sort_values(by=['Saldo', 'Novas'], ascending=[True, True]).copy()
-                                    
-                                    st.markdown("<br>", unsafe_allow_html=True)
-                                    st.markdown("#### 🏆 Rank das Melhores Regiões pelo Saldo do Período (Saldo Neutro / Negativo)")
-                                    st.caption("Todas as regiões com saldo neutro ou negativo no período (onde a capacidade de tratamento igualou ou superou as novas demandas).")
-                                    
-                                    if not df_rank_melhores.empty:
-                                        df_rank_melhores['Texto_Barra'] = df_rank_melhores['Saldo'].astype(str)
-                                        fig_rank_m = px.bar(
-                                            df_rank_melhores,
-                                            x='Regiao',
-                                            y='Saldo',
-                                            text='Texto_Barra',
-                                            color='Saldo',
-                                            color_continuous_scale=['#10b981', '#38bdf8', '#94a3b8'],
-                                            title=f"Rank das Melhores Regiões - Saldo Neutro / Negativo ({flx_inicio.strftime('%d/%m/%Y')} a {flx_fim.strftime('%d/%m/%Y')})"
-                                        )
-                                        fig_rank_m.update_traces(textposition='outside')
-                                        fig_rank_m.update_layout(
-                                            xaxis_title="Região",
-                                            yaxis_title="Saldo de Manobras (Novas - Tratadas)",
-                                            yaxis_tickformat="d",
-                                            showlegend=False,
-                                            coloraxis_showscale=False
-                                        )
-                                        fig_rank_m.update_xaxes(type='category')
-                                        st.plotly_chart(fig_rank_m, use_container_width=True)
-                                    else:
-                                        st.info("Nenhuma região com saldo neutro ou negativo no período selecionado.")
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                st.markdown("#### 🚨 Rank das Demandas Elevadas")
+                                st.caption("Regiões com acúmulo positivo de passivo no período (onde entraram mais demandas do que foram tratadas).")
+                                
+                                if not df_rank_piores.empty:
+                                    df_rank_piores['Texto_Barra'] = df_rank_piores['Saldo'].apply(lambda x: f"+{x}")
+                                    fig_rank_p = px.bar(
+                                        df_rank_piores,
+                                        x='Regiao',
+                                        y='Saldo',
+                                        text='Texto_Barra',
+                                        color='Saldo',
+                                        color_continuous_scale=['#f59e0b', '#ef4444'],
+                                        title=f"Rank das Demandas Elevadas ({flx_inicio.strftime('%d/%m/%Y')} a {flx_fim.strftime('%d/%m/%Y')})"
+                                    )
+                                    fig_rank_p.update_traces(textposition='outside')
+                                    fig_rank_p.update_layout(
+                                        xaxis_title="Região",
+                                        yaxis_title="Saldo de Manobras (Novas - Tratadas)",
+                                        yaxis_tickformat="d",
+                                        showlegend=False,
+                                        coloraxis_showscale=False,
+                                        margin=dict(l=10, r=10, t=40, b=10)
+                                    )
+                                    fig_rank_p.update_xaxes(type='category')
+                                    st.plotly_chart(fig_rank_p, use_container_width=True)
                                 else:
-                                    st.info("Nenhum dado de saldo por região para o período selecionado.")
+                                    st.info("Nenhuma região com demandas elevadas (saldo positivo) no período selecionado.")
+
+                                # RANK 2: Rank das Demandas Controladas (Saldo <= 0)
+                                df_rank_melhores = df_rank_saldo[df_rank_saldo['Saldo'] <= 0].sort_values(by=['Saldo', 'Novas'], ascending=[True, True]).copy()
+                                
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                st.markdown("#### 🏆 Rank das Demandas Controladas")
+                                st.caption("Regiões com saldo neutro ou negativo no período (onde a capacidade de tratamento igualou ou superou as novas demandas).")
+                                
+                                if not df_rank_melhores.empty:
+                                    df_rank_melhores['Texto_Barra'] = df_rank_melhores['Saldo'].astype(str)
+                                    fig_rank_m = px.bar(
+                                        df_rank_melhores,
+                                        x='Regiao',
+                                        y='Saldo',
+                                        text='Texto_Barra',
+                                        color='Saldo',
+                                        color_continuous_scale=['#10b981', '#38bdf8', '#94a3b8'],
+                                        title=f"Rank das Demandas Controladas ({flx_inicio.strftime('%d/%m/%Y')} a {flx_fim.strftime('%d/%m/%Y')})"
+                                    )
+                                    fig_rank_m.update_traces(textposition='outside')
+                                    fig_rank_m.update_layout(
+                                        xaxis_title="Região",
+                                        yaxis_title="Saldo de Manobras (Novas - Tratadas)",
+                                        yaxis_tickformat="d",
+                                        showlegend=False,
+                                        coloraxis_showscale=False,
+                                        margin=dict(l=10, r=10, t=40, b=10)
+                                    )
+                                    fig_rank_m.update_xaxes(type='category')
+                                    st.plotly_chart(fig_rank_m, use_container_width=True)
+                                else:
+                                    st.info("Nenhuma região com demandas controladas (saldo neutro ou negativo) no período selecionado.")
                             else:
-                                st.info("Nenhum dado de fluxo encontrado para a região e período selecionados.")
+                                st.info("Nenhum dado de saldo por região para os filtros selecionados.")
+                        else:
+                            st.info("Nenhum dado de fluxo encontrado para os filtros selecionados.")
 
                     # --- Seção 5: Retrato de Transição de Regiões (Handover Snapshot) ---
                     st.markdown("---")
