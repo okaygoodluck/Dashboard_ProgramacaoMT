@@ -1,6 +1,16 @@
 import streamlit as st
 import pandas as pd
 import sys
+import platform
+import asyncio
+
+# Patch para evitar warning inofensivo de socket no Windows (ProactorBasePipeTransport connection_lost ao dar F5)
+if platform.system() == 'Windows' and sys.version_info >= (3, 8):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
+
 import altair as alt
 import glob
 import os
