@@ -238,9 +238,10 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
     # Injeção de CSS nativo padronizado com o Design System (Compatível com Tema Claro e Escuro)
     st.markdown("""
     <style>
+    /* Card do Mês - Responsivo ao Tema Nativo do Streamlit */
     .cal-month-card {
-        background: var(--surface-color, #1e293b);
-        border: 1px solid var(--border-color, rgba(128,128,128,0.2));
+        background-color: var(--secondary-background-color, #1e293b) !important;
+        border: 1px solid var(--border-color, rgba(128,128,128,0.2)) !important;
         border-radius: 16px;
         padding: 20px;
         box-shadow: var(--card-shadow, 0 4px 20px rgba(0,0,0,0.15));
@@ -250,7 +251,7 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
         font-family: 'Space Grotesk', sans-serif;
         font-size: 1.5rem;
         font-weight: 700;
-        color: var(--text-primary, #f8fafc);
+        color: var(--text-color, #f8fafc) !important;
         margin-bottom: 16px;
         letter-spacing: 1px;
     }
@@ -260,7 +261,8 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
         text-align: center;
         font-weight: 700;
         font-size: 0.9rem;
-        color: var(--text-muted, #64748b);
+        color: var(--text-color, #94a3b8) !important;
+        opacity: 0.8;
         margin-bottom: 12px;
     }
     .cal-grid {
@@ -271,8 +273,8 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
     .cal-day {
         min-height: 75px;
         border-radius: 10px;
-        background: var(--surface-hover, rgba(128,128,128,0.08));
-        border: 1px solid var(--border-color, rgba(128,128,128,0.2));
+        background: rgba(128, 128, 128, 0.08);
+        border: 1px solid rgba(128, 128, 128, 0.2);
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -296,27 +298,40 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
         font-weight: 700;
         line-height: 1;
         margin-bottom: 4px;
-        color: var(--text-primary);
+        color: var(--text-color, #f8fafc) !important;
+    }
+    .cal-legend {
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        text-align: center;
+        line-height: 1.1;
+        padding: 2px 4px;
+        border-radius: 4px;
+        word-break: break-word;
+        max-width: 95%;
+        color: var(--text-color, #cbd5e1) !important;
+        opacity: 0.9;
     }
     
-    /* Cores de Status com Texto Branco Garantido */
-    .cal-day.green-day { background-color: #059669 !important; color: white !important; }
-    .cal-day.green-day .cal-number { color: white !important; }
+    /* Cores de Status com Texto Branco Garantido em Ambos os Temas */
+    .cal-day.green-day { background-color: #059669 !important; color: #ffffff !important; }
+    .cal-day.green-day .cal-number, .cal-day.green-day .cal-legend { color: #ffffff !important; opacity: 1 !important; }
 
-    .cal-day.red-day { background-color: #dc2626 !important; color: white !important; }
-    .cal-day.red-day .cal-number { color: white !important; }
+    .cal-day.red-day { background-color: #dc2626 !important; color: #ffffff !important; }
+    .cal-day.red-day .cal-number, .cal-day.red-day .cal-legend { color: #ffffff !important; opacity: 1 !important; }
 
-    .cal-day.holiday { background-color: #8b5cf6 !important; color: white !important; }
-    .cal-day.holiday .cal-number { color: white !important; }
+    .cal-day.holiday { background-color: #8b5cf6 !important; color: #ffffff !important; }
+    .cal-day.holiday .cal-number, .cal-day.holiday .cal-legend { color: #ffffff !important; opacity: 1 !important; }
 
-    .cal-day.limit-aprovacao { background-color: #b91c1c !important; color: white !important; }
-    .cal-day.limit-aprovacao .cal-number { color: white !important; }
+    .cal-day.limit-aprovacao { background-color: #b91c1c !important; color: #ffffff !important; }
+    .cal-day.limit-aprovacao .cal-number, .cal-day.limit-aprovacao .cal-legend { color: #ffffff !important; opacity: 1 !important; }
 
-    .cal-day.limit-avisos { background-color: #d97706 !important; color: white !important; }
-    .cal-day.limit-avisos .cal-number { color: white !important; }
+    .cal-day.limit-avisos { background-color: #d97706 !important; color: #ffffff !important; }
+    .cal-day.limit-avisos .cal-number, .cal-day.limit-avisos .cal-legend { color: #ffffff !important; opacity: 1 !important; }
 
-    .cal-day.limit-condis { background-color: #0284c7 !important; color: white !important; }
-    .cal-day.limit-condis .cal-number { color: white !important; }
+    .cal-day.limit-condis { background-color: #0284c7 !important; color: #ffffff !important; }
+    .cal-day.limit-condis .cal-number, .cal-day.limit-condis .cal-legend { color: #ffffff !important; opacity: 1 !important; }
     
     /* Dia Atual (Today) */
     .cal-day.today {
