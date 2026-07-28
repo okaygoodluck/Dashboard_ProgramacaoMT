@@ -1,192 +1,399 @@
 import streamlit as st
-import pandas as pd
 import calendar
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 
-def render_tab_calendario(df_filtered):
-    """
-    Renderiza a visão nativa do Calendário Mensal de Programação de Manobras.
-    substituindo o arquivo estático externo HTML.
-    """
-    st.subheader("📅 Calendário de Programação")
+# --- BANCO DE FERIADOS (BH / CEMIG) ---
+HOLIDAYS_BH_2025 = [
+    (1, 1, "Confraternização Universal"),
+    (3, 3, "Carnaval"),
+    (3, 4, "Carnaval (facultativo)"),
+    (3, 5, "Quarta-feira de Cinzas"),
+    (4, 18, "Paixão de Cristo"),
+    (4, 21, "Tiradentes"),
+    (5, 1, "Dia do Trabalhador"),
+    (5, 2, "Dia do Trabalhador (emenda)"),
+    (6, 19, "Corpus Christi"),
+    (6, 20, "Corpus Christi (emenda)"),
+    (8, 15, "Assunção de N. Sra."),
+    (9, 7, "Independência do Brasil"),
+    (10, 12, "N. Sra. Aparecida"),
+    (11, 2, "Finados"),
+    (11, 15, "Proclamação da República"),
+    (11, 20, "Consciência Negra"),
+    (11, 21, "Consciência Negra (emenda)"),
+    (11, 25, "Feriado Municipal BH"),
+    (12, 24, "Véspera de Natal"),
+    (12, 25, "Natal"),
+    (12, 26, "Natal (emenda)"),
+    (12, 31, "Véspera de Ano Novo")
+]
 
-    if df_filtered is None or df_filtered.empty:
-        st.info("Nenhuma solicitação disponível para exibir no calendário.")
-        return
+HOLIDAYS_BH_2026 = [
+    (1, 1, "Confraternização Universal"),
+    (1, 2, "Confraternização Universal (emenda)"),
+    (2, 16, "Segunda de Carnaval"),
+    (2, 17, "Terça de Carnaval"),
+    (2, 18, "Quarta de Cinzas"),
+    (4, 3, "Paixão de Cristo"),
+    (4, 20, "Emenda Tiradentes"),
+    (4, 21, "Tiradentes"),
+    (5, 1, "Dia do Trabalhador"),
+    (6, 4, "Corpus Christi"),
+    (6, 5, "Emenda Corpus Christi"),
+    (8, 15, "Assunção de N. Sra."),
+    (9, 7, "Independência do Brasil"),
+    (10, 12, "N. Sra. Aparecida"),
+    (11, 2, "Finados"),
+    (11, 15, "Proclamação da República"),
+    (11, 20, "Consciência Negra"),
+    (12, 25, "Natal"),
+    (12, 31, "Véspera de Ano Novo")
+]
 
-    # Inicialização do estado de data ativa no calendário
+def get_holiday_info(d: date):
+    """Retorna o nome do feriado caso a data seja um feriado cadastrado."""
+    h_list = HOLIDAYS_BH_2025 if d.year == 2025 else (HOLIDAYS_BH_2026 if d.year == 2026 else [])
+    for month, day, name in h_list:
+        if d.month == month and d.day == day:
+            return name
+    return None
+
+def is_holiday(d: date):
+    return get_holiday_info(d) is not None
+
+def is_business_day(d: date):
+    """Verifica se a data é um dia útil (não é fim de semana nem feriado)."""
+    return d.weekday() < 5 and not is_holiday(d)
+
+def calculate_business_days(start_date: date, end_date: date):
+    """Calcula o número de dias úteis entre duas datas (inclusive)."""
+    if start_date > end_date:
+        return -1
+    count = 0
+    curr = start_date
+    while curr <= end_date:
+        if is_business_day(curr):
+            count += 1
+        curr += timedelta(days=1)
+    return count
+
+def add_business_days(start_date: date, days_to_add: int):
+    """Soma N dias úteis a uma data inicial."""
+    if days_to_add <= 0:
+        return start_date
+    curr = start_date
+    count = 0
+    while count < days_to_add:
+        curr += timedelta(days=1)
+        if is_business_day(curr):
+            count += 1
+    return curr
+
+def get_consecutive_non_business_days(start_date: date):
+    """Retorna lista de dias não úteis consecutivos imediatamente após uma data."""
+    res = []
+    curr = start_date + timedelta(days=1)
+    while not is_business_day(curr):
+        res.append(curr)
+        curr += timedelta(days=1)
+    return res
+
+def render_month_calendar_html(year: int, month: int, today_date: date):
+    """Gera o HTML/CSS de um único mês com estilos fiéis ao calendario_programacao.html."""
+    month_names = ["", "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", 
+                   "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"]
+    
+    month_name = f"{month_names[month]} {year}"
+    
+    # Limites operacionais calculados a partir de hoje
+    condis_limit = add_business_days(today_date, 2)
+    avisos_limit = add_business_days(today_date, 8)
+    approval_limit = add_business_days(today_date, 11)
+    
+    condis_ext = [condis_limit] + get_consecutive_non_business_days(condis_limit)
+    avisos_ext = [avisos_limit] + get_consecutive_non_business_days(avisos_limit)
+    approval_ext = [approval_limit] + get_consecutive_non_business_days(approval_limit)
+    
+    days_html_list = []
+    
+    # Matriz real por semanas (Domingo a Sábado)
+    first_day_weekday = calendar.monthrange(year, month)[0] # 0=Seg, 6=Dom
+    # Offset para domingo (Se Seg(0) => offset 1, Dom(6) => offset 0)
+    start_offset = (first_day_weekday + 1) % 7
+    total_days = calendar.monthrange(year, month)[1]
+    
+    # Preencher dias vazios iniciais
+    for _ in range(start_offset):
+        days_html_list.append('<div class="cal-day empty"></div>')
+        
+    for day_num in range(1, total_days + 1):
+        curr_date = date(year, month, day_num)
+        is_today = (curr_date == today_date)
+        holiday_name = get_holiday_info(curr_date)
+        
+        # Classes e cores
+        classes = ["cal-day"]
+        applied_colors = []
+        legends = []
+        
+        if is_today:
+            classes.append("today")
+            
+        if holiday_name:
+            classes.append("holiday")
+            applied_colors.append("#ac63e3") # Roxo
+            legends.append(holiday_name)
+            
+        # Prazos Limites Operacionais
+        if any(curr_date == d for d in approval_ext):
+            classes.append("limit-aprovacao")
+            applied_colors.append("#d64a38") # Vermelho Escuro
+            legends.append("Aprovação")
+            
+        if any(curr_date == d for d in avisos_ext):
+            classes.append("limit-avisos")
+            applied_colors.append("#f7913d") # Laranja
+            legends.append("Avisos")
+            
+        if any(curr_date == d for d in condis_ext):
+            classes.append("limit-condis")
+            applied_colors.append("#3f9be6") # Azul
+            legends.append("Condis")
+            
+        # Regra de coloração base de dias úteis futuros/passados
+        if curr_date >= today_date:
+            b_days = calculate_business_days(today_date, curr_date)
+            if 0 <= b_days <= 11:
+                if not holiday_name and not any(curr_date == d for d in (approval_ext + avisos_ext + condis_ext)):
+                    classes.append("red-day") # Vermelho Claro / Janela Crítica
+            elif b_days > 11:
+                if not holiday_name and not any(curr_date == d for d in (approval_ext + avisos_ext + condis_ext)):
+                    classes.append("green-day") # Verde / Janela Segura
+
+        # Estilo de Fundo (Gradiente se houver múltiplos status)
+        style_inline = ""
+        if len(applied_colors) > 1:
+            step = 100.0 / len(applied_colors)
+            stops = []
+            for idx, c in enumerate(applied_colors):
+                s = idx * step
+                e = (idx + 1) * step
+                stops.append(f"{c} {s:.1f}%")
+                stops.append(f"{c} {e:.1f}%")
+            style_inline = f'background: linear-gradient(135deg, {", ".join(stops)}) !important; color: white !important;'
+        elif len(applied_colors) == 1:
+            style_inline = f'background-color: {applied_colors[0]} !important; color: white !important;'
+
+        legend_text = " / ".join(dict.fromkeys(legends)) # Remove duplicados preservando ordem
+        legend_html = f'<span class="cal-legend">{legend_text}</span>' if legend_text else ""
+        
+        class_str = " ".join(classes)
+        day_card = f"""
+        <div class="{class_str}" style="{style_inline}">
+            <span class="cal-number">{day_num}</span>
+            {legend_html}
+        </div>
+        """
+        days_html_list.append(day_card)
+        
+    return month_name, "".join(days_html_list)
+
+def render_tab_calendario():
+    """Renderiza a aba Calendário nativamente em Python/Streamlit."""
+    
+    # Inicializa estado da navegação de meses
+    if 'cal_month_offset' not in st.session_state:
+        st.session_state['cal_month_offset'] = 0
+        
     hoje = date.today()
-    if "cal_ano" not in st.session_state:
-        st.session_state.cal_ano = hoje.year
-    if "cal_mes" not in st.session_state:
-        st.session_state.cal_mes = hoje.month
-
-    # Identificar coluna de Data de Início
-    col_inicio = next((c for c in df_filtered.columns if 'início' in c.lower() or 'inicio' in c.lower()), None)
     
-    df_cal = df_filtered.copy()
-    if col_inicio:
-        df_cal['Data_Parsed'] = pd.to_datetime(df_cal[col_inicio], dayfirst=True, errors='coerce').dt.date
-    else:
-        # Fallback para data atual se não encontrar coluna
-        df_cal['Data_Parsed'] = hoje
-
-    # Controles Superiores de Navegação Mensal
-    c_nav1, c_nav2, c_nav3, c_nav4 = st.columns([1, 2.5, 1, 1])
-    
+    # Controle de Navegação dos Meses
+    c_nav1, c_nav2, c_nav3 = st.columns([1.5, 4, 1.5])
     with c_nav1:
-        if st.button("⬅️ Mês Anterior", use_container_width=True, key="cal_btn_prev"):
-            if st.session_state.cal_mes == 1:
-                st.session_state.cal_mes = 12
-                st.session_state.cal_ano -= 1
-            else:
-                st.session_state.cal_mes -= 1
+        if st.button("❮ Mês Anterior", use_container_width=True, key="btn_cal_prev"):
+            st.session_state['cal_month_offset'] -= 1
             st.rerun()
-
+            
     with c_nav3:
-        if st.button("Próximo Mês ➡️", use_container_width=True, key="cal_btn_next"):
-            if st.session_state.cal_mes == 12:
-                st.session_state.cal_mes = 1
-                st.session_state.cal_ano += 1
-            else:
-                st.session_state.cal_mes += 1
+        if st.button("Próximo Mês ❯", use_container_width=True, key="btn_cal_next"):
+            st.session_state['cal_month_offset'] += 1
             st.rerun()
-
-    with c_nav4:
-        if st.button("📅 Hoje", use_container_width=True, key="cal_btn_today"):
-            st.session_state.cal_ano = hoje.year
-            st.session_state.cal_mes = hoje.month
-            st.rerun()
-
-    nomes_meses = [
-        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
-    ]
-    nome_mes_atual = nomes_meses[st.session_state.cal_mes - 1]
-    
+            
     with c_nav2:
-        st.markdown(
-            f"<h3 style='text-align: center; margin: 0; color: var(--accent-color); font-size: 1.4rem;'>"
-            f"{nome_mes_atual} / {st.session_state.cal_ano}</h3>",
-            unsafe_allow_html=True
-        )
+        if st.session_state['cal_month_offset'] != 0:
+            if st.button("📅 Voltar para Mês Atual", use_container_width=True, key="btn_cal_reset"):
+                st.session_state['cal_month_offset'] = 0
+                st.rerun()
 
-    # Filtrar solicitações do mês selecionado
-    ano_sel = st.session_state.cal_ano
-    mes_sel = st.session_state.cal_mes
+    # Cálculo dos dois meses a serem exibidos
+    offset = st.session_state['cal_month_offset']
+    
+    # Mês 1
+    m1_month = (hoje.month - 1 + offset) % 12 + 1
+    m1_year = hoje.year + (hoje.month - 1 + offset) // 12
+    
+    # Mês 2 (Próximo Mês)
+    m2_month = (m1_month) % 12 + 1
+    m2_year = m1_year + (1 if m1_month == 12 else 0)
+    
+    title_m1, html_days_m1 = render_month_calendar_html(m1_year, m1_month, hoje)
+    title_m2, html_days_m2 = render_month_calendar_html(m2_year, m2_month, hoje)
 
-    df_mes = df_cal[
-        (df_cal['Data_Parsed'].notna()) & 
-        (df_cal['Data_Parsed'].apply(lambda d: d.year == ano_sel and d.month == mes_sel))
-    ]
+    # Injeção de CSS nativo padronizado com o Design System
+    st.markdown("""
+    <style>
+    .cal-month-card {
+        background: var(--surface-color, #1e293b);
+        border: 1px solid var(--border-color, #334155);
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    }
+    .cal-month-title {
+        text-align: center;
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary, #f8fafc);
+        margin-bottom: 16px;
+        letter-spacing: 1px;
+    }
+    .cal-weekdays {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: #94a3b8;
+        margin-bottom: 12px;
+    }
+    .cal-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 8px;
+    }
+    .cal-day {
+        min-height: 75px;
+        border-radius: 10px;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid rgba(255,255,255,0.08);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 2px;
+        transition: all 0.2s ease;
+        position: relative;
+        overflow: hidden;
+    }
+    .cal-day:not(.empty):hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .cal-day.empty {
+        background: transparent !important;
+        border: none !important;
+    }
+    .cal-number {
+        font-family: 'Space Grotesk', sans-serif;
+        font-size: 1.25rem;
+        font-weight: 700;
+        line-height: 1;
+        margin-bottom: 4px;
+    }
+    .cal-legend {
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        text-align: center;
+        line-height: 1.1;
+        padding: 2px 4px;
+        border-radius: 4px;
+        word-break: break-word;
+        max-width: 95%;
+    }
+    
+    /* Cores de Status */
+    .cal-day.green-day { background-color: #059669; color: white; }
+    .cal-day.red-day { background-color: #dc2626; color: white; }
+    .cal-day.holiday { background-color: #8b5cf6; color: white; }
+    .cal-day.limit-aprovacao { background-color: #b91c1c; color: white; }
+    .cal-day.limit-avisos { background-color: #d97706; color: white; }
+    .cal-day.limit-condis { background-color: #0284c7; color: white; }
+    
+    /* Dia Atual (Today) */
+    .cal-day.today {
+        border: 3px solid #38bdf8 !important;
+        box-shadow: 0 0 16px rgba(56, 189, 248, 0.6) !important;
+        transform: scale(1.03);
+    }
+    
+    /* Barra Informativa de Legenda */
+    .cal-info-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        justify-content: center;
+        background: rgba(30, 41, 59, 0.6);
+        padding: 12px;
+        border-radius: 12px;
+        margin-top: 20px;
+        border: 1px solid rgba(255,255,255,0.08);
+    }
+    .cal-info-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: #cbd5e1;
+    }
+    .cal-info-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-    total_mes = len(df_mes)
-    aprovadas_mes = len(df_mes[df_mes['Is_Aprovada'] == True]) if 'Is_Aprovada' in df_mes.columns else 0
-    elaboracao_mes = len(df_mes[df_mes['Is_Elaboracao'] == True]) if 'Is_Elaboracao' in df_mes.columns else 0
-    atrasadas_mes = len(df_mes[df_mes['Status_Prazo'] == 'Atrasada']) if 'Status_Prazo' in df_mes.columns else 0
+    # Exibição dos 2 meses lado a lado
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown(f"""
+        <div class="cal-month-card">
+            <div class="cal-month-title">{title_m1}</div>
+            <div class="cal-weekdays">
+                <span>DOM</span><span>SEG</span><span>TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span>
+            </div>
+            <div class="cal-grid">
+                {html_days_m1}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Cards KPI do Mês
-    st.markdown("<br>", unsafe_allow_html=True)
-    k1, k2, k3, k4 = st.columns(4)
-    with k1:
-        st.metric("Total no Mês", f"{total_mes} manobras")
-    with k2:
-        st.metric("🟢 Aprovadas no Mês", f"{aprovadas_mes} manobras")
-    with k3:
-        st.metric("🔵 Em Elaboração", f"{elaboracao_mes} manobras")
-    with k4:
-        st.metric("🚨 Atrasadas/Prazos Críticos", f"{atrasadas_mes} manobras")
+    with col2:
+        st.markdown(f"""
+        <div class="cal-month-card">
+            <div class="cal-month-title">{title_m2}</div>
+            <div class="cal-weekdays">
+                <span>DOM</span><span>SEG</span><span>TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span>
+            </div>
+            <div class="cal-grid">
+                {html_days_m2}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Cabeçalho dos Dias da Semana
-    dias_semana = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
-    cols_header = st.columns(7)
-    for idx, d_nome in enumerate(dias_semana):
-        with cols_header[idx]:
-            bg_hdr = "rgba(59, 130, 246, 0.2)" if idx < 5 else "rgba(148, 163, 184, 0.1)"
-            st.markdown(
-                f"<div style='background: {bg_hdr}; padding: 8px; border-radius: 6px; text-align: center; "
-                f"font-weight: 700; font-size: 0.85rem; text-transform: uppercase; color: var(--text-primary);'>"
-                f"{d_nome}</div>",
-                unsafe_allow_html=True
-            )
-
-    # Matriz do Calendário Mensal
-    cal = calendar.Calendar(firstweekday=0) # 0 = Segunda
-    dias_matriz = cal.monthdatescalendar(ano_sel, mes_sel)
-
-    # Dicionário de eventos por data
-    eventos_por_data = {}
-    if not df_mes.empty:
-        for d_date, group in df_mes.groupby('Data_Parsed'):
-            eventos_por_data[d_date] = group
-
-    # Estilização e Renderização da Grade de Dias
-    for semana in dias_matriz:
-        st.markdown("<div style='margin-top: 6px;'></div>", unsafe_allow_html=True)
-        cols_dia = st.columns(7)
-        for idx, dia_dt in enumerate(semana):
-            with cols_dia[idx]:
-                is_current_month = (dia_dt.month == mes_sel)
-                is_today = (dia_dt == hoje)
-                
-                # Cores e estilos do dia
-                opacity = "1.0" if is_current_month else "0.35"
-                border_color = "var(--accent-color)" if is_today else "var(--border-color)"
-                bg_card = "rgba(30, 41, 59, 0.7)" if is_current_month else "rgba(15, 23, 42, 0.3)"
-                
-                if is_today:
-                    bg_card = "rgba(59, 130, 246, 0.25)"
-
-                grupo_dia = eventos_por_data.get(dia_dt, pd.DataFrame())
-                qtd_dia = len(grupo_dia)
-
-                # HTML do dia
-                badge_html = ""
-                if qtd_dia > 0:
-                    aprov_count = len(grupo_dia[grupo_dia['Is_Aprovada'] == True]) if 'Is_Aprovada' in grupo_dia.columns else 0
-                    elab_count = len(grupo_dia[grupo_dia['Is_Elaboracao'] == True]) if 'Is_Elaboracao' in grupo_dia.columns else 0
-                    atraso_count = len(grupo_dia[grupo_dia['Status_Prazo'] == 'Atrasada']) if 'Status_Prazo' in grupo_dia.columns else 0
-                    
-                    details = []
-                    if aprov_count > 0: details.append(f"<span style='color: #34d399; font-weight:700;'>✔ {aprov_count}</span>")
-                    if elab_count > 0: details.append(f"<span style='color: #38bdf8; font-weight:700;'>📝 {elab_count}</span>")
-                    if atraso_count > 0: details.append(f"<span style='color: #f87171; font-weight:700;'>🚨 {atraso_count}</span>")
-                    
-                    detail_str = " | ".join(details) if details else f"{qtd_dia} manobras"
-                    badge_html = f"<div style='margin-top: 6px; font-size: 0.75rem;'>{detail_str}</div>"
-
-                dia_num_str = f"<b>{dia_dt.day}</b>" if is_today else f"{dia_dt.day}"
-
-                st.markdown(
-                    f"""
-                    <div style="
-                        background: {bg_card};
-                        border: 1px solid {border_color};
-                        border-radius: 8px;
-                        padding: 8px;
-                        min-height: 90px;
-                        opacity: {opacity};
-                        display: flex;
-                        flex-direction: column;
-                        justify-content: space-between;
-                    ">
-                        <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <span style="font-size: 0.9rem; font-weight: 700; color: {'var(--accent-color)' if is_today else 'var(--text-primary)'};">
-                                {dia_num_str}
-                            </span>
-                            {f"<span style='font-size: 0.7rem; background: var(--accent-color); color: white; padding: 1px 6px; border-radius: 10px; font-weight: 700;'>{qtd_dia}</span>" if qtd_dia > 0 else ""}
-                        </div>
-                        {badge_html}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-                # Se houver manobras no dia, disponibiliza visualização detalhada
-                if qtd_dia > 0 and is_current_month:
-                    with st.popover(f"📋 Ver ({qtd_dia})", use_container_width=True):
-                        st.markdown(f"#### Manobras em **{dia_dt.strftime('%d/%m/%Y')}** ({qtd_dia})")
-                        cols_show = [c for c in ['Solicitação', 'Região', 'Responsavel', 'Situação', 'Status_Prazo'] if c in grupo_dia.columns]
-                        st.dataframe(grupo_dia[cols_show], use_container_width=True, hide_index=True)
+    # Barra Informativa de Legenda
+    st.markdown("""
+    <div class="cal-info-bar">
+        <div class="cal-info-item"><div class="cal-info-dot" style="background:#dc2626;"></div> 🔴 Janela Crítica (Até 11 D.U.)</div>
+        <div class="cal-info-item"><div class="cal-info-dot" style="background:#059669;"></div> 🟢 Janela Segura (> 11 D.U.)</div>
+        <div class="cal-info-item"><div class="cal-info-dot" style="background:#b91c1c;"></div> 🚨 Limite Aprovação (11 D.U.)</div>
+        <div class="cal-info-item"><div class="cal-info-dot" style="background:#d97706;"></div> 🟠 Limite Avisos (8 D.U.)</div>
+        <div class="cal-info-item"><div class="cal-info-dot" style="background:#0284c7;"></div> 🔵 Limite Condis (2 D.U.)</div>
+        <div class="cal-info-item"><div class="cal-info-dot" style="background:#8b5cf6;"></div> 🟣 Feriado (BH)</div>
+        <div class="cal-info-item"><div class="cal-info-dot" style="border: 2px solid #38bdf8; background: transparent;"></div> 🔷 Hoje</div>
+    </div>
+    """, unsafe_allow_html=True)

@@ -9,11 +9,9 @@ from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
 import db_manager
 import components.vanguard_cards as vanguard_cards
-import views.tab_calendario as tab_calendario
 import importlib
 importlib.reload(db_manager)
 importlib.reload(vanguard_cards)
-importlib.reload(tab_calendario)
 import extra_streamlit_components as stx
 
 # --- IMPORTAÇÃO DOS MÓDULOS CCP (Centro de Controle da Programação) ---
@@ -36,9 +34,9 @@ from components.vanguard_charts import (
     render_delays_by_mesh,
     render_qty_x_weight_chart
 )
-from views.tab_calendario import render_tab_calendario
 from views.tab_detalhes import render_tab_detalhes
 from views.tab_config import render_tab_config
+from views.tab_calendario import render_tab_calendario
 
 # Inicializa banco de dados de sessões no startup
 
@@ -1094,7 +1092,7 @@ if df is not None:
     # ABA: CALENDÁRIO
     if chosen_tab == "📅 Calendário":
         with st.container():
-            render_tab_calendario(df_filtered)
+            render_tab_calendario()
 
     # --- ABA 0: EQUIPE (DIVISÃO DE TRABALHO) ---
     if chosen_tab == "👥 Responsáveis":
