@@ -198,7 +198,7 @@ def render_month_calendar_html(year: int, month: int, today_date: date):
         
     return month_name, "".join(days_html_list)
 
-def render_tab_calendario():
+def render_tab_calendario(df_filtered=None, *args, **kwargs):
     """Renderiza a aba Calendário nativamente em Python/Streamlit."""
     
     # Inicializa estado da navegação de meses

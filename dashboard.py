@@ -9,9 +9,11 @@ from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
 import db_manager
 import components.vanguard_cards as vanguard_cards
+import views.tab_calendario as tab_calendario
 import importlib
 importlib.reload(db_manager)
 importlib.reload(vanguard_cards)
+importlib.reload(tab_calendario)
 import extra_streamlit_components as stx
 
 # --- IMPORTAÇÃO DOS MÓDULOS CCP (Centro de Controle da Programação) ---
@@ -1092,7 +1094,7 @@ if df is not None:
     # ABA: CALENDÁRIO
     if chosen_tab == "📅 Calendário":
         with st.container():
-            render_tab_calendario()
+            render_tab_calendario(df_filtered)
 
     # --- ABA 0: EQUIPE (DIVISÃO DE TRABALHO) ---
     if chosen_tab == "👥 Responsáveis":
