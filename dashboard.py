@@ -1319,20 +1319,22 @@ if df is not None:
                     limite_inferior = date(2026, 7, 7)
                     data_inicio_padrao = max(limite_inferior, hoje - timedelta(days=15))
                     
-                    # Disposição dos seletores de Responsável e Período lado a lado abaixo do título
-                    col_resp, col_perio, _ = st.columns([2, 1.5, 3.5])
+                    # Estilo CSS global para garantir alinhamento vertical perfeito dos seletores
+                    st.markdown("""
+                        <style>
+                        div[data-testid="stDateInput"], div[data-testid="stDateInput"] > div {
+                            max-width: 270px !important;
+                        }
+                        </style>
+                    """, unsafe_allow_html=True)
+
+                    # Disposição dos seletores de Responsável e Período alinhados lado a lado
+                    col_resp, col_perio, _ = st.columns([2.2, 1.3, 3.5])
                     
                     with col_resp:
                         resp_d1 = st.selectbox("Selecione o Responsável:", options=todos_usuarios_d1, key="d1_responsavel")
                         
                     with col_perio:
-                        st.markdown("""
-                            <style>
-                            div[data-testid="stDateInput"], div[data-testid="stDateInput"] > div {
-                                max-width: 270px !important;
-                            }
-                            </style>
-                        """, unsafe_allow_html=True)
                         datas_d1 = st.date_input(
                             "Período de Análise:",
                             value=(data_inicio_padrao, hoje),
@@ -1382,6 +1384,7 @@ if df is not None:
                                 yaxis_title="Quantidade",
                                 barmode='group',
                                 hovermode='x unified',
+                                margin=dict(l=10, r=10, t=50, b=10),
                                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                             )
                             fig_d1.update_xaxes(type='category')
