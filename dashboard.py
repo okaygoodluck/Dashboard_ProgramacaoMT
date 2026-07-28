@@ -1575,6 +1575,44 @@ if df is not None:
                                     )
                                     fig_rank.update_xaxes(type='category')
                                     st.plotly_chart(fig_rank, use_container_width=True)
+
+                                    # --- Gráfico de Rank das Melhores Regiões (Restante das Regiões) ---
+                                    if len(df_rank_saldo) > 15:
+                                        df_rank_restante = df_rank_saldo.iloc[15:].copy()
+                                    elif len(df_rank_saldo) > 1:
+                                        mid = max(1, len(df_rank_saldo) // 2)
+                                        df_rank_restante = df_rank_saldo.iloc[mid:].copy()
+                                    else:
+                                        df_rank_restante = pd.DataFrame()
+
+                                    if not df_rank_restante.empty:
+                                        st.markdown("<br>", unsafe_allow_html=True)
+                                        st.markdown("#### 🏆 Rank das Melhores Regiões pelo Saldo do Período (Restante das Regiões)")
+                                        st.caption("Regiões com menor acúmulo de passivo ou melhor desempenho de vazão (saldo reduzido ou negativo no período).")
+                                        
+                                        # Ordenar do menor saldo para o maior para destacar as melhores no início do gráfico
+                                        df_rank_melhores = df_rank_restante.sort_values(by=['Saldo', 'Novas'], ascending=[True, True]).copy()
+                                        df_rank_melhores['Texto_Barra'] = df_rank_melhores['Saldo'].apply(lambda x: f"+{x}" if x > 0 else str(x))
+                                        
+                                        fig_rank_melhores = px.bar(
+                                            df_rank_melhores,
+                                            x='Regiao',
+                                            y='Saldo',
+                                            text='Texto_Barra',
+                                            color='Saldo',
+                                            color_continuous_scale=['#10b981', '#38bdf8', '#f59e0b'],
+                                            title=f"Rank das Melhores Regiões por Saldo ({flx_inicio.strftime('%d/%m/%Y')} a {flx_fim.strftime('%d/%m/%Y')})"
+                                        )
+                                        fig_rank_melhores.update_traces(textposition='outside')
+                                        fig_rank_melhores.update_layout(
+                                            xaxis_title="Região",
+                                            yaxis_title="Saldo de Manobras (Novas - Tratadas)",
+                                            yaxis_tickformat="d",
+                                            showlegend=False,
+                                            coloraxis_showscale=False
+                                        )
+                                        fig_rank_melhores.update_xaxes(type='category')
+                                        st.plotly_chart(fig_rank_melhores, use_container_width=True)
                                 else:
                                     st.info("Nenhum dado de saldo por região para o período selecionado.")
                             else:
