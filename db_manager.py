@@ -446,6 +446,7 @@ def resetar_senha(matricula):
     finally:
         conn.close()
 
+@st.cache_data(ttl=120)
 def get_mapeamento_regioes():
     """Retorna o mapeamento atual de regiões x técnicos."""
     conn = get_connection_config()

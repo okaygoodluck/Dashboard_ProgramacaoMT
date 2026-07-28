@@ -96,14 +96,28 @@ def inject_ui_css(theme="Dark"):
             font-family: 'Inter', sans-serif;
         }}
 
-        /* Anti-Dimming & Anti-Blur (Evita escurecimento e lentidao visual no Streamlit) */
-        .stApp[data-test-script-state="running"] > div,
-        div[data-testid="stAppViewBlockContainer"] {{
+        /* Anti-Dimming & Anti-Blur Total (Impede 100% o escurecimento e desfoque da tela no Streamlit) */
+        .stApp[data-test-script-state="running"],
+        .stApp[data-test-script-state="running"] *,
+        [data-testid="stAppViewContainer"][data-test-script-state="running"],
+        [data-testid="stAppViewContainer"][data-test-script-state="running"] *,
+        [data-testid="stMainBlockContainer"],
+        [data-testid="stMainBlockContainer"] *,
+        [data-testid="stAppViewBlockContainer"],
+        [data-testid="stAppViewBlockContainer"] *,
+        [data-testid="stMain"],
+        [data-testid="stMain"] *,
+        .stElementContainer,
+        .stElementContainer * {{
             opacity: 1 !important;
             filter: none !important;
-            transition: opacity 0.1s ease !important;
+            backdrop-filter: none !important;
+            transition: none !important;
         }}
-        div[data-testid="stStatusWidget"] {{
+        [data-testid="stStatusWidget"],
+        div[data-testid="stStatusWidget"],
+        .stSpinner {{
+            display: none !important;
             visibility: hidden !important;
         }}
         
