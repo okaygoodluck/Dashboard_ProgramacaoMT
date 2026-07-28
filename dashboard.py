@@ -1229,138 +1229,80 @@ if df is not None:
                     # Extrair apenas a data (YYYY-MM-DD)
                     df_eventos_all['data'] = pd.to_datetime(df_eventos_all['data_evento']).dt.strftime('%Y-%m-%d')
                     
-                    # --- GRÁFICOS DE EVOLUÇÃO ---
-                    st.subheader("Evolução Histórica (Dia a Dia)")
+                    # --- GRÁFICO: Solicitações Tratadas (Equipe) ---
+                    st.subheader("Solicitações Tratadas (Equipe)")
                     
                     import plotly.express as px
                     
-                    # Gráfico: Evolução por Usuário (Apenas TRATADAS)
-                    col_usr_filter, col_usr_chart = st.columns([1, 7])
-                    
                     df_tratadas = df_eventos_all[df_eventos_all['tipo_evento'] == 'TRATADA'].copy()
                     
-                    with col_usr_filter:
-                        st.markdown("#### Filtros: Responsável")
-                        todos_usuarios = sorted(df_tratadas['nome_responsavel'].dropna().unique().tolist())
-                        usuarios_selecionados = st.multiselect("Selecione o Responsável:", options=todos_usuarios, default=todos_usuarios, key="hist_usuario")
+                    # Filtro de período posicionado logo abaixo do título do gráfico
+                    datas_unicas = sorted(df_eventos_all['data'].dropna().unique().tolist())
+                    if datas_unicas:
+                        data_min = pd.to_datetime(datas_unicas[0]).date()
+                        data_max = pd.to_datetime(datas_unicas[-1]).date()
+                    else:
+                        data_min = data_max = date.today()
                         
-                        datas_unicas = sorted(df_eventos_all['data'].dropna().unique().tolist())
-                        if datas_unicas:
-                            data_min = pd.to_datetime(datas_unicas[0]).date()
-                            data_max = pd.to_datetime(datas_unicas[-1]).date()
-                        else:
-                            data_min = data_max = date.today()
-                            
-                        limite = date(2026, 7, 7)
-                        data_min = max(data_min, limite)
-                        
+                    limite = date(2026, 7, 7)
+                    data_min = max(data_min, limite)
+                    
+                    col_p1, _ = st.columns([2, 5])
+                    with col_p1:
                         datas_selecionadas = st.date_input(
-                            "Período (a partir de 07/07):", 
+                            "Período de Análise:", 
                             value=(max(data_min, data_max - timedelta(days=15)), data_max), 
                             min_value=limite, 
                             max_value=data_max,
                             key="hist_data_usr"
                         )
+                    
+                    if isinstance(datas_selecionadas, tuple):
+                        d_inicio = datas_selecionadas[0]
+                        d_fim = datas_selecionadas[1] if len(datas_selecionadas) > 1 else datas_selecionadas[0]
+                    else:
+                        d_inicio = d_fim = datas_selecionadas
                         
-                        # Tratamento seguro do retorno do date_input
-                        if isinstance(datas_selecionadas, tuple):
-                            d_inicio = datas_selecionadas[0]
-                            d_fim = datas_selecionadas[1] if len(datas_selecionadas) > 1 else datas_selecionadas[0]
-                        else:
-                            d_inicio = d_fim = datas_selecionadas
-                            
-                    # Aplicar filtros no df_tratadas
                     d_inicio_str = d_inicio.strftime('%Y-%m-%d')
                     d_fim_str = d_fim.strftime('%Y-%m-%d')
                     
                     df_usr_filtered = df_tratadas[
-                        (df_tratadas['nome_responsavel'].isin(usuarios_selecionados)) &
                         (df_tratadas['data'] >= d_inicio_str) &
                         (df_tratadas['data'] <= d_fim_str)
-                    ] if usuarios_selecionados else pd.DataFrame()
+                    ] if not df_tratadas.empty else pd.DataFrame()
                     
-                    with col_usr_chart:
-                        if not df_usr_filtered.empty:
-                            df_user_grouped = df_usr_filtered.groupby(['data', 'nome_responsavel']).size().reset_index(name='Tratadas')
-                            # Formatar data para exibição sem horário (padrão BR)
-                            df_user_grouped['data_exibicao'] = pd.to_datetime(df_user_grouped['data']).dt.strftime('%d/%m/%Y')
-                            
-                            # Criar coluna com primeiro nome para exibir no topo das barras
-                            df_user_grouped['primeiro_nome'] = df_user_grouped['nome_responsavel'].apply(
-                                lambda x: str(x).split()[0] if str(x).split() else ""
-                            )
-                            
-                            # Obter ordem decrescente dos responsáveis pelo total de tratadas
-                            ordem_usuarios = df_user_grouped.groupby('nome_responsavel')['Tratadas'].sum().sort_values(ascending=False).index.tolist()
-                            
-                            fig_user = px.bar(
-                                df_user_grouped, 
-                                x='data_exibicao', 
-                                y='Tratadas', 
-                                color='nome_responsavel',
-                                barmode='group',
-                                text='primeiro_nome',
-                                title="Solicitações Tratadas por Responsável",
-                                category_orders={"nome_responsavel": ordem_usuarios}
-                            )
-                            fig_user.update_traces(textposition='outside')
-                            fig_user.update_layout(
-                                xaxis_title="Data", 
-                                yaxis_title="Quantidade Tratada", 
-                                yaxis_tickformat="d",
-                                showlegend=False
-                            )
-                            fig_user.update_xaxes(type='category')
-                            st.plotly_chart(fig_user, use_container_width=True)
-
-                            # Expander para ver os detalhes das solicitações tratadas
-                            with st.expander("🔎 Ver Detalhes das Solicitações Tratadas"):
-                                df_detalhes_tratadas = df_usr_filtered.copy()
-                                if not df_detalhes_tratadas.empty:
-                                    df_detalhes_tratadas['solic_clean'] = df_detalhes_tratadas['solicitacao'].astype(str).str.strip().str.lstrip('0')
-                                    
-                                    col_sol_main = 'Solicitacao_ID' if 'Solicitacao_ID' in df.columns else (col_sol if 'col_sol' in locals() and col_sol in df.columns else df.columns[0])
-                                    col_manobra = 'Manobra' if 'Manobra' in df.columns else None
-                                    col_data_inicio = col_data if 'col_data' in locals() and col_data in df.columns else next((c for c in df.columns if 'início' in c.lower() or 'inicio' in c.lower()), None)
-                                    
-                                    # Merge com dataset principal se disponível
-                                    df_main_subset = df.copy()
-                                    df_main_subset['solic_clean'] = df_main_subset[col_sol_main].astype(str).str.strip().str.lstrip('0')
-                                    
-                                    cols_to_merge = ['solic_clean']
-                                    if col_manobra and col_manobra in df_main_subset.columns:
-                                        cols_to_merge.append(col_manobra)
-                                    if col_data_inicio and col_data_inicio in df_main_subset.columns:
-                                        cols_to_merge.append(col_data_inicio)
-                                        
-                                    df_merged_det = df_detalhes_tratadas.merge(
-                                        df_main_subset[cols_to_merge].drop_duplicates(subset=['solic_clean']),
-                                        on='solic_clean',
-                                        how='left'
-                                    )
-                                    
-                                    df_merged_det['Número da Solicitação'] = df_merged_det['solicitacao']
-                                    df_merged_det['Número da Manobra'] = df_merged_det[col_manobra].fillna('-') if col_manobra and col_manobra in df_merged_det.columns else '-'
-                                    df_merged_det['Responsável'] = df_merged_det['nome_responsavel']
-                                    
-                                    if col_data_inicio and col_data_inicio in df_merged_det.columns:
-                                        df_merged_det['Data de Início'] = pd.to_datetime(df_merged_det[col_data_inicio], dayfirst=True, errors='coerce').dt.strftime('%d/%m/%Y').fillna('-')
-                                    else:
-                                        df_merged_det['Data de Início'] = '-'
-                                        
-                                    df_merged_det['Dia que foi Enviado'] = pd.to_datetime(df_merged_det['data_evento'], dayfirst=True, errors='coerce').dt.strftime('%d/%m/%Y %H:%M')
-                                    
-                                    df_merged_det = df_merged_det.sort_values(by='data_evento', ascending=False)
-                                    
-                                    st.dataframe(
-                                        df_merged_det[['Número da Solicitação', 'Número da Manobra', 'Responsável', 'Data de Início', 'Dia que foi Enviado']],
-                                        use_container_width=True,
-                                        hide_index=True
-                                    )
-                                else:
-                                    st.info("Nenhuma solicitação tratada para o filtro selecionado.")
-                        else:
-                            st.info("Nenhum dado encontrado para o usuário e período selecionados.")
+                    if not df_usr_filtered.empty:
+                        df_user_grouped = df_usr_filtered.groupby(['data', 'nome_responsavel']).size().reset_index(name='Tratadas')
+                        df_user_grouped['data_exibicao'] = pd.to_datetime(df_user_grouped['data']).dt.strftime('%d/%m/%Y')
+                        
+                        df_user_grouped['primeiro_nome'] = df_user_grouped['nome_responsavel'].apply(
+                            lambda x: str(x).split()[0] if str(x).split() else ""
+                        )
+                        
+                        ordem_usuarios = df_user_grouped.groupby('nome_responsavel')['Tratadas'].sum().sort_values(ascending=False).index.tolist()
+                        
+                        fig_user = px.bar(
+                            df_user_grouped, 
+                            x='data_exibicao', 
+                            y='Tratadas', 
+                            color='nome_responsavel',
+                            barmode='group',
+                            text='primeiro_nome',
+                            title=f"Solicitações Tratadas (Equipe): {d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}",
+                            category_orders={"nome_responsavel": ordem_usuarios}
+                        )
+                        fig_user.update_traces(textposition='outside')
+                        fig_user.update_layout(
+                            xaxis_title="Data", 
+                            yaxis_title="Quantidade Tratada", 
+                            yaxis_tickformat="d",
+                            legend_title_text="Responsável",
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        )
+                        fig_user.update_xaxes(type='category')
+                        st.plotly_chart(fig_user, use_container_width=True)
+                    else:
+                        st.info("Nenhuma solicitação tratada encontrada no período selecionado.")
                             
                     # --- Gráfico 3: Performance Consolidada (D-1) ---
                     st.markdown("---")
