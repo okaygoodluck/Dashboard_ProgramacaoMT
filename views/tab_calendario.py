@@ -184,16 +184,11 @@ def render_month_calendar_html(year: int, month: int, today_date: date):
         elif len(applied_colors) == 1:
             style_inline = f'background-color: {applied_colors[0]} !important; color: white !important;'
 
-        legend_text = " / ".join(dict.fromkeys(legends)) # Remove duplicados preservando ordem
-        legend_html = f'<span class="cal-legend">{legend_text}</span>' if legend_text else ""
-        
+        legend_text = " / ".join(dict.fromkeys(legends)) # Para tooltip no hover
+        title_attr = f'title="{legend_text}"' if legend_text else ""
         class_str = " ".join(classes)
-        day_card = f"""
-        <div class="{class_str}" style="{style_inline}">
-            <span class="cal-number">{day_num}</span>
-            {legend_html}
-        </div>
-        """
+        
+        day_card = f'<div class="{class_str}" style="{style_inline}" {title_attr}><span class="cal-number">{day_num}</span></div>'
         days_html_list.append(day_card)
         
     return month_name, "".join(days_html_list)
@@ -360,30 +355,10 @@ def render_tab_calendario(df_filtered=None, *args, **kwargs):
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown(f"""
-        <div class="cal-month-card">
-            <div class="cal-month-title">{title_m1}</div>
-            <div class="cal-weekdays">
-                <span>DOM</span><span>SEG</span><span>TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span>
-            </div>
-            <div class="cal-grid">
-                {html_days_m1}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="cal-month-card"><div class="cal-month-title">{title_m1}</div><div class="cal-weekdays"><span>DOM</span><span>SEG</span><span>TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span></div><div class="cal-grid">{html_days_m1}</div></div>', unsafe_allow_html=True)
 
     with col2:
-        st.markdown(f"""
-        <div class="cal-month-card">
-            <div class="cal-month-title">{title_m2}</div>
-            <div class="cal-weekdays">
-                <span>DOM</span><span>SEG</span><span>TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span>
-            </div>
-            <div class="cal-grid">
-                {html_days_m2}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="cal-month-card"><div class="cal-month-title">{title_m2}</div><div class="cal-weekdays"><span>DOM</span><span>SEG</span><span>TER</span><span>QUA</span><span>QUI</span><span>SEX</span><span>SÁB</span></div><div class="cal-grid">{html_days_m2}</div></div>', unsafe_allow_html=True)
 
     # Barra Informativa de Legenda
     st.markdown("""
