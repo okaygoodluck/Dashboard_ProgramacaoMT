@@ -1490,7 +1490,6 @@ if df is not None:
                                 
                                 st.markdown("<br>", unsafe_allow_html=True)
                                 st.markdown("#### 🚨 Rank das Demandas Elevadas")
-                                st.caption("Regiões com acúmulo positivo de passivo no período (onde entraram mais demandas do que foram tratadas).")
                                 
                                 if not df_rank_piores.empty:
                                     df_rank_piores['Texto_Barra'] = df_rank_piores['Saldo'].apply(lambda x: f"+{x}")
@@ -1504,6 +1503,16 @@ if df is not None:
                                         title=f"Rank das Demandas Elevadas ({flx_inicio.strftime('%d/%m/%Y')} a {flx_fim.strftime('%d/%m/%Y')})"
                                     )
                                     fig_rank_p.update_traces(textposition='outside')
+                                    
+                                    # Ajusta a largura das barras se houver poucas categorias (1 ou 2)
+                                    n_p = len(df_rank_piores)
+                                    if n_p == 1:
+                                        fig_rank_p.update_traces(width=0.20)
+                                    elif n_p == 2:
+                                        fig_rank_p.update_traces(width=0.35)
+                                    elif n_p == 3:
+                                        fig_rank_p.update_traces(width=0.45)
+                                        
                                     fig_rank_p.update_layout(
                                         xaxis_title="Região",
                                         yaxis_title="Saldo de Manobras (Novas - Tratadas)",
@@ -1522,7 +1531,6 @@ if df is not None:
                                 
                                 st.markdown("<br>", unsafe_allow_html=True)
                                 st.markdown("#### 🏆 Rank das Demandas Controladas")
-                                st.caption("Regiões com saldo neutro ou negativo no período (onde a capacidade de tratamento igualou ou superou as novas demandas).")
                                 
                                 if not df_rank_melhores.empty:
                                     df_rank_melhores['Texto_Barra'] = df_rank_melhores['Saldo'].astype(str)
@@ -1536,6 +1544,16 @@ if df is not None:
                                         title=f"Rank das Demandas Controladas ({flx_inicio.strftime('%d/%m/%Y')} a {flx_fim.strftime('%d/%m/%Y')})"
                                     )
                                     fig_rank_m.update_traces(textposition='outside')
+                                    
+                                    # Ajusta a largura das barras se houver poucas categorias (1 ou 2)
+                                    n_m = len(df_rank_melhores)
+                                    if n_m == 1:
+                                        fig_rank_m.update_traces(width=0.20)
+                                    elif n_m == 2:
+                                        fig_rank_m.update_traces(width=0.35)
+                                    elif n_m == 3:
+                                        fig_rank_m.update_traces(width=0.45)
+
                                     fig_rank_m.update_layout(
                                         xaxis_title="Região",
                                         yaxis_title="Saldo de Manobras (Novas - Tratadas)",

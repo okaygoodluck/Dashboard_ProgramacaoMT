@@ -31,19 +31,23 @@ def circular_progress_ring(label, value, color="#22d3ee"):
     st.markdown(html, unsafe_allow_html=True)
 
 def premium_metric_card(title, value, delta=None, icon_name="info", color=None, is_vanguard=False, neon_glow=False, neon_color=None):
-    """Gera um card de métrica premium com Iconsax, animação e suporte opcional a brilho Neon."""
+    """Gera um card de métrica premium com Iconsax, animação e suporte opcional a brilho/fundo Neon."""
     icon_svg = ICONS.get(icon_name, ICONS["info"])
     accent = color if color else "var(--accent-color)"
     vanguard_class = "vanguard-card" if is_vanguard else ""
     
     extra_style = f"border-left: 4px solid {accent};"
+    title_style = "color: var(--text-muted);"
     val_color_style = "color: var(--text-primary);"
     
     if neon_glow and neon_color:
-        glow_rgba = "rgba(239, 68, 68, 0.65)" if neon_color == "#ef4444" else "rgba(16, 185, 129, 0.65)"
-        extra_style = f"border: 2px solid {neon_color} !important; border-left: 6px solid {neon_color} !important; box-shadow: 0 0 16px {glow_rgba}, inset 0 0 6px {glow_rgba} !important;"
-        accent = neon_color
-        val_color_style = f"color: {neon_color}; text-shadow: 0 0 8px {glow_rgba};"
+        is_red = (neon_color == "#ef4444")
+        glow_rgba = "rgba(239, 68, 68, 0.55)" if is_red else "rgba(16, 185, 129, 0.55)"
+        bg_gradient = "background: linear-gradient(135deg, rgba(239, 68, 68, 0.35) 0%, rgba(153, 27, 27, 0.45) 100%) !important;" if is_red else "background: linear-gradient(135deg, rgba(16, 185, 129, 0.35) 0%, rgba(6, 95, 70, 0.45) 100%) !important;"
+        extra_style = f"{bg_gradient} border: 2px solid {neon_color} !important; border-left: 6px solid {neon_color} !important; box-shadow: 0 0 20px {glow_rgba}, inset 0 0 10px {glow_rgba} !important;"
+        accent = "#ffffff"
+        title_style = "color: #f1f5f9 !important; font-weight: 700;"
+        val_color_style = "color: #ffffff !important; text-shadow: 0 0 10px rgba(255, 255, 255, 0.9);"
 
     delta_html = ""
     if delta is not None:
@@ -59,7 +63,7 @@ def premium_metric_card(title, value, delta=None, icon_name="info", color=None, 
                     {icon_svg}
                 </svg>
             </div>
-            <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">{title}</span>
+            <span style="{title_style} font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">{title}</span>
         </div>
         <div style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; {val_color_style} line-height: 1; position: relative; z-index: 2;">
             {value}
