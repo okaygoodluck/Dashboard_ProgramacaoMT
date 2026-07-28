@@ -9,9 +9,11 @@ from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
 import db_manager
 import components.vanguard_cards as vanguard_cards
+import views.tab_calendario as tab_calendario
 import importlib
 importlib.reload(db_manager)
 importlib.reload(vanguard_cards)
+importlib.reload(tab_calendario)
 import extra_streamlit_components as stx
 
 # --- IMPORTAÇÃO DOS MÓDULOS CCP (Centro de Controle da Programação) ---
@@ -34,6 +36,7 @@ from components.vanguard_charts import (
     render_delays_by_mesh,
     render_qty_x_weight_chart
 )
+from views.tab_calendario import render_tab_calendario
 from views.tab_detalhes import render_tab_detalhes
 from views.tab_config import render_tab_config
 
@@ -249,34 +252,7 @@ def tratar_snapshot_diario(total, atrasadas, alertas, urgencias, no_prazo):
         }
         db_manager.salvar_kpi_diario(kpis)
 
-def render_tab_calendario():
-    """Renderiza o arquivo calendario_programacao.html sincronizado com o tema do sistema."""
-    try:
-        with open('calendario_programacao.html', 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        
-        # Sincronização de Tema: Injeta script para forçar o modo escuro se necessário
-        is_dark = True  # TODO: Detectar tema nativo do Streamlit
-        theme_script = """
-        <script>
-            window.onload = function() {
-                const isDark = %s;
-                if (isDark) {
-                    document.body.classList.add('dark-mode');
-                    document.getElementById('themeSwitcher').textContent = '🌙';
-                } else {
-                    document.body.classList.remove('dark-mode');
-                    document.getElementById('themeSwitcher').textContent = '☀️';
-                }
-            }
-        </script>
-        """ % ('true' if is_dark else 'false')
-        
-        final_html = html_content + theme_script
-        
-        st.components.v1.html(final_html, height=800, scrolling=True)
-    except Exception as e:
-        st.error(f"Erro ao carregar o calendário: {e}")
+
 
 # Função para carregar o arquivo mais recente (AGORA VIA BANCO DE DADOS)
 @st.cache_data(ttl=60)  # Cache de 1 minuto para não reler banco toda hora
@@ -1118,7 +1094,7 @@ if df is not None:
     # ABA: CALENDÁRIO
     if chosen_tab == "📅 Calendário":
         with st.container():
-            render_tab_calendario()
+            render_tab_calendario(df_filtered)
 
     # --- ABA 0: EQUIPE (DIVISÃO DE TRABALHO) ---
     if chosen_tab == "👥 Responsáveis":

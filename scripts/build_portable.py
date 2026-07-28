@@ -49,7 +49,6 @@ def build_package():
         'db_manager.py',
         'ccp_ui.py',
         'requirements.txt',
-        'calendario_programacao.html',
         'ccp_app.db',
         'demanda.db'
     ]

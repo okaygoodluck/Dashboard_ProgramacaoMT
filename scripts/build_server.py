@@ -32,7 +32,6 @@ def build_server_package():
         'db_manager.py',
         'ccp_ui.py',
         'requirements.txt',
-        'calendario_programacao.html',
         'Iniciar_CCP_Servidor.bat'
     ]
 
