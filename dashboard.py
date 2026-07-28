@@ -8,8 +8,10 @@ import numpy as np
 from datetime import datetime, date, timedelta
 from streamlit_autorefresh import st_autorefresh
 import db_manager
+import components.vanguard_cards as vanguard_cards
 import importlib
 importlib.reload(db_manager)
+importlib.reload(vanguard_cards)
 import extra_streamlit_components as stx
 
 # --- IMPORTAÇÃO DOS MÓDULOS CCP (Centro de Controle da Programação) ---
