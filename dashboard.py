@@ -1473,7 +1473,7 @@ if df is not None:
                                 df_rank_piores = df_rank_saldo[df_rank_saldo['Saldo'] > 0].sort_values(by=['Saldo', 'Novas'], ascending=[False, False]).copy()
                                 
                                 st.markdown("<br>", unsafe_allow_html=True)
-                                st.markdown("#### 🚨 Rank das Demandas Elevadas")
+                                st.markdown("### Rank das Demandas Elevadas")
                                 
                                 if not df_rank_piores.empty:
                                     df_rank_piores['Texto_Barra'] = df_rank_piores['Saldo'].apply(lambda x: f"+{x}")
@@ -1516,7 +1516,7 @@ if df is not None:
                                 df_rank_melhores = df_rank_saldo[df_rank_saldo['Saldo'] <= 0].sort_values(by=['Saldo', 'Novas'], ascending=[True, True]).copy()
                                 
                                 st.markdown("<br>", unsafe_allow_html=True)
-                                st.markdown("#### 🏆 Rank das Demandas Controladas")
+                                st.markdown("#### Rank das Demandas Controladas")
                                 
                                 if not df_rank_melhores.empty:
                                     df_rank_melhores['Texto_Barra'] = df_rank_melhores['Saldo'].astype(str)
