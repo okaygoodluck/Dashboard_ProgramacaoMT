@@ -95,6 +95,17 @@ def inject_ui_css(theme="Dark"):
             color: var(--text-primary);
             font-family: 'Inter', sans-serif;
         }}
+
+        /* Anti-Dimming & Anti-Blur (Evita escurecimento e lentidao visual no Streamlit) */
+        .stApp[data-test-script-state="running"] > div,
+        div[data-testid="stAppViewBlockContainer"] {{
+            opacity: 1 !important;
+            filter: none !important;
+            transition: opacity 0.1s ease !important;
+        }}
+        div[data-testid="stStatusWidget"] {{
+            visibility: hidden !important;
+        }}
         
         [data-testid="stWidgetLabel"] p, .stMarkdown p {{ color: var(--text-primary) !important; }}
         

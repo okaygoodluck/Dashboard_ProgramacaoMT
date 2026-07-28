@@ -10,10 +10,6 @@ from streamlit_autorefresh import st_autorefresh
 import db_manager
 import components.vanguard_cards as vanguard_cards
 import views.tab_calendario as tab_calendario
-import importlib
-importlib.reload(db_manager)
-importlib.reload(vanguard_cards)
-importlib.reload(tab_calendario)
 import extra_streamlit_components as stx
 
 # --- IMPORTAÇÃO DOS MÓDULOS CCP (Centro de Controle da Programação) ---

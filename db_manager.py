@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import streamlit as st
 
 FERIADOS_BASE = ["2026-01-01", "2026-04-03", "2026-04-21", "2026-05-01", "2026-06-04", "2026-08-15", "2026-09-07", "2026-10-12", "2026-11-02", "2026-11-15", "2026-11-20", "2026-12-25"]
 
@@ -293,6 +294,7 @@ def salvar_regioes_sistema(df_regioes):
     finally:
         conn.close()
 
+@st.cache_data(ttl=120)
 def carregar_dados_recentes():
     """Carrega os dados da tabela 'demanda_atual'."""
     conn = get_connection_read()
@@ -1460,6 +1462,7 @@ def get_lista_regioes_eventos():
         
     return sorted(list(regioes - {'', 'NONE', 'NAN', '-'}))
 
+@st.cache_data(ttl=120)
 def get_fluxo_diario_novas_tratadas(data_inicio=None, data_fim=None, regiao=None, responsavel=None):
     """
     Retorna consolidação diária global ou por região/responsável de solicitações Novas e Tratadas.
@@ -1523,6 +1526,7 @@ def get_fluxo_diario_novas_tratadas(data_inicio=None, data_fim=None, regiao=None
             try: conn_app.close()
             except Exception: pass
 
+@st.cache_data(ttl=120)
 def get_rank_saldo_regioes(data_inicio=None, data_fim=None, responsavel=None):
     """
     Retorna o ranking de regiões por Saldo do Período (Novas - Tratadas),
@@ -1569,4 +1573,13 @@ def get_rank_saldo_regioes(data_inicio=None, data_fim=None, responsavel=None):
         if 'conn_app' in locals() and conn_app:
             try: conn_app.close()
             except Exception: pass
+
+def limpar_cache_dados():
+    """Limpa o cache do Streamlit para forçar a re-leitura de dados novos."""
+    try:
+        st.cache_data.clear()
+        print("[DB] Cache de dados limpo com sucesso.")
+    except Exception as e:
+        print(f"[DB] Erro ao limpar cache: {e}")
+
 
