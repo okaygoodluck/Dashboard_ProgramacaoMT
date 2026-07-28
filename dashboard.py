@@ -1247,7 +1247,7 @@ if df is not None:
                     limite = date(2026, 7, 7)
                     data_min = max(data_min, limite)
                     
-                    col_p1, _ = st.columns([2, 5])
+                    col_p1, _ = st.columns([1, 3])
                     with col_p1:
                         datas_selecionadas = st.date_input(
                             "Período de Análise:", 
