@@ -18,7 +18,8 @@ from ccp_ui import (
     inject_ui_assets, 
     inject_ui_css,
     login_screen,
-    change_password_screen
+    change_password_screen,
+    ICONS
 )
 from components.vanguard_cards import (
     premium_metric_card, 
