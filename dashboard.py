@@ -1438,36 +1438,10 @@ if df is not None:
                             with kpi2:
                                 premium_metric_card("Tratadas no Período", f"{tot_tratadas:,}".replace(",", "."), icon_name="tick", color="#34d399")
                             with kpi3:
-                                # Card Saldo com Borda Neon (Verde se <= 0, Vermelho se > 0)
+                                # Card Saldo com Borda Neon utilizando a mesma estrutura padronizada dos demais cards
                                 neon_color = "#ef4444" if saldo > 0 else "#10b981"
-                                glow_rgba = "rgba(239, 68, 68, 0.65)" if saldo > 0 else "rgba(16, 185, 129, 0.65)"
                                 sign_str = f"+{saldo:,}".replace(",", ".") if saldo > 0 else f"{saldo:,}".replace(",", ".")
-                                flash_icon = ICONS.get("flash", "")
-                                
-                                html_neon = f"""
-                                <div class="premium-card animate-target" style="
-                                    border: 2px solid {neon_color} !important;
-                                    box-shadow: 0 0 16px {glow_rgba}, inset 0 0 6px {glow_rgba} !important;
-                                    border-left: 6px solid {neon_color} !important;
-                                    display: flex; flex-direction: column; justify-content: space-between; height: 100%;
-                                    background: rgba(15, 23, 42, 0.85);
-                                    border-radius: 12px;
-                                    padding: 16px;
-                                ">
-                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
-                                        <div style="color: {neon_color}; display: flex; align-items: center;">
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                {flash_icon}
-                                            </svg>
-                                        </div>
-                                        <span style="color: #94a3b8; font-size: 0.8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Saldo do Período</span>
-                                    </div>
-                                    <div style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 800; color: {neon_color}; line-height: 1; text-shadow: 0 0 8px {glow_rgba};">
-                                        {sign_str}
-                                    </div>
-                                </div>
-                                """
-                                st.markdown(html_neon, unsafe_allow_html=True)
+                                premium_metric_card("Saldo do Período", sign_str, icon_name="flash", neon_glow=True, neon_color=neon_color)
                             
                             # 3. Gráfico de Barras Agrupadas
                             st.markdown("<br>", unsafe_allow_html=True)

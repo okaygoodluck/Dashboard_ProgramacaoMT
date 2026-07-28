@@ -30,12 +30,21 @@ def circular_progress_ring(label, value, color="#22d3ee"):
     """
     st.markdown(html, unsafe_allow_html=True)
 
-def premium_metric_card(title, value, delta=None, icon_name="info", color=None, is_vanguard=False):
-    """Gera um card de métrica premium com Iconsax e animação."""
+def premium_metric_card(title, value, delta=None, icon_name="info", color=None, is_vanguard=False, neon_glow=False, neon_color=None):
+    """Gera um card de métrica premium com Iconsax, animação e suporte opcional a brilho Neon."""
     icon_svg = ICONS.get(icon_name, ICONS["info"])
     accent = color if color else "var(--accent-color)"
     vanguard_class = "vanguard-card" if is_vanguard else ""
     
+    extra_style = f"border-left: 4px solid {accent};"
+    val_color_style = "color: var(--text-primary);"
+    
+    if neon_glow and neon_color:
+        glow_rgba = "rgba(239, 68, 68, 0.65)" if neon_color == "#ef4444" else "rgba(16, 185, 129, 0.65)"
+        extra_style = f"border: 2px solid {neon_color} !important; border-left: 6px solid {neon_color} !important; box-shadow: 0 0 16px {glow_rgba}, inset 0 0 6px {glow_rgba} !important;"
+        accent = neon_color
+        val_color_style = f"color: {neon_color}; text-shadow: 0 0 8px {glow_rgba};"
+
     delta_html = ""
     if delta is not None:
         d_color = "#34d399" if delta >= 0 else "#f87171"
@@ -43,7 +52,7 @@ def premium_metric_card(title, value, delta=None, icon_name="info", color=None, 
         delta_html = f'<div style="color: {d_color}; font-size: 0.85rem; font-weight: 600; margin-top: 4px;">{d_icon} {abs(delta)}% em relação a ontem</div>'
 
     html = f"""
-    <div class="premium-card {vanguard_class} animate-target" style="border-left: 4px solid {accent}; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+    <div class="premium-card {vanguard_class} animate-target" style="{extra_style} display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
         <div style="display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); position: relative; z-index: 2;">
             <div style="color: {accent}; display: flex; align-items: center;">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -52,7 +61,7 @@ def premium_metric_card(title, value, delta=None, icon_name="info", color=None, 
             </div>
             <span style="color: var(--text-muted); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">{title}</span>
         </div>
-        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; color: var(--text-primary); line-height: 1; position: relative; z-index: 2;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; {val_color_style} line-height: 1; position: relative; z-index: 2;">
             {value}
         </div>
         {delta_html}
