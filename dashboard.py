@@ -1278,6 +1278,10 @@ if df is not None:
                         
                         ordem_usuarios = df_user_grouped.groupby('nome_responsavel')['Tratadas'].sum().sort_values(ascending=False).index.tolist()
                         
+                        # Garantir ordem cronológica extraindo as datas formatadas na ordem correta
+                        df_user_grouped = df_user_grouped.sort_values('data')
+                        ordem_datas = df_user_grouped['data_exibicao'].unique().tolist()
+                        
                         fig_user = px.bar(
                             df_user_grouped, 
                             x='data_exibicao', 
@@ -1286,7 +1290,10 @@ if df is not None:
                             barmode='group',
                             text='primeiro_nome',
                             title=f"Solicitações Tratadas (Equipe): {d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}",
-                            category_orders={"nome_responsavel": ordem_usuarios}
+                            category_orders={
+                                "nome_responsavel": ordem_usuarios,
+                                "data_exibicao": ordem_datas
+                            }
                         )
                         fig_user.update_traces(textposition='outside')
                         fig_user.update_layout(
