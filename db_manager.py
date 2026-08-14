@@ -574,8 +574,6 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova):
                     df_aprov = df_reg.copy()
                     
                 aprovadas_herdadas = len(df_aprov)
-                if 'Status_Prazo' in df_aprov.columns:
-                    atrasadas_herdadas = len(df_aprov[df_aprov['Status_Prazo'] == 'Atrasada'])
                     
                 col_data_inicio = next((c for c in df_aprov.columns if 'início' in c.lower() or 'inicio' in c.lower()), None)
                 if col_data_inicio and not df_aprov.empty:
@@ -594,6 +592,7 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova):
                                 return None
                                 
                         df_aprov['du_calc'] = df_aprov[col_data_inicio].apply(_calc_du)
+                        atrasadas_herdadas = len(df_aprov[df_aprov['du_calc'] < 8])
                         du8_herdadas = len(df_aprov[df_aprov['du_calc'] == 8])
                         du9_herdadas = len(df_aprov[df_aprov['du_calc'] == 9])
                         du10_herdadas = len(df_aprov[df_aprov['du_calc'] == 10])
@@ -996,6 +995,26 @@ def travar_solicitacoes(df_novas):
         return True
     except Exception as e:
         print(f"[DB] Erro ao travar solicitacoes: {e}")
+        return False
+    finally:
+        conn.close()
+
+def destravar_solicitacoes(lista_solicitacoes):
+    """Remove travas no banco para solicitações que não estão mais Em Elaboração.
+    """
+    if not lista_solicitacoes:
+        return False
+        
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        placeholders = ','.join(['?'] * len(lista_solicitacoes))
+        query = f"DELETE FROM solicitacoes_travadas WHERE solicitacao IN ({placeholders})"
+        cursor.execute(query, lista_solicitacoes)
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"[DB] Erro ao destravar solicitacoes: {e}")
         return False
     finally:
         conn.close()

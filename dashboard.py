@@ -480,6 +480,13 @@ if df is not None:
     if not novas_para_travar.empty:
         db_manager.travar_solicitacoes(novas_para_travar[[col_sol, 'Matricula']].rename(columns={col_sol: 'Solicitação'}))
 
+    # 4.5 Remove travas antigas de solicitações que já não estão mais "Em elaboração"
+    solicitacoes_hoje_em_elaboracao = df[df['Is_Elaboracao'] == True][col_sol].astype(str).str.strip().tolist()
+    travas_para_remover = [s for s in solicitacoes_ja_travadas if s not in solicitacoes_hoje_em_elaboracao]
+    
+    if travas_para_remover:
+        db_manager.destravar_solicitacoes(travas_para_remover)
+
     # 5. Atualiza o snapshot de pendentes do dia com os dados atuais mapeados
     db_manager.registrar_snapshot_pendentes(df)
 
@@ -687,8 +694,14 @@ if df is not None:
     if isinstance(filtro_data, tuple) and len(filtro_data) >= 1:
         start_date = filtro_data[0]
         end_date = filtro_data[1] if len(filtro_data) == 2 else filtro_data[0]
+        
+        # Filtro padrão de data
         mask_date = (df_filtered[col_filtro_data].dt.date >= start_date) & (df_filtered[col_filtro_data].dt.date <= end_date)
-        df_filtered = df_filtered.loc[mask_date]
+        
+        # Garante que solicitações pendentes (Aprovadas/Em Elaboração) do passado não sumam (Backlog)
+        mask_pendente_passado = (df_filtered['Is_Aprovada'] | df_filtered['Is_Elaboracao']) & (df_filtered[col_filtro_data].dt.date < start_date)
+        
+        df_filtered = df_filtered.loc[mask_date | mask_pendente_passado]
 
     # RECALCULA VARIÁVEIS DE KPI BASEADAS NO FILTRO ATUAL
     total_solicitacoes = len(df_filtered)
@@ -1561,7 +1574,7 @@ if df is not None:
 
                     # --- Seção 5: Retrato de Transição de Regiões (Handover Snapshot) ---
                     st.markdown("---")
-                    st.subheader("📸 Retrato de Transição de Regiões (Handover Snapshot)")
+                    st.subheader("📸 Relatório das Transição de Regiões")
                     st.caption("Consulte o retrato congelado do passivo de uma região no momento exato da troca de responsabilidade entre técnicos.")
 
                     df_trans = db_manager.get_historico_transicoes()
@@ -1574,9 +1587,16 @@ if df is not None:
                             regioes_trans = ["Todas (Visão Global)"] + sorted(df_trans['sigla_regiao'].unique().tolist())
                             reg_handover_sel = st.selectbox("Selecione a Região:", options=regioes_trans, key="handover_regiao")
                             
+                            todos_resp = sorted(pd.concat([df_trans['nome_anterior'], df_trans['nome_novo']]).dropna().unique().tolist())
+                            responsaveis_trans = ["Todos"] + todos_resp
+                            resp_handover_sel = st.selectbox("Selecione o Responsável:", options=responsaveis_trans, key="handover_resp")
+                            
                             df_trans_filtered = df_trans.copy()
                             if reg_handover_sel != "Todas (Visão Global)":
                                 df_trans_filtered = df_trans_filtered[df_trans_filtered['sigla_regiao'] == reg_handover_sel]
+                                
+                            if resp_handover_sel != "Todos":
+                                df_trans_filtered = df_trans_filtered[(df_trans_filtered['nome_anterior'] == resp_handover_sel) | (df_trans_filtered['nome_novo'] == resp_handover_sel)]
 
                         with col_t_content:
                             st.markdown(f"##### Registros de Transição Encontrados: **{len(df_trans_filtered)}**")
@@ -1593,7 +1613,7 @@ if df is not None:
                                     df_trans_display[col_def] = df_trans_display[col_def].fillna(0).astype(int)
                                     
                             st.dataframe(
-                                df_trans_display[['Data / Hora da Troca', 'sigla_regiao', 'nome_anterior', 'nome_novo', 'aprovadas_herdadas', 'atrasadas_herdadas', 'du8_herdadas', 'du9_herdadas', 'du10_herdadas', 'du11_herdadas', 'em_elaboracao', 'total_pendentes']],
+                                df_trans_display[['Data / Hora da Troca', 'sigla_regiao', 'nome_anterior', 'nome_novo', 'aprovadas_herdadas', 'atrasadas_herdadas', 'du8_herdadas', 'du9_herdadas', 'du10_herdadas', 'du11_herdadas', 'total_pendentes']],
                                 use_container_width=True,
                                 hide_index=True,
                                 column_config={
@@ -1606,7 +1626,6 @@ if df is not None:
                                     "du9_herdadas": st.column_config.NumberColumn("9 Dias Úteis"),
                                     "du10_herdadas": st.column_config.NumberColumn("10 Dias Úteis"),
                                     "du11_herdadas": st.column_config.NumberColumn("11 Dias Úteis"),
-                                    "em_elaboracao": st.column_config.NumberColumn("Em Elaboração (Fica c/ Antigo)"),
                                     "total_pendentes": st.column_config.NumberColumn("Total Geral Região")
                                 }
                             )
@@ -1624,15 +1643,13 @@ if df is not None:
                                 st.caption(f"Troca realizada em {pd.to_datetime(ultima_troca['data_transicao']).strftime('%d/%m/%Y %H:%M')}: De **{ultima_troca['nome_anterior']}** ➔ **{ultima_troca['nome_novo']}**")
                                 st.caption("🔒 *Nota de Trava:* Solicitações 'Em Elaboração' permanecem travadas com o técnico de origem. O novo técnico herda as manobras **Aprovadas** da região.")
                                 
-                                k1, k2, k3, k4 = st.columns(4)
+                                k1, k2, k3 = st.columns(3)
                                 with k1:
                                     st.metric("📦 Aprovadas Herdadas", f"{ultima_troca.get('aprovadas_herdadas', 0)} manobras")
                                 with k2:
                                     st.metric("🚨 Atrasadas Herdadas", f"{ultima_troca.get('atrasadas_herdadas', 0)} manobras")
                                 with k3:
                                     st.metric("📅 Prazos (8D / 9D / 10D / 11D)", f"{ultima_troca.get('du8_herdadas',0)} | {ultima_troca.get('du9_herdadas',0)} | {ultima_troca.get('du10_herdadas',0)} | {ultima_troca.get('du11_herdadas',0)}")
-                                with k4:
-                                    st.metric("🔒 Em Elaboração (Técnico Antigo)", f"{ultima_troca.get('em_elaboracao', 0)} manobras")
                             
                             # Opção de exclusão para administradores caso ocorra algum registro indevido
                             if st.session_state.get("user_nivel") == "ADM":

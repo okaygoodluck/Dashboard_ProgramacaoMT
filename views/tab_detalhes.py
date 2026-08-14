@@ -22,7 +22,7 @@ def render_tab_detalhes(df_filtered, col_situacao):
     # 1. Campo de busca global
     termo_busca = st.text_input("🔍 Buscar na tabela (digite qualquer informação):", "")
 
-    # 2. Status 'Concluída/Outros' removido e 3. Por padrão ativado todos.
+    # 2. Status 'Sem Data' e 'Concluída/Outros' removidos conforme solicitado
     opcoes_status = ['No Prazo', 'Alerta de Prazo', 'Atrasada', 'Urgência', 'Em Elaboração']
     filtro_status = st.multiselect(
         "Filtrar por Status/Situação:",
