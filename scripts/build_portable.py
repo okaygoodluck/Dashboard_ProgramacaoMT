@@ -5,9 +5,19 @@ import subprocess
 import zipfile
 
 # Caminhos da Rede (Sincronizado com db_manager.py)
+_UNC_REDE_ACC = r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
+_UNC_REDE_NORM = r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
 _REDE_ACC = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
 _REDE_NORM = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
-REDE_BASE = _REDE_ACC if os.path.exists(_REDE_ACC) else _REDE_NORM
+
+_CANDIDATOS_BUILD = [
+    os.environ.get("CCP_DASHBOARD_DB_PATH"),
+    _UNC_REDE_ACC,
+    _UNC_REDE_NORM,
+    _REDE_ACC,
+    _REDE_NORM
+]
+REDE_BASE = next((c for c in _CANDIDATOS_BUILD if c and os.path.exists(c)), _UNC_REDE_ACC)
 
 def build_package():
     print("========================================================")
@@ -165,7 +175,7 @@ set PYTHONNOUSERSITE=1
 set PYTHONPATH=
 
 echo [*] Iniciando Dashboard CCP...
-"%PY_EXE%" -m streamlit run dashboard.py --server.fileWatcherType none --browser.gatherUsageStats false --server.headless true
+"%PY_EXE%" -m streamlit run dashboard.py --server.fileWatcherType none --browser.gatherUsageStats false
 if errorlevel 1 (
     echo [ERRO] Falha ao iniciar o CCP. Verifique se os arquivos estao completos.
     pause

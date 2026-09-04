@@ -354,7 +354,13 @@ def load_latest_data():
                 except ImportError:
                     pass
                 hoje = datetime.now()
-                pasta_mesao = os.environ.get("CCP_MESAO_DIARIO_PATH", r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario")
+                pasta_mesao = os.environ.get("CCP_MESAO_DIARIO_PATH")
+                if not pasta_mesao or not os.path.exists(pasta_mesao):
+                    _cands_mesao = [
+                        r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario",
+                        r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario"
+                    ]
+                    pasta_mesao = next((p for p in _cands_mesao if os.path.exists(p)), _cands_mesao[0])
                 data_str_hj = hoje.strftime("%d_%m_%y")
                 arquivo_mesao_hj = os.path.join(pasta_mesao, f"Mesao_{data_str_hj}.xlsx")
                 

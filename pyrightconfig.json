@@ -1,0 +1,18 @@
+{
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.git",
+    "**/CCP_Portable*",
+    "**/CCP_Portable_Ready",
+    "**/CCP_Servidor_Ready",
+    "**/python"
+  ],
+  "pythonPath": "D:\\Users\\c057573\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+  "extraPaths": [
+    "D:\\Users\\c057573\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages",
+    "."
+  ]
+}

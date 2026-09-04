@@ -710,7 +710,13 @@ def extrair_dados():
                 # --- FILTRAR DUPLICATAS POR REGIÃO PRINCIPAL (USANDO MESÃO) ---
                 try:
                     import glob
-                    pasta_mesao = r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario"
+                    pasta_mesao = os.environ.get("CCP_MESAO_DIARIO_PATH")
+                    if not pasta_mesao or not os.path.exists(pasta_mesao):
+                        _cands_mesao = [
+                            r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario",
+                            r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario"
+                        ]
+                        pasta_mesao = next((p for p in _cands_mesao if os.path.exists(p)), _cands_mesao[0])
                     arquivos_mesao = glob.glob(os.path.join(pasta_mesao, "Mesao_*.xlsx"))
                     if arquivos_mesao:
                         arquivo_alvo = max(arquivos_mesao, key=os.path.getmtime)

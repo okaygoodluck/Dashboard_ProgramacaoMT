@@ -21,6 +21,8 @@ sdist/
 var/
 CCP_Versao_Rede/
 CCP_Portable_Ready/
+CCP_Servidor_Ready/
+.kilo/
 python/
 *.zip
 *.db

@@ -32,7 +32,8 @@ def build_server_package():
         'db_manager.py',
         'ccp_ui.py',
         'requirements.txt',
-        'Iniciar_CCP_Servidor.bat'
+        'Iniciar_CCP_Servidor.bat',
+        'ccp_app.db'
     ]
 
     print("[*] Copiando arquivos de codigo...")

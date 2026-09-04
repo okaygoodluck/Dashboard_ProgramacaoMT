@@ -4,13 +4,33 @@ import pandas as pd
 import numpy as np
 import os
 import sys
-import streamlit as st
+
+try:
+    import streamlit as st
+except ImportError:
+    class _DummyCacheData:
+        def __call__(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+        def clear(self):
+            pass
+
+    class _DummySt:
+        cache_data = _DummyCacheData()
+
+    st = _DummySt()
+
+try:
+    import bcrypt
+except ImportError:
+    bcrypt = None
 
 FERIADOS_BASE = ["2026-01-01", "2026-04-03", "2026-04-21", "2026-05-01", "2026-06-04", "2026-08-15", "2026-09-07", "2026-10-12", "2026-11-02", "2026-11-15", "2026-11-20", "2026-12-25"]
 
 def get_agora_br():
     """Retorna o horário atual em Brasília (UTC-3)."""
-    return datetime.datetime.utcnow() - datetime.timedelta(hours=3)
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(hours=3)
 
 # Nomes dos arquivos de banco de dados (Oficiais: CCP - Centro de Controle da Programação)
 DB_APP_NAME = "ccp_app.db"    # Persistente (Usuários, Configs)
@@ -24,20 +44,66 @@ try:
 except ImportError:
     pass # Permite rodar sem a biblioteca python-dotenv, caso não esteja instalada ainda
 
-_ENV_REDE_BASE = os.environ.get("CCP_DASHBOARD_DB_PATH")
+_UNC_REDE_ACC = r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
+_UNC_REDE_NORM = r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
 _REDE_ACC = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
 _REDE_NORM = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
 
-if _ENV_REDE_BASE and os.path.exists(_ENV_REDE_BASE):
-    REDE_BASE = _ENV_REDE_BASE
-else:
-    REDE_BASE = _REDE_ACC if os.path.exists(_REDE_ACC) else _REDE_NORM
+_ENV_REDE_BASE = os.environ.get("CCP_DASHBOARD_DB_PATH")
+
+_CANDIDATOS_REDE = [
+    _ENV_REDE_BASE,
+    _UNC_REDE_ACC,
+    _UNC_REDE_NORM,
+    _REDE_ACC,
+    _REDE_NORM,
+]
+
+REDE_BASE = None
+for cand in _CANDIDATOS_REDE:
+    if cand and os.path.exists(cand):
+        REDE_BASE = cand
+        break
+
+if not REDE_BASE:
+    REDE_BASE = _ENV_REDE_BASE or _UNC_REDE_ACC
 
 REDE_APP_PATH = os.path.join(REDE_BASE, DB_APP_NAME)
 REDE_DATA_PATH = os.path.join(REDE_BASE, DB_DATA_NAME)
 
+def is_server_mode() -> bool:
+    """Verifica se a aplicação está rodando em modo servidor local dedicado."""
+    val = os.environ.get("CCP_SERVER_MODE", "").strip().lower()
+    return val in ("true", "1", "yes", "sim", "servidor", "server")
+
+def _is_network_path(path: str) -> bool:
+    """Verifica se um caminho aponta para um compartilhamento de rede (UNC ou drive mapeado)."""
+    if not path:
+        return False
+    p = path.strip()
+    if p.startswith("\\\\") or p.startswith("//"):
+        return True
+    drive, _ = os.path.splitdrive(p)
+    if drive and drive.upper() not in ("C:", "D:"):
+        return True
+    return False
+
+def _build_sqlite_ro_uri(path: str) -> str:
+    """Monta URI segura no modo somente leitura (?mode=ro) compatível com caminhos locais e UNC."""
+    p = path.strip()
+    if p.startswith("\\\\") or p.startswith("//"):
+        clean = p.lstrip("\\/").replace("\\", "/")
+        return f"file:////{clean}?mode=ro"
+    else:
+        clean = p.replace("\\", "/").lstrip("/")
+        return f"file:///{clean}?mode=ro"
+
 def _get_path(filename, network_path, alt_env_key=None):
-    """Lógica de descoberta: Ambiente > Rede > Local"""
+    """
+    Lógica de descoberta:
+      - Modo Servidor (CCP_SERVER_MODE=true): Ambiente > Local SSD > Rede (Fallback)
+      - Modo Cliente / Home Office: Ambiente > Rede Compartilhada > Local Offline (Fallback)
+    """
     # 1. Variável de Ambiente (Padronizada)
     env_key = f"CCP_{filename.upper().replace('.','_')}_PATH"
     env_val = os.environ.get(env_key)
@@ -50,8 +116,25 @@ def _get_path(filename, network_path, alt_env_key=None):
         if env_val and os.path.exists(env_val):
             return env_val
 
-    # 2. Caminho da Rede (Prioriza rede para manter tudo atualizado)
-    if os.path.exists(network_path):
+    # Se estiver no Servidor Dedicado: prioriza armazenamento local para máxima velocidade
+    if is_server_mode():
+        local = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+        if os.path.exists(local):
+            return local
+
+        if filename == DB_DATA_NAME:
+            local_demanda = os.path.join(os.path.dirname(os.path.abspath(__file__)), LOCAL_DB_NAME)
+            if os.path.exists(local_demanda):
+                return local_demanda
+
+        if network_path and os.path.exists(network_path):
+            return network_path
+
+        return None
+
+    # Modo Cliente / Home Office:
+    # 2. Caminho da Rede (Prioriza rede para sincronizar com a extração do servidor)
+    if network_path and os.path.exists(network_path):
         return network_path
 
     # 3. Pasta atual (Portabilidade / Offline Fallback)
@@ -62,51 +145,115 @@ def _get_path(filename, network_path, alt_env_key=None):
     return None
 
 def get_app_db_path():
-    """Retorna o caminho do banco de sistema (prioriza rede)."""
+    """Retorna o caminho do banco de sistema (prioriza local no servidor, rede no cliente)."""
     p = _get_path(DB_APP_NAME, REDE_APP_PATH)
     return p if p else DB_APP_NAME # Fallback para o nome padrão se nada for encontrado
 
 def get_data_db_path():
-    """Retorna o caminho do banco de dados de demanda (prioriza rede)."""
+    """Retorna o caminho do banco de dados de demanda (prioriza local no servidor, rede no cliente)."""
     # Aceita DEMANDA_DB_PATH que é comumente usado nos .bat
     p = _get_path(DB_DATA_NAME, REDE_DATA_PATH, alt_env_key="DEMANDA_DB_PATH")
     
     # Fallback se não encontrar o oficial, tenta o nome antigo na rede
-    if not p:
+    if not p and REDE_BASE:
         alt_network = os.path.join(REDE_BASE, "demanda_publica.db")
         if os.path.exists(alt_network):
             return alt_network
             
     return p if p else LOCAL_DB_NAME # Fallback para o local se nada for encontrado
 
-def publicar_db_rede():
-    """Copia o arquivo local 'demanda.db' para a rede como 'ccp_data.db'"""
+def publicar_db_rede(retries=3, delay_seconds=2):
+    """
+    Publica os dados da demanda gerados pela extração:
+    1. Atualiza a cópia local do servidor (ccp_data.db) para uso do Streamlit local com latência zero.
+    2. Publica réplica atômica e resiliente na rede corporativa (UNC / I:) para usuários em Home Office.
+    3. Cria backup de segurança do ccp_app.db na rede para prevenir perda do histórico.
+    """
     import shutil
+    import time
+    
+    sucesso_local = False
+    sucesso_rede = False
+    
+    src_db = LOCAL_DB_NAME
+    if not os.path.exists(src_db):
+        src_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), LOCAL_DB_NAME)
+        if not os.path.exists(src_db):
+            print(f"[AVISO] Arquivo local '{LOCAL_DB_NAME}' não encontrado para publicar.")
+            return False
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    local_data_path = os.path.join(base_dir, DB_DATA_NAME)
+
+    # 1. Sincronização Local (servidor local)
     try:
-        src_db = LOCAL_DB_NAME
-        if os.path.exists(src_db):
-            # Garante que a pasta destino existe
+        if os.path.abspath(src_db) != os.path.abspath(local_data_path):
+            shutil.copy2(src_db, local_data_path)
+            print(f"[OK LOCAL] Base local do servidor atualizada: {local_data_path}")
+        sucesso_local = True
+    except Exception as e_local:
+        print(f"[AVISO LOCAL] Falha ao atualizar cópia local ccp_data.db: {e_local}")
+
+    # 2. Sincronização de Rede (Réplica para Home Office)
+    try:
+        if REDE_BASE:
             os.makedirs(REDE_BASE, exist_ok=True)
+            tmp_rede_path = REDE_DATA_PATH + ".tmp"
             
-            # Copia com sobrescrita
-            shutil.copy2(src_db, REDE_DATA_PATH)
-            print(f"[OK] Dados da demanda publicados na rede: {REDE_DATA_PATH}")
-            return True
+            for tentativa in range(1, retries + 1):
+                try:
+                    shutil.copy2(src_db, tmp_rede_path)
+                    try:
+                        os.replace(tmp_rede_path, REDE_DATA_PATH)
+                    except (PermissionError, OSError):
+                        shutil.copy2(src_db, REDE_DATA_PATH)
+                        if os.path.exists(tmp_rede_path):
+                            try:
+                                os.remove(tmp_rede_path)
+                            except Exception:
+                                pass
+                                
+                    print(f"[OK REDE] Réplica publicada com sucesso na rede: {REDE_DATA_PATH}")
+                    sucesso_rede = True
+                    break
+                except Exception as e_tentativa:
+                    print(f"[REDE RETRY] Tentativa {tentativa}/{retries} de publicar na rede falhou: {e_tentativa}")
+                    if os.path.exists(tmp_rede_path):
+                        try:
+                            os.remove(tmp_rede_path)
+                        except Exception:
+                            pass
+                    if tentativa < retries:
+                        time.sleep(delay_seconds)
+            
+            if not sucesso_rede:
+                print(f"[AVISO REDE] Não foi possível atualizar a réplica de rede ({REDE_DATA_PATH}) após {retries} tentativas. A base local do servidor continua operacional.")
         else:
-            print(f"[AVISO] Arquivo local '{src_db}' não encontrado para publicar.")
-    except Exception as e:
-        print(f"[ERRO REDE] Falha ao publicar dados na rede: {e}")
-    return False
+            print("[AVISO REDE] Nenhum caminho de rede configurado para replicação.")
+    except Exception as e_rede:
+        print(f"[ERRO REDE] Falha crítica na publicação de rede: {e_rede}")
+
+    # 3. Backup de segurança do ccp_app.db na rede
+    try:
+        local_app_db = os.path.join(base_dir, DB_APP_NAME)
+        if os.path.exists(local_app_db) and REDE_BASE and os.path.exists(REDE_BASE):
+            if is_server_mode():
+                backup_rede_app = os.path.join(REDE_BASE, "ccp_app_backup_servidor.db")
+                shutil.copy2(local_app_db, backup_rede_app)
+                print(f"[BACKUP] Backup de segurança do ccp_app.db salvo na rede: {backup_rede_app}")
+    except Exception as e_bkp:
+        print(f"[AVISO BACKUP] Falha ao criar backup do ccp_app.db na rede: {e_bkp}")
+
+    return sucesso_local or sucesso_rede
 
 def get_connection_read():
-    """Conexão resiliente para leitura de dados de demanda (Prioriza Rede com Fallback Local)."""
+    """Conexão resiliente para leitura de dados de demanda (Prioriza Rede com Fallback Local, ou Local no Servidor)."""
     path = get_data_db_path()
     
-    # 1. Se for banco de rede, tenta URI modo leitura-apenas
-    if path and "I:" in path.upper():
+    # 1. Se for banco de rede, tenta URI modo leitura-apenas (evita locks de concorrência)
+    if path and _is_network_path(path):
         try:
-            clean_path = path.replace("\\", "/").lstrip("/")
-            uri = f"file:///{clean_path}?mode=ro"
+            uri = _build_sqlite_ro_uri(path)
             return sqlite3.connect(uri, uri=True, timeout=15)
         except Exception:
             pass
@@ -135,7 +282,7 @@ def get_connection_config(*args, **kwargs):
     Conexão resiliente para a base do sistema (ccp_app.db).
     Aceita quaisquer argumentos (posicionais ou nomeados) sem falhar por variação de assinatura.
     Prioriza arquivo de rede com 3 níveis de proteção:
-      1. Tenta abrir em modo leitura URI (mode=ro) se estiver no drive I:
+      1. Tenta abrir em modo leitura URI (mode=ro) se for caminho de rede
       2. Tenta conexão padrão com timeout de 30s
       3. Fallback automático para o banco local 'ccp_app.db'
     """
@@ -145,11 +292,10 @@ def get_connection_config(*args, **kwargs):
 
     path = get_app_db_path()
     
-    # 1. Se for leitura e estiver no drive de rede I:, tenta primeiro o modo leitura URI (evita lock de arquivo)
-    if read_only and path and "I:" in path.upper():
+    # 1. Se for leitura e for caminho de rede, tenta primeiro o modo leitura URI (evita lock de arquivo)
+    if read_only and path and _is_network_path(path):
         try:
-            clean_path = path.replace("\\", "/").lstrip("/")
-            uri = f"file:///{clean_path}?mode=ro"
+            uri = _build_sqlite_ro_uri(path)
             return sqlite3.connect(uri, uri=True, timeout=15)
         except Exception:
             pass
@@ -217,6 +363,21 @@ def salvar_dados(df, regioes_confirmadas_vazias=None):
                 print(f"[DB] {len(df_preservado)} registros antigos preservados na tabela atual.")
     except Exception as e:
         print(f"[DB] Falha no Smart Merge (ignorando e salvando apenas dados novos): {e}")
+
+    # --- AUTO-TRAVAMENTO DE SOLICITAÇÕES EM ELABORAÇÃO (GDIS-PM) ---
+    try:
+        resp_col = next((c for c in df.columns if 'resp' in c.lower() and 'manobra' in c.lower()), None)
+        sit_col = next((c for c in df.columns if 'situa' in c.lower()), None)
+        sol_col = next((c for c in df.columns if 'solicita' in c.lower() and 'vinc' not in c.lower()), None)
+        
+        if resp_col and sit_col and sol_col:
+            df_elab = df[df[sit_col].astype(str).str.contains('ELABORA', case=False, na=False)].copy()
+            df_elab = df_elab[~df_elab[resp_col].astype(str).str.strip().isin(['', '-', 'None'])]
+            if not df_elab.empty:
+                novas_travas = df_elab[[sol_col, resp_col]].rename(columns={sol_col: 'Solicitação', resp_col: 'Matricula'})
+                travar_solicitacoes(novas_travas)
+    except Exception as e_lock:
+        print(f"[DB] Aviso ao auto-atualizar travas de manobra: {e_lock}")
 
     # --- REGISTRO DE EVENTOS DE PRODUTIVIDADE ---
     try:
@@ -507,22 +668,40 @@ def get_regioes_disponiveis_data():
 
     return sorted(list(regioes))
 
-def registrar_transicao_regiao(sigla_regiao, matricula_nova):
+def registrar_transicao_regiao(sigla_regiao, matricula_nova, matricula_anterior=None):
     """
     Grava um retrato congelado da região quando ocorre troca de responsabilidade.
+    Suporta busca inteligente do responsável anterior (mesmo que desvinculado previamente)
+    e registro de assunção inicial a partir de 'Não Atribuído'.
     """
     sigla_clean = str(sigla_regiao).strip().upper()[:2]
     conn = get_connection_config()
     try:
         cursor = conn.cursor()
         
-        # Pega responsável anterior
-        cursor.execute("SELECT matricula_responsavel FROM regioes_responsaveis WHERE UPPER(sigla_regiao) = ?", (sigla_clean,))
-        res_ant = cursor.fetchone()
-        matricula_anterior = res_ant[0] if res_ant and res_ant[0] else None
-        
-        # Só registra transição se já existia um responsável anterior diferente do novo
-        if not matricula_anterior or matricula_anterior == matricula_nova:
+        # 1. Se não foi passado explicitamente, busca responsável anterior
+        if matricula_anterior is None:
+            cursor.execute("SELECT matricula_responsavel FROM regioes_responsaveis WHERE UPPER(sigla_regiao) = ?", (sigla_clean,))
+            res_ant = cursor.fetchone()
+            if res_ant and res_ant[0]:
+                matricula_anterior = str(res_ant[0]).strip()
+            else:
+                # Se não estava em regioes_responsaveis (ex: foi desmarcada antes de salvar),
+                # busca o último técnico que assumiu essa região no histórico de transições
+                cursor.execute("""
+                    SELECT matricula_nova, nome_novo 
+                    FROM historico_transicao_regioes 
+                    WHERE UPPER(sigla_regiao) = ? AND matricula_nova NOT IN ('SEM_RESPONSAVEL', '')
+                    ORDER BY id DESC LIMIT 1
+                """, (sigla_clean,))
+                last_tr = cursor.fetchone()
+                if last_tr and last_tr[0] and str(last_tr[0]).strip() != str(matricula_nova).strip():
+                    matricula_anterior = str(last_tr[0]).strip()
+                else:
+                    matricula_anterior = "SEM_RESPONSAVEL"
+
+        # Só ignora se o responsável anterior for exatamente o mesmo que o novo
+        if str(matricula_anterior).strip() == str(matricula_nova).strip():
             return # Sem alteração real de responsável entre dois técnicos
             
         # Pega nomes dos usuários
@@ -531,11 +710,13 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova):
         nome_novo = res_novo_nome[0] if res_novo_nome else matricula_nova
         
         nome_anterior = "Não Atribuído"
-        if matricula_anterior:
+        if matricula_anterior and matricula_anterior != "SEM_RESPONSAVEL":
             cursor.execute("SELECT nome FROM usuarios WHERE matricula = ?", (matricula_anterior,))
             res_ant_nome = cursor.fetchone()
             if res_ant_nome:
                 nome_anterior = res_ant_nome[0]
+            else:
+                nome_anterior = matricula_anterior
 
         # Calcula passivo atual congelado da região lendo os dados mais recentes
         df = carregar_dados_recentes()
@@ -659,18 +840,29 @@ def get_historico_transicoes(regiao=None, matricula=None):
 
 def atribuir_regioes_massa(matricula_responsavel, lista_siglas):
     """Atribui uma lista de regiões a um único responsável gravando a transição."""
-    # Tira a foto de transição para cada nova região atribuída
-    for sigla in lista_siglas:
-        try:
-            registrar_transicao_regiao(sigla, matricula_responsavel)
-        except Exception:
-            pass
-
+    siglas_novas = set(str(s).strip().upper()[:2] for s in lista_siglas if str(s).strip())
+    
     conn = get_connection_config()
     try:
         cursor = conn.cursor()
+        
+        # Identifica quais regiões já pertenciam a esse técnico
+        cursor.execute("SELECT sigla_regiao FROM regioes_responsaveis WHERE matricula_responsavel = ?", (matricula_responsavel,))
+        regioes_atuais = set(row[0].strip().upper() for row in cursor.fetchall())
+        
+        # Apenas regiões que foram ADICIONADAS a este técnico disparam transição
+        regioes_adicionadas = siglas_novas - regioes_atuais
+        
+        # Registra a transição de cada nova região assumida ANTES de atualizar o mapeamento
+        for sigla in sorted(list(regioes_adicionadas)):
+            try:
+                registrar_transicao_regiao(sigla, matricula_responsavel)
+            except Exception as e_tr:
+                print(f"[HANDOVER] Falha ao registrar transição para região {sigla}: {e_tr}")
+
+        # Atualiza a tabela: remove regiões antigas que foram desmarcadas para este técnico
         cursor.execute("DELETE FROM regioes_responsaveis WHERE matricula_responsavel = ?", (matricula_responsavel,))
-        for sigla in lista_siglas:
+        for sigla in sorted(list(siglas_novas)):
             cursor.execute('''
                 INSERT INTO regioes_responsaveis (sigla_regiao, matricula_responsavel)
                 VALUES (?, ?)
@@ -678,15 +870,16 @@ def atribuir_regioes_massa(matricula_responsavel, lista_siglas):
             ''', (sigla, matricula_responsavel))
         conn.commit()
         return True
-    except Exception:
+    except Exception as e:
+        print(f"[ERRO DB] Falha ao atribuir regiões em massa: {e}")
         return False
     finally:
         conn.close()
 
 def deduplicar_historico_eventos():
     """
-    Remove duplicatas históricas na tabela eventos_diarios, mantendo apenas 
-    a PRIMEIRA OCORRÊNCIA (id mais antigo) para cada par (solicitacao, tipo_evento).
+    Remove duplicatas verdadeiras na tabela eventos_diarios, mantendo apenas 
+    a ocorrência mais antiga para o mesmo evento no mesmo dia (solicitacao, tipo_evento, date(data_evento)).
     """
     conn = get_connection_config()
     try:
@@ -696,7 +889,7 @@ def deduplicar_historico_eventos():
             WHERE id NOT IN (
                 SELECT MIN(id)
                 FROM eventos_diarios
-                GROUP BY solicitacao, tipo_evento
+                GROUP BY solicitacao, tipo_evento, date(data_evento)
             )
         """)
         removidos = cursor.rowcount
@@ -709,6 +902,48 @@ def deduplicar_historico_eventos():
         return 0
     finally:
         conn.close()
+
+def sanitizar_eventos_tratadas_ativas():
+    """
+    Remove registros indevidos de 'TRATADA' para solicitações que continuam
+    ativas e presentes em 'demanda_atual'. Isso desbloqueia as solicitações
+    para que os técnicos recebam o devido crédito quando forem efetivamente finalizadas.
+    """
+    conn_app = get_connection_config()
+    conn_data = get_connection_read()
+    try:
+        df_cur = pd.read_sql("SELECT * FROM demanda_atual", conn_data)
+        if df_cur.empty:
+            return 0
+        sol_col = next((c for c in df_cur.columns if 'solicita' in c.lower() and 'vinc' not in c.lower()), None)
+        if not sol_col:
+            return 0
+        sols_ativas = [str(s).strip() for s in df_cur[sol_col].dropna().unique()]
+        sols_ativas_sem_zero = [s.lstrip('0') for s in sols_ativas]
+        todas_ativas = list(set(sols_ativas + sols_ativas_sem_zero))
+        
+        cursor = conn_app.cursor()
+        removidos_total = 0
+        for i in range(0, len(todas_ativas), 500):
+            chunk = todas_ativas[i:i+500]
+            placeholders = ','.join(['?'] * len(chunk))
+            cursor.execute(f"""
+                DELETE FROM eventos_diarios 
+                WHERE tipo_evento = 'TRATADA' 
+                AND (solicitacao IN ({placeholders}) OR LTRIM(solicitacao, '0') IN ({placeholders}))
+            """, chunk + chunk)
+            removidos_total += cursor.rowcount
+            
+        conn_app.commit()
+        if removidos_total > 0:
+            print(f"[SANITY] {removidos_total} registros falsos-positivos de 'TRATADA' foram removidos (solicitações ainda ativas na fila).")
+        return removidos_total
+    except Exception as e:
+        print(f"[SANITY ERRO] Falha ao sanitizar tratadas ativas: {e}")
+        return 0
+    finally:
+        conn_app.close()
+        conn_data.close()
 
 def init_database():
     """Inicializa o banco de dados do zero se não existir (Auto-Healing)."""
@@ -839,8 +1074,10 @@ def init_database():
         cursor.execute("SELECT COUNT(*) FROM pendentes_snapshot")
         if cursor.fetchone()[0] == 0:
             print("[INIT] Tabela 'pendentes_snapshot' vazia. Recompondo histórico inicial de pendentes...")
-        # 10. Auto-deduplicação vitalícia do histórico de eventos
+        # 10. Auto-deduplicação do histórico de eventos diários
         deduplicar_historico_eventos()
+        # 11. Sanitização de registros indevidos de TRATADA para solicitações que continuam ativas
+        sanitizar_eventos_tratadas_ativas()
             
         conn.commit()
     except Exception as e:
@@ -1024,6 +1261,7 @@ def registrar_snapshot_pendentes(df_atual):
     if df_atual is None or df_atual.empty:
         return
 
+    conn = None
     try:
         conn = get_connection_config()
         cursor = conn.cursor()
@@ -1097,7 +1335,7 @@ def registrar_snapshot_pendentes(df_atual):
     except Exception as e:
         print(f"[DB] Erro no registro de snapshot de pendentes: {e}")
     finally:
-        if 'conn' in locals():
+        if conn is not None:
             conn.close()
 
 def recompor_snapshot_historico():
@@ -1105,6 +1343,8 @@ def recompor_snapshot_historico():
     Recompõe e backfila o histórico de pendentes_snapshot lendo a tabela demanda_historico
     para todas as datas disponíveis.
     """
+    conn_data = None
+    conn_app = None
     try:
         conn_data = get_connection_read()
         cursor_data = conn_data.cursor()
@@ -1210,9 +1450,8 @@ def recompor_snapshot_historico():
     except Exception as e:
         print(f"[DB] Erro ao recompor histórico de pendentes: {e}")
     finally:
-        if 'conn_app' in locals():
+        if conn_app:
             conn_app.close()
-
 
 # Inicializa o banco de dados completo ao carregar o módulo
 init_database()
@@ -1223,6 +1462,7 @@ def registrar_eventos_diarios(df_antigo, df_novo):
     no banco de dados (NOVA, INICIADA, TRATADA).
     Ignora a primeira execução do dia para não herdar tratadas da madrugada.
     """
+    conn = None
     try:
         conn = get_connection_config()
         cursor = conn.cursor()
@@ -1250,11 +1490,24 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         df_regioes = pd.read_sql("SELECT sigla_regiao, matricula_responsavel FROM regioes_responsaveis", conn)
         regioes_dict = df_regioes.set_index('sigla_regiao')['matricula_responsavel'].to_dict() if not df_regioes.empty else {}
         
-        def get_responsavel(sol_id, regiao_str):
+        def get_responsavel(sol_id, regiao_str, row_dict=None):
+            # Prioridade 1: Resp. Manobra do registro extraído do GDIS-PM
+            if row_dict:
+                for k, v in row_dict.items():
+                    if 'resp' in k.lower() and 'manobra' in k.lower() and pd.notna(v):
+                        v_str = str(v).strip()
+                        if v_str and v_str != '-' and len(v_str) >= 4 and not v_str.upper().startswith('NÃO'):
+                            return v_str
+            
+            # Prioridade 2: Solicitacao travada no banco
             sol_id_str = str(sol_id).strip()
+            sol_id_norm = sol_id_str.lstrip('0')
             if sol_id_str in travadas_dict:
                 return travadas_dict[sol_id_str]
+            if sol_id_norm in travadas_dict:
+                return travadas_dict[sol_id_norm]
             
+            # Prioridade 3: Dono fixo da região
             sigla = str(regiao_str).strip()[:2].upper() if pd.notna(regiao_str) else ""
             if sigla in regioes_dict:
                 return regioes_dict[sigla]
@@ -1275,9 +1528,11 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                     df_t.rename(columns={col: 'Solicitacao_ID'}, inplace=True)
                 elif 'situa' in col_lower:
                     df_t.rename(columns={col: 'Situacao_Norm'}, inplace=True)
+            if 'Solicitacao_ID' in df_t.columns:
+                df_t['Solicitacao_ID'] = df_t['Solicitacao_ID'].astype(str).str.strip().str.lstrip('0')
         
-        antigas_dict = df_antigo_copy.set_index('Solicitacao_ID').to_dict('index')
-        novas_dict = df_novo_copy.set_index('Solicitacao_ID').to_dict('index')
+        antigas_dict = df_antigo_copy.set_index('Solicitacao_ID').to_dict('index') if 'Solicitacao_ID' in df_antigo_copy.columns else {}
+        novas_dict = df_novo_copy.set_index('Solicitacao_ID').to_dict('index') if 'Solicitacao_ID' in df_novo_copy.columns else {}
         
         eventos_para_inserir = []
         
@@ -1286,7 +1541,7 @@ def registrar_eventos_diarios(df_antigo, df_novo):
             if sol_id not in antigas_dict:
                 regiao = row_nova.get('Ref_Regiao', '')
                 sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
-                matricula = get_responsavel(sol_id, regiao)
+                matricula = get_responsavel(sol_id, regiao, row_nova)
                 eventos_para_inserir.append((sol_id, 'NOVA', sigla, matricula, data_evento_aplicar))
             else:
                 row_antiga = antigas_dict[sol_id]
@@ -1299,30 +1554,38 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 if not was_elaboracao and is_elaboracao:
                     regiao = row_nova.get('Ref_Regiao', '')
                     sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
-                    matricula = get_responsavel(sol_id, regiao)
+                    matricula = get_responsavel(sol_id, regiao, row_nova)
                     eventos_para_inserir.append((sol_id, 'INICIADA', sigla, matricula, data_evento_aplicar))
                     
-        # 2. Tratadas
-        for sol_id, row_antiga in antigas_dict.items():
-            if sol_id not in novas_dict:
-                regiao = row_antiga.get('Ref_Regiao', '')
-                sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
-                matricula = get_responsavel(sol_id, regiao)
-                eventos_para_inserir.append((sol_id, 'TRATADA', sigla, matricula, data_evento_aplicar))
+        # 2. Tratadas (com barreira de segurança contra quedas anormais de extração)
+        if len(antigas_dict) > 50 and len(novas_dict) < 0.6 * len(antigas_dict):
+            print(f"[EVENTOS ALERTA] Queda massiva anormal na extração ({len(antigas_dict)} -> {len(novas_dict)}). Abortando registro de tratadas por segurança.")
+        else:
+            for sol_id, row_antiga in antigas_dict.items():
+                if sol_id not in novas_dict:
+                    regiao = row_antiga.get('Ref_Regiao', '')
+                    sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
+                    matricula = get_responsavel(sol_id, regiao, row_antiga)
+                    eventos_para_inserir.append((sol_id, 'TRATADA', sigla, matricula, data_evento_aplicar))
                 
         if eventos_para_inserir:
             cursor = conn.cursor()
+            hoje_str = get_agora_br().strftime('%Y-%m-%d')
             
-            # Anti-Duplicação Vitalícia: Verifica se a solicitação já registrou o evento em qualquer data anterior
-            cursor.execute("SELECT solicitacao, tipo_evento FROM eventos_diarios")
-            existentes = set((str(row[0]).strip(), str(row[1]).strip()) for row in cursor.fetchall())
+            # Anti-duplicação diária: evita reinserir o mesmo evento no mesmo dia (últimas 24h)
+            cursor.execute("""
+                SELECT solicitacao, tipo_evento 
+                FROM eventos_diarios 
+                WHERE date(data_evento) >= date(?, '-1 day')
+            """, (hoje_str,))
+            existentes_recentes = set((str(row[0]).strip().lstrip('0'), str(row[1]).strip()) for row in cursor.fetchall())
             
             eventos_unicos = []
             for ev in eventos_para_inserir:
-                chave = (str(ev[0]).strip(), str(ev[1]).strip())
-                if chave not in existentes:
+                chave = (str(ev[0]).strip().lstrip('0'), str(ev[1]).strip())
+                if chave not in existentes_recentes:
                     eventos_unicos.append(ev)
-                    existentes.add(chave) # Adiciona para evitar duplicatas dentro do próprio lote
+                    existentes_recentes.add(chave) # Adiciona para evitar duplicatas dentro do próprio lote
             
             if eventos_unicos:
                 cursor.executemany('''
@@ -1332,10 +1595,13 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 conn.commit()
                 print(f"[DB] {len(eventos_unicos)} eventos únicos registrados de produtividade.")
             else:
-                print(f"[DB] Nenhum evento novo para registrar (todas as manobras já foram contabilizadas anteriormente).")
+                print(f"[DB] Nenhum evento novo para registrar (já contabilizados no ciclo atual).")
             
     except Exception as e:
         print(f"[DB] Erro ao registrar eventos: {e}")
+    finally:
+        if conn:
+            conn.close()
 
 def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
     """
@@ -1590,15 +1856,18 @@ def get_rank_saldo_regioes(data_inicio=None, data_fim=None, responsavel=None):
         print(f"Erro em get_rank_saldo_regioes: {e}")
         return pd.DataFrame(columns=['Regiao', 'Novas', 'Tratadas', 'Saldo'])
     finally:
-        if 'conn_app' in locals() and conn_app:
-            try: conn_app.close()
-            except Exception: pass
+        if 'conn_app' in locals() and conn_app is not None:
+            try:
+                conn_app.close()
+            except Exception:
+                pass
 
 def limpar_cache_dados():
     """Limpa o cache do Streamlit para forçar a re-leitura de dados novos."""
     try:
-        st.cache_data.clear()
-        print("[DB] Cache de dados limpo com sucesso.")
+        if hasattr(st, "cache_data") and hasattr(st.cache_data, "clear"):
+            st.cache_data.clear()
+            print("[DB] Cache de dados limpo com sucesso.")
     except Exception as e:
         print(f"[DB] Erro ao limpar cache: {e}")
 

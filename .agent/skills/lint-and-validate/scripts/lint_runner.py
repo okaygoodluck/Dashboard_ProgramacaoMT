@@ -15,6 +15,7 @@ import subprocess
 import sys
 import json
 import platform
+import shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -58,12 +59,18 @@ def detect_project_type(project_path: Path) -> dict:
     if (project_path / "pyproject.toml").exists() or (project_path / "requirements.txt").exists():
         result["type"] = "python"
         
-        # Check for ruff
-        result["linters"].append({"name": "ruff", "cmd": ["ruff", "check", "."]})
+        # Check for linters (prioriza ruff, depois flake8, fallback para compileall nativo)
+        if shutil.which("ruff"):
+            result["linters"].append({"name": "ruff", "cmd": ["ruff", "check", "."]})
+        elif shutil.which("flake8"):
+            result["linters"].append({"name": "flake8", "cmd": ["flake8", "."]})
+        else:
+            result["linters"].append({"name": "py_compile (syntax check)", "cmd": [sys.executable, "-m", "compileall", "-q", "-x", r"(\.venv|\.git|python|CCP_Portable)", "."]})
         
         # Check for mypy
         if (project_path / "mypy.ini").exists() or (project_path / "pyproject.toml").exists():
-            result["linters"].append({"name": "mypy", "cmd": ["mypy", "."]})
+            if shutil.which("mypy"):
+                result["linters"].append({"name": "mypy", "cmd": ["mypy", "."]})
     
     return result
 
@@ -94,8 +101,7 @@ def run_linter(linter: dict, cwd: Path) -> dict:
             text=True,
             encoding='utf-8',
             errors='replace',
-            timeout=120,
-            shell=platform.system() == "Windows" # Shell=True often helps with path resolution on Windows
+            shell=(cmd[0].lower().endswith((".cmd", ".bat")) or "npm" in cmd[0].lower() or "npx" in cmd[0].lower()) if platform.system() == "Windows" else False
         )
         
         result["output"] = proc.stdout[:2000] if proc.stdout else ""
