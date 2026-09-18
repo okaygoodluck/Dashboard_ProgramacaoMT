@@ -37,6 +37,28 @@ DB_APP_NAME = "ccp_app.db"    # Persistente (Usuários, Configs)
 DB_DATA_NAME = "ccp_data.db"  # Volátil (Dados da Demanda)
 LOCAL_DB_NAME = os.environ.get("CCP_LOCAL_DB_PATH", "demanda.db")  # Temporário Local para o Extrator
 
+# Matrículas de emissores de avisos (assumem apenas para emitir aviso, crédito permanece com quem iniciou)
+MATRICULAS_AVISO = {'e263445', 'e204855'}
+
+def normalizar_matricula(mat) -> str:
+    """
+    Normaliza matrículas da Cemig:
+    - Converte para minúsculas e remove espaços
+    - Fallback inteligente para matrículas sem zero à esquerda (ex: c58106 -> c058106)
+    """
+    if not mat or not isinstance(mat, str):
+        return ""
+    m = mat.strip()
+    if not m:
+        return ""
+    prefix = m[0].lower()
+    rest = m[1:]
+    if prefix in ('c', 'e') and rest.isdigit():
+        if len(rest) == 5:
+            return f"{prefix}0{rest}"
+        return f"{prefix}{rest}"
+    return m
+
 # Caminhos Mestres na Rede
 try:
     from dotenv import load_dotenv
@@ -120,6 +142,24 @@ def _get_path(filename, network_path, alt_env_key=None):
     if is_server_mode():
         local = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
         if os.path.exists(local):
+            # Proteção contra desatualização: se a rede possuir versão mais recente de ccp_app.db, sincroniza automaticamente
+            if filename == DB_APP_NAME and network_path and os.path.exists(network_path):
+                try:
+                    if os.path.getmtime(network_path) > os.path.getmtime(local) + 30:
+                        import shutil
+                        shutil.copy2(network_path, local)
+                        print(f"[SYNC AUTO] Cópia local de {filename} atualizada a partir da rede.")
+                except Exception as e_sync:
+                    pass
+                return local
+
+            # Para dados de demanda (ccp_data.db): se a base da rede for mais recente que o SSD local (extração em outro PC), usa a rede
+            if filename == DB_DATA_NAME and network_path and os.path.exists(network_path):
+                try:
+                    if os.path.getmtime(network_path) > os.path.getmtime(local) + 300:
+                        return network_path
+                except Exception:
+                    pass
             return local
 
         if filename == DB_DATA_NAME:
@@ -233,11 +273,28 @@ def publicar_db_rede(retries=3, delay_seconds=2):
     except Exception as e_rede:
         print(f"[ERRO REDE] Falha crítica na publicação de rede: {e_rede}")
 
-    # 3. Backup de segurança do ccp_app.db na rede
+    # 3. Publicação e Backup do ccp_app.db na rede
     try:
         local_app_db = os.path.join(base_dir, DB_APP_NAME)
         if os.path.exists(local_app_db) and REDE_BASE and os.path.exists(REDE_BASE):
             if is_server_mode():
+                # Publica réplica atômica do ccp_app.db na rede para sincronizar clientes
+                tmp_app_path = REDE_APP_PATH + ".tmp"
+                try:
+                    shutil.copy2(local_app_db, tmp_app_path)
+                    try:
+                        os.replace(tmp_app_path, REDE_APP_PATH)
+                    except (PermissionError, OSError):
+                        shutil.copy2(local_app_db, REDE_APP_PATH)
+                        if os.path.exists(tmp_app_path):
+                            try:
+                                os.remove(tmp_app_path)
+                            except Exception:
+                                pass
+                    print(f"[OK REDE] ccp_app.db publicado com sucesso na rede: {REDE_APP_PATH}")
+                except Exception as e_pub:
+                    print(f"[AVISO REDE] Falha ao atualizar cópia ccp_app.db na rede: {e_pub}")
+
                 backup_rede_app = os.path.join(REDE_BASE, "ccp_app_backup_servidor.db")
                 shutil.copy2(local_app_db, backup_rede_app)
                 print(f"[BACKUP] Backup de segurança do ccp_app.db salvo na rede: {backup_rede_app}")
@@ -373,8 +430,11 @@ def salvar_dados(df, regioes_confirmadas_vazias=None):
         if resp_col and sit_col and sol_col:
             df_elab = df[df[sit_col].astype(str).str.contains('ELABORA', case=False, na=False)].copy()
             df_elab = df_elab[~df_elab[resp_col].astype(str).str.strip().isin(['', '-', 'None'])]
+            # Não auto-travar emissores de aviso (a solicitação permanece com quem iniciou a análise)
+            df_elab = df_elab[~df_elab[resp_col].astype(str).str.strip().str.lower().isin(MATRICULAS_AVISO)]
             if not df_elab.empty:
                 novas_travas = df_elab[[sol_col, resp_col]].rename(columns={sol_col: 'Solicitação', resp_col: 'Matricula'})
+                novas_travas['Matricula'] = novas_travas['Matricula'].apply(normalizar_matricula)
                 travar_solicitacoes(novas_travas)
     except Exception as e_lock:
         print(f"[DB] Aviso ao auto-atualizar travas de manobra: {e_lock}")
@@ -1491,26 +1551,30 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         regioes_dict = df_regioes.set_index('sigla_regiao')['matricula_responsavel'].to_dict() if not df_regioes.empty else {}
         
         def get_responsavel(sol_id, regiao_str, row_dict=None):
-            # Prioridade 1: Resp. Manobra do registro extraído do GDIS-PM
+            # Prioridade 1: Resp. Manobra do registro extraído do GDIS-PM (se não for emissor de aviso)
             if row_dict:
                 for k, v in row_dict.items():
                     if 'resp' in k.lower() and 'manobra' in k.lower() and pd.notna(v):
-                        v_str = str(v).strip()
-                        if v_str and v_str != '-' and len(v_str) >= 4 and not v_str.upper().startswith('NÃO'):
+                        v_str = normalizar_matricula(str(v).strip())
+                        if v_str and v_str != '-' and len(v_str) >= 4 and not v_str.upper().startswith('NÃO') and v_str.lower() not in MATRICULAS_AVISO:
                             return v_str
             
-            # Prioridade 2: Solicitacao travada no banco
+            # Prioridade 2: Solicitacao travada no banco (técnico que iniciou a análise)
             sol_id_str = str(sol_id).strip()
             sol_id_norm = sol_id_str.lstrip('0')
             if sol_id_str in travadas_dict:
-                return travadas_dict[sol_id_str]
+                t_mat = normalizar_matricula(travadas_dict[sol_id_str])
+                if t_mat.lower() not in MATRICULAS_AVISO:
+                    return t_mat
             if sol_id_norm in travadas_dict:
-                return travadas_dict[sol_id_norm]
+                t_mat = normalizar_matricula(travadas_dict[sol_id_norm])
+                if t_mat.lower() not in MATRICULAS_AVISO:
+                    return t_mat
             
             # Prioridade 3: Dono fixo da região
             sigla = str(regiao_str).strip()[:2].upper() if pd.notna(regiao_str) else ""
             if sigla in regioes_dict:
-                return regioes_dict[sigla]
+                return normalizar_matricula(regioes_dict[sigla])
                 
             return "Não Atribuído"
 

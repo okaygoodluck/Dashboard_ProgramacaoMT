@@ -26,6 +26,7 @@ CCP_Servidor_Ready/
 python/
 *.zip
 *.db
+*.bkp*
 
 # Environments
 wheels/

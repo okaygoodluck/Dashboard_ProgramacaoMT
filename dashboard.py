@@ -7,7 +7,11 @@ import asyncio
 # Patch para evitar warning inofensivo de socket no Windows (ProactorBasePipeTransport connection_lost ao dar F5)
 if platform.system() == 'Windows' and sys.version_info >= (3, 8):
     try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            # pyright: ignore[reportDeprecated]
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # type: ignore
     except Exception:
         pass
 
@@ -156,16 +160,26 @@ def calcular_dias_uteis_restantes(data_inicio):
     if pd.isnull(data_inicio):
         return None
     
-    # Converte para datetime se não for
-    if not isinstance(data_inicio, datetime):
+    # Extrai o objeto date nativo com validação rigorosa
+    dt_inicio = None
+    if isinstance(data_inicio, (datetime, pd.Timestamp)):
+        dt_inicio = data_inicio.date()
+    elif isinstance(data_inicio, date):
+        dt_inicio = data_inicio
+    else:
         try:
-            # Tenta formatos comuns PT-BR
-            data_inicio = pd.to_datetime(data_inicio, dayfirst=True)
+            val = pd.to_datetime(data_inicio, dayfirst=True)
+            if isinstance(val, (datetime, pd.Timestamp)):
+                dt_inicio = val.date()
+            else:
+                return None
         except Exception:
             return None
-            
-    hoje = pd.Timestamp.now().normalize() # Data de hoje sem hora
-    data_inicio = pd.Timestamp(data_inicio).normalize()
+
+    if dt_inicio is None:
+        return None
+
+    hoje_date = date.today()
 
     # Usa a lista global consolidada
     feriados = FERIADOS_BASE
@@ -178,10 +192,10 @@ def calcular_dias_uteis_restantes(data_inicio):
     
     try:
         # Congelamento do "Relógio de Hoje"
-        hoje_util = np.busday_offset(hoje.date(), 0, roll='backward', weekmask='1111100', holidays=feriados_np)
+        hoje_util = np.busday_offset(hoje_date, 0, roll='backward', weekmask='1111100', holidays=feriados_np)
         
         # Congelamento da "Data de Início" da Solicitação
-        data_inicio_util = np.busday_offset(data_inicio.date(), 0, roll='backward', weekmask='1111100', holidays=feriados_np)
+        data_inicio_util = np.busday_offset(dt_inicio, 0, roll='backward', weekmask='1111100', holidays=feriados_np)
         
         return int(np.busday_count(hoje_util, data_inicio_util, weekmask='1111100', holidays=feriados_np))
     except Exception as e:
@@ -263,6 +277,7 @@ def tratar_snapshot_diario(total, atrasadas, alertas, urgencias, no_prazo):
 # Função para carregar o arquivo mais recente (AGORA VIA BANCO DE DADOS)
 @st.cache_data(ttl=60)  # Cache de 1 minuto para não reler banco toda hora
 def load_latest_data():
+    arquivo_mais_recente = None
     # 1. Tenta carregar do Banco de Dados
     df = db_manager.carregar_dados_recentes()
     
@@ -335,7 +350,7 @@ def load_latest_data():
                     data_extracao = pd.to_datetime(df['Data_Extracao'].iloc[0])
                 except Exception:
                     data_extracao = datetime.now()
-            elif 'arquivo_mais_recente' in locals():
+            elif arquivo_mais_recente and os.path.exists(arquivo_mais_recente):
                 # Se veio do Excel
                 try:
                     timestamp = os.path.getmtime(arquivo_mais_recente)
@@ -423,7 +438,6 @@ def load_latest_data():
                         if 'CHI' in df.columns: df['CHI'] = pd.to_numeric(df['CHI'], errors='coerce').fillna(0)
                         if 'OBRA GD' in df.columns: df['OBRA GD'] = df['OBRA GD'].fillna('')
             except Exception as e:
-                import streamlit as st
                 st.sidebar.warning(f"Erro ao carregar Mesão Diário: {e}")
             # --------------------------------
 
@@ -585,7 +599,7 @@ if df is not None:
         decimo_primeiro_dia_util = np.busday_offset(hoje_date, 11, roll='forward', weekmask='1111100', holidays=feriados_np_filtro)
         default_max = ajustar_fim_periodo(pd.to_datetime(decimo_primeiro_dia_util).date())
     except Exception: 
-        default_max = hoje_date + pd.Timedelta(days=15)
+        default_max = hoje_date + timedelta(days=15)
         
     min_value_picker = min(min_date, hoje_date)
     max_value_picker = max(max_date, default_max)
@@ -697,17 +711,19 @@ if df is not None:
     df_filtered = df_filtered[df_filtered[col_malha].isin(filtro_malha)]
     df_filtered = df_filtered[df_filtered[col_regiao].isin(filtro_regiao)]
     
-    if isinstance(filtro_data, tuple) and len(filtro_data) >= 1:
-        start_date = filtro_data[0]
-        end_date = filtro_data[1] if len(filtro_data) == 2 else filtro_data[0]
-        
-        # Filtro padrão de data
-        mask_date = (df_filtered[col_filtro_data].dt.date >= start_date) & (df_filtered[col_filtro_data].dt.date <= end_date)
-        
-        # Garante que solicitações pendentes (Aprovadas/Em Elaboração) do passado não sumam (Backlog)
-        mask_pendente_passado = (df_filtered['Is_Aprovada'] | df_filtered['Is_Elaboracao']) & (df_filtered[col_filtro_data].dt.date < start_date)
-        
-        df_filtered = df_filtered.loc[mask_date | mask_pendente_passado]
+    if isinstance(filtro_data, (tuple, list)):
+        f_datas = list(filtro_data)
+        if len(f_datas) >= 1:
+            start_date = f_datas[0]
+            end_date = f_datas[1] if len(f_datas) >= 2 else f_datas[0]
+            
+            # Filtro padrão de data
+            mask_date = (df_filtered[col_filtro_data].dt.date >= start_date) & (df_filtered[col_filtro_data].dt.date <= end_date)
+            
+            # Garante que solicitações pendentes (Aprovadas/Em Elaboração) do passado não sumam (Backlog)
+            mask_pendente_passado = (df_filtered['Is_Aprovada'] | df_filtered['Is_Elaboracao']) & (df_filtered[col_filtro_data].dt.date < start_date)
+            
+            df_filtered = df_filtered.loc[mask_date | mask_pendente_passado]
 
     # RECALCULA VARIÁVEIS DE KPI BASEADAS NO FILTRO ATUAL
     total_solicitacoes = len(df_filtered)
@@ -1217,15 +1233,21 @@ if df is not None:
     # --- ABA 4: RELATÓRIOS & GESTÃO ---
     if chosen_tab == "📊 Relatórios":
         with st.container():
+            conn_app = None
             try:
                 conn_app = db_manager.get_connection_config(read_only=True)
                 hoje_str = db_manager.get_agora_br().strftime('%Y-%m-%d')
                 
-                # Juntar com usuários para ter o nome (trazendo todo o histórico)
+                # Juntar com usuários para ter o nome (trazendo todo o histórico e com fallback inteligente de matrícula)
                 query_eventos = f"""
-                    SELECT e.*, COALESCE(u.nome, 'Não Atribuído') as nome_responsavel 
+                    SELECT e.*, COALESCE(u.nome, u_fb.nome, 'Não Atribuído') as nome_responsavel 
                     FROM eventos_diarios e 
-                    LEFT JOIN usuarios u ON e.matricula_responsavel = u.matricula 
+                    LEFT JOIN usuarios u ON lower(e.matricula_responsavel) = lower(u.matricula)
+                    LEFT JOIN usuarios u_fb ON (
+                        length(e.matricula_responsavel) = 6 
+                        AND lower(substr(e.matricula_responsavel, 1, 1)) = lower(substr(u_fb.matricula, 1, 1))
+                        AND '0' || substr(e.matricula_responsavel, 2) = substr(u_fb.matricula, 2)
+                    )
                 """
                 df_eventos_all = pd.read_sql(query_eventos, conn_app)
                 
@@ -1260,11 +1282,15 @@ if df is not None:
                             key="hist_data_usr"
                         )
                     
-                    if isinstance(datas_selecionadas, tuple):
-                        d_inicio = datas_selecionadas[0]
-                        d_fim = datas_selecionadas[1] if len(datas_selecionadas) > 1 else datas_selecionadas[0]
+                    if isinstance(datas_selecionadas, (tuple, list)):
+                        d_sel_list = list(datas_selecionadas)
+                        if len(d_sel_list) >= 1:
+                            d_inicio = d_sel_list[0]
+                            d_fim = d_sel_list[1] if len(d_sel_list) > 1 else d_sel_list[0]
+                        else:
+                            d_inicio = d_fim = date.today()
                     else:
-                        d_inicio = d_fim = datas_selecionadas
+                        d_inicio = d_fim = datas_selecionadas if datas_selecionadas else date.today()
                         
                     d_inicio_str = d_inicio.strftime('%Y-%m-%d')
                     d_fim_str = d_fim.strftime('%Y-%m-%d')
@@ -1275,7 +1301,7 @@ if df is not None:
                     ] if not df_tratadas.empty else pd.DataFrame()
                     
                     if not df_usr_filtered.empty:
-                        df_user_grouped = df_usr_filtered.groupby(['data', 'nome_responsavel']).size().reset_index(name='Tratadas')
+                        df_user_grouped = df_usr_filtered.groupby(['data', 'nome_responsavel']).size().to_frame(name='Tratadas').reset_index()
                         df_user_grouped['data_exibicao'] = pd.to_datetime(df_user_grouped['data']).dt.strftime('%d/%m/%Y')
                         
                         df_user_grouped['primeiro_nome'] = df_user_grouped['nome_responsavel'].apply(
@@ -1689,7 +1715,7 @@ if df is not None:
                 print(f"ERRO CRÍTICO EM CARREGAR EVENTOS:\n{error_trace}")
                 st.error(f"Não foi possível carregar eventos: {e}\n\nDetalhes no console.")
             finally:
-                if 'conn_app' in locals() and conn_app:
+                if conn_app:
                     try:
                         conn_app.close()
                     except Exception:
