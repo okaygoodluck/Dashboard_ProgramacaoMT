@@ -81,177 +81,57 @@ def render_tab_config():
     </style>
     """, unsafe_allow_html=True)
 
-    tab_escala, tab_usuarios = st.tabs([
-        "🗺️ Escala de Regiões dos Técnicos (4 Slots)", 
-        "👥 Gestão de Usuários e Acessos"
-    ])
+    todas_regioes = db_manager.get_regioes_disponiveis_data()
+    df_map_atual = db_manager.get_mapeamento_regioes()
+    df_users = db_manager.listar_usuarios()
+    
+    # Filtra técnicos ativos (remove os marcados como desligados)
+    if not df_users.empty:
+        df_ativos = df_users[~df_users['nome'].str.contains('desligado', case=False, na=False)].copy()
+        df_ativos['primeiro_nome'] = df_ativos['nome'].str.strip().str.split().str[0].str.upper()
+        df_ativos = df_ativos.sort_values(by=['primeiro_nome', 'nome']).reset_index(drop=True)
+    else:
+        df_ativos = pd.DataFrame(columns=['matricula', 'nome', 'nivel'])
 
-    # =========================================================================
-    # TAB 1: ESCALA DE REGIÕES (LAYOUT EM 4 COLUNAS: 4 TÉCNICOS POR LINHA)
-    # =========================================================================
-    with tab_escala:
-        todas_regioes = db_manager.get_regioes_disponiveis_data()
-        df_map_atual = db_manager.get_mapeamento_regioes()
-        df_users = db_manager.listar_usuarios()
-        
-        # Filtra técnicos ativos (remove os marcados como desligados)
-        if not df_users.empty:
-            df_ativos = df_users[~df_users['nome'].str.contains('desligado', case=False, na=False)].copy()
-            df_ativos['primeiro_nome'] = df_ativos['nome'].str.strip().str.split().str[0].str.upper()
-            df_ativos = df_ativos.sort_values(by=['primeiro_nome', 'nome']).reset_index(drop=True)
-        else:
-            df_ativos = pd.DataFrame(columns=['matricula', 'nome', 'nivel'])
+    map_display_names = formatar_nome_exibicao(df_ativos)
 
-        map_display_names = formatar_nome_exibicao(df_ativos)
-
-        # Inicialização do estado de slots
-        if 'map_slots' not in st.session_state:
-            st.session_state.map_slots = {}
-            for _, u in df_ativos.iterrows():
-                mat = str(u['matricula']).strip()
-                regs_u = df_map_atual[df_map_atual['matricula'] == mat]['sigla_regiao'].tolist()
-                slots = [r for r in regs_u][:4]
-                while len(slots) < 4:
-                    slots.append("—")
-                st.session_state.map_slots[mat] = slots
-
-        # Assegura que novos usuários ativos adicionados na sessão estejam presentes em map_slots
+    # Inicialização do estado de slots
+    if 'map_slots' not in st.session_state:
+        st.session_state.map_slots = {}
         for _, u in df_ativos.iterrows():
             mat = str(u['matricula']).strip()
-            if mat not in st.session_state.map_slots:
-                regs_u = df_map_atual[df_map_atual['matricula'] == mat]['sigla_regiao'].tolist()
-                slots = [r for r in regs_u][:4]
-                while len(slots) < 4:
-                    slots.append("—")
-                st.session_state.map_slots[mat] = slots
+            regs_u = df_map_atual[df_map_atual['matricula'] == mat]['sigla_regiao'].tolist()
+            slots = [r for r in regs_u][:4]
+            while len(slots) < 4:
+                slots.append("—")
+            st.session_state.map_slots[mat] = slots
 
-        # Cálculo das regiões ocupadas e livres
-        regioes_ocupadas = set()
-        for mat_k, slots in st.session_state.map_slots.items():
-            for s in slots:
-                if s and s != "—":
-                    regioes_ocupadas.add(s)
+    # Assegura que novos usuários ativos adicionados na sessão estejam presentes em map_slots
+    for _, u in df_ativos.iterrows():
+        mat = str(u['matricula']).strip()
+        if mat not in st.session_state.map_slots:
+            regs_u = df_map_atual[df_map_atual['matricula'] == mat]['sigla_regiao'].tolist()
+            slots = [r for r in regs_u][:4]
+            while len(slots) < 4:
+                slots.append("—")
+            st.session_state.map_slots[mat] = slots
 
-        regioes_livres = sorted([r for r in todas_regioes if r not in regioes_ocupadas])
+    # Cálculo das regiões ocupadas e livres
+    regioes_ocupadas = set()
+    for mat_k, slots in st.session_state.map_slots.items():
+        for s in slots:
+            if s and s != "—":
+                regioes_ocupadas.add(s)
 
-        # Barra Única Compacta: Ações, Status Inline e Busca
-        c_salvar, c_reset, c_stats, c_busca = st.columns([1.4, 1.1, 4.0, 2.5], vertical_alignment="center")
-        with c_salvar:
-            btn_salvar = st.button("💾 Salvar Mapeamento", type="primary", use_container_width=True, help="Grava no banco de dados todas as regiões atribuídas aos 4 slots")
-        with c_reset:
-            btn_reset = st.button("🔄 Recarregar", use_container_width=True, help="Restaura as atribuições salvas atualmente no banco")
-        with c_stats:
-            alerta_html = f"<span style='color: #ef4444; font-weight: 700;'>⚠️ {len(regioes_livres)} Livres ({', '.join(regioes_livres[:5])}{'...' if len(regioes_livres)>5 else ''})</span>" if regioes_livres else "<span style='color: #10b981; font-weight: 700;'>✅ 100% Atribuídas</span>"
-            st.markdown(f"<div style='font-size: 0.85rem; line-height: 32px;'><b>Total:</b> {len(todas_regioes)} &nbsp;|&nbsp; <b>Atribuídas:</b> {len(regioes_ocupadas)} &nbsp;|&nbsp; {alerta_html}</div>", unsafe_allow_html=True)
-        with c_busca:
-            busca_tec = st.text_input("🔍 Filtrar técnico...", placeholder="Filtrar por nome...", label_visibility="collapsed")
+    regioes_livres = sorted([r for r in todas_regioes if r not in regioes_ocupadas])
 
-        # Ações de Salvamento e Reset
-        if btn_salvar:
-            with st.spinner("Salvando escala de regiões no banco de dados..."):
-                sucesso = True
-                for mat_tec, slots_tec in st.session_state.map_slots.items():
-                    siglas_escolhidas = [s for s in slots_tec if s and s != "—"]
-                    if not db_manager.atribuir_regioes_massa(mat_tec, siglas_escolhidas):
-                        sucesso = False
-                
-                db_manager.get_mapeamento_regioes.clear()
-                if sucesso:
-                    st.toast("✅ Escala de regiões salva com sucesso!", icon="💾")
-                    st.success("Escala de regiões salva com sucesso!")
-                    time.sleep(0.8)
-                    st.session_state.pop('map_slots', None)
-                    st.rerun()
-                else:
-                    st.error("Ocorreu um erro ao salvar algumas regiões. Verifique os logs.")
-
-        if btn_reset:
-            st.session_state.pop('map_slots', None)
-            st.rerun()
-
-        st.markdown("<div style='margin-bottom: 6px;'></div>", unsafe_allow_html=True)
-
-        # Filtro de busca na listagem dos cartões
-        if busca_tec:
-            df_exibicao = df_ativos[
-                df_ativos['nome'].str.contains(busca_tec, case=False, na=False) |
-                df_ativos['matricula'].str.contains(busca_tec, case=False, na=False)
-            ]
-        else:
-            df_exibicao = df_ativos
-
-        # Callback para atualizar slot com Opção A (filtro dinâmico)
-        def on_slot_change(matricula, slot_idx):
-            key = f"sel_slot_{matricula}_{slot_idx}"
-            novo_val = st.session_state.get(key, "—")
-            st.session_state.map_slots[matricula][slot_idx] = novo_val
-
-        # Renderização do cartão de um técnico (Tira Fina com 4 slots em 4 colunas)
-        def render_cartao_tecnico(row_tec):
-            mat = str(row_tec['matricula']).strip()
-            nome_disp = map_display_names.get(mat, row_tec['nome'])
-            nome_completo = str(row_tec['nome']).strip()
-            
-            with st.container(border=True):
-                c_nom, c1, c2, c3, c4 = st.columns([1.5, 0.75, 0.75, 0.75, 0.75], gap="small", vertical_alignment="center")
-                
-                with c_nom:
-                    st.markdown(
-                        f"<div style='font-size: 0.80rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 26px;' title='{nome_completo} ({mat})'>{nome_disp}</div>", 
-                        unsafe_allow_html=True
-                    )
-                
-                slots_cols = [c1, c2, c3, c4]
-                for i_slot, col_slot in enumerate(slots_cols):
-                    with col_slot:
-                        val_atual = st.session_state.map_slots[mat][i_slot]
-                        
-                        # Opções disponíveis (Opção A):
-                        opcoes_slot = ["—"]
-                        if val_atual != "—":
-                            opcoes_slot.append(val_atual)
-                        for r in sorted(todas_regioes):
-                            if r not in regioes_ocupadas and r != val_atual:
-                                opcoes_slot.append(r)
-                                
-                        idx_sel = opcoes_slot.index(val_atual) if val_atual in opcoes_slot else 0
-                        key_w = f"sel_slot_{mat}_{i_slot}"
-                        
-                        # Prevenção contra exceção de Streamlit caso opção mude
-                        if key_w in st.session_state and st.session_state[key_w] not in opcoes_slot:
-                            st.session_state[key_w] = val_atual if val_atual in opcoes_slot else "—"
-
-                        st.selectbox(
-                            f"Slot {i_slot+1} de {mat}",
-                            options=opcoes_slot,
-                            index=idx_sel,
-                            key=key_w,
-                            on_change=on_slot_change,
-                            args=(mat, i_slot),
-                            label_visibility="collapsed"
-                        )
-
-        # Divisão equilibrada em 4 Colunas Principais (4 técnicos por linha)
-        if not df_exibicao.empty:
-            num_cols = 4
-            cols_painel = st.columns(num_cols, gap="small")
-            
-            tamanho_bloco = (len(df_exibicao) + num_cols - 1) // num_cols
-            for i_col, col_target in enumerate(cols_painel):
-                inicio = i_col * tamanho_bloco
-                fim = min(inicio + tamanho_bloco, len(df_exibicao))
-                if inicio < len(df_exibicao):
-                    df_fatia = df_exibicao.iloc[inicio:fim]
-                    with col_target:
-                        for _, row in df_fatia.iterrows():
-                            render_cartao_tecnico(row)
-        else:
-            st.info("Nenhum técnico encontrado para o filtro digitado.")
+    # Unificação lado a lado: Esquerda (Gestão de Usuários) | Direita (Escala de Regiões)
+    col_esq, col_dir = st.columns([1, 1], gap="medium")
 
     # =========================================================================
-    # TAB 2: GESTÃO DE USUÁRIOS E ACESSOS
+    # COLUNA ESQUERDA: GESTÃO DE USUÁRIOS E ACESSOS
     # =========================================================================
-    with tab_usuarios:
+    with col_esq:
         st.subheader("👥 Gestão de Usuários")
         
         search_user = st.text_input("🔍 Buscar funcionário...", placeholder="Nome ou Matrícula", label_visibility="collapsed", key="search_user_tab")
@@ -269,7 +149,7 @@ def render_tab_config():
                     df_filtered = df_users
 
                 if not df_filtered.empty:
-                    with st.container(height=550):
+                    with st.container(height=580):
                         for idx, row in df_filtered.iterrows():
                             with st.container(border=True):
                                 col_u1, col_u2, col_u3, col_u4, col_u5 = st.columns([2.5, 1.5, 0.6, 0.6, 0.6], vertical_alignment="center")
@@ -324,3 +204,123 @@ def render_tab_config():
                                 st.error("Erro ao criar. Verifique se a matrícula já existe.")
                         else:
                             st.warning("Preencha Nome e Matrícula.")
+
+    # =========================================================================
+    # COLUNA DIREITA: ESCALA DE REGIÕES DOS TÉCNICOS (4 SLOTS)
+    # =========================================================================
+    with col_dir:
+        st.subheader("🗺️ Escala de Regiões (4 Slots)")
+
+        # Barra de Ações Compacta da Escala
+        c_salvar, c_reset, c_busca = st.columns([1.5, 1.2, 2.0], vertical_alignment="center")
+        with c_salvar:
+            btn_salvar = st.button("💾 Salvar", type="primary", use_container_width=True, help="Grava no banco de dados todas as regiões atribuídas aos 4 slots")
+        with c_reset:
+            btn_reset = st.button("🔄 Recarregar", use_container_width=True, help="Restaura as atribuições salvas atualmente no banco")
+        with c_busca:
+            busca_tec = st.text_input("🔍 Filtrar técnico...", placeholder="Filtrar técnico...", label_visibility="collapsed")
+
+        # Status inline com alerta de regiões livres
+        alerta_html = f"<span style='color: #ef4444; font-weight: 700;'>⚠️ {len(regioes_livres)} Livres ({', '.join(regioes_livres[:4])}{'...' if len(regioes_livres)>4 else ''})</span>" if regioes_livres else "<span style='color: #10b981; font-weight: 700;'>✅ 100% Atribuídas</span>"
+        st.markdown(f"<div style='font-size: 0.82rem; margin-top: 3px; margin-bottom: 6px;'><b>Total:</b> {len(todas_regioes)} &nbsp;|&nbsp; <b>Atribuídas:</b> {len(regioes_ocupadas)} &nbsp;|&nbsp; {alerta_html}</div>", unsafe_allow_html=True)
+
+        # Ações de Salvamento e Reset
+        if btn_salvar:
+            with st.spinner("Salvando escala de regiões no banco de dados..."):
+                sucesso = True
+                for mat_tec, slots_tec in st.session_state.map_slots.items():
+                    siglas_escolhidas = [s for s in slots_tec if s and s != "—"]
+                    if not db_manager.atribuir_regioes_massa(mat_tec, siglas_escolhidas):
+                        sucesso = False
+                
+                db_manager.get_mapeamento_regioes.clear()
+                if sucesso:
+                    st.toast("✅ Escala de regiões salva com sucesso!", icon="💾")
+                    st.success("Escala de regiões salva com sucesso!")
+                    time.sleep(0.8)
+                    st.session_state.pop('map_slots', None)
+                    st.rerun()
+                else:
+                    st.error("Ocorreu um erro ao salvar algumas regiões. Verifique os logs.")
+
+        if btn_reset:
+            st.session_state.pop('map_slots', None)
+            st.rerun()
+
+        # Filtro de busca na listagem dos técnicos
+        if busca_tec:
+            df_exibicao = df_ativos[
+                df_ativos['nome'].str.contains(busca_tec, case=False, na=False) |
+                df_ativos['matricula'].str.contains(busca_tec, case=False, na=False)
+            ]
+        else:
+            df_exibicao = df_ativos
+
+        # Callback para atualizar slot com Opção A (filtro dinâmico)
+        def on_slot_change(matricula, slot_idx):
+            key = f"sel_slot_{matricula}_{slot_idx}"
+            novo_val = st.session_state.get(key, "—")
+            st.session_state.map_slots[matricula][slot_idx] = novo_val
+
+        # Renderização do cartão de um técnico (Tira Fina com 4 slots)
+        def render_cartao_tecnico(row_tec):
+            mat = str(row_tec['matricula']).strip()
+            nome_disp = map_display_names.get(mat, row_tec['nome'])
+            nome_completo = str(row_tec['nome']).strip()
+            
+            with st.container(border=True):
+                c_nom, c1, c2, c3, c4 = st.columns([1.5, 0.75, 0.75, 0.75, 0.75], gap="small", vertical_alignment="center")
+                
+                with c_nom:
+                    st.markdown(
+                        f"<div style='font-size: 0.78rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 26px;' title='{nome_completo} ({mat})'>{nome_disp}</div>", 
+                        unsafe_allow_html=True
+                    )
+                
+                slots_cols = [c1, c2, c3, c4]
+                for i_slot, col_slot in enumerate(slots_cols):
+                    with col_slot:
+                        val_atual = st.session_state.map_slots[mat][i_slot]
+                        
+                        # Opções disponíveis (Opção A):
+                        opcoes_slot = ["—"]
+                        if val_atual != "—":
+                            opcoes_slot.append(val_atual)
+                        for r in sorted(todas_regioes):
+                            if r not in regioes_ocupadas and r != val_atual:
+                                opcoes_slot.append(r)
+                                
+                        idx_sel = opcoes_slot.index(val_atual) if val_atual in opcoes_slot else 0
+                        key_w = f"sel_slot_{mat}_{i_slot}"
+                        
+                        # Prevenção contra exceção de Streamlit caso opção mude
+                        if key_w in st.session_state and st.session_state[key_w] not in opcoes_slot:
+                            st.session_state[key_w] = val_atual if val_atual in opcoes_slot else "—"
+
+                        st.selectbox(
+                            f"Slot {i_slot+1} de {mat}",
+                            options=opcoes_slot,
+                            index=idx_sel,
+                            key=key_w,
+                            on_change=on_slot_change,
+                            args=(mat, i_slot),
+                            label_visibility="collapsed"
+                        )
+
+        # Divisão em 2 Colunas dentro da metade direita (2 técnicos por linha)
+        if not df_exibicao.empty:
+            num_cols = 2
+            cols_painel = st.columns(num_cols, gap="small")
+            
+            tamanho_bloco = (len(df_exibicao) + num_cols - 1) // num_cols
+            for i_col, col_target in enumerate(cols_painel):
+                inicio = i_col * tamanho_bloco
+                fim = min(inicio + tamanho_bloco, len(df_exibicao))
+                if inicio < len(df_exibicao):
+                    df_fatia = df_exibicao.iloc[inicio:fim]
+                    with col_target:
+                        for _, row in df_fatia.iterrows():
+                            render_cartao_tecnico(row)
+        else:
+            st.info("Nenhum técnico encontrado para o filtro digitado.")
+
