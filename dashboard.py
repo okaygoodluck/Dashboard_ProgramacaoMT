@@ -489,6 +489,19 @@ def load_latest_data():
                     for sol_k, has_em in st.session_state.map_email_decp.items():
                         df.loc[df[col_sol_check].astype(str) == str(sol_k), 'Tem_Email_DECP'] = bool(has_em)
 
+            # Guarda para coluna de e-mail de Urgência (Fora do Prazo)
+            if 'Tem_Email' not in df.columns:
+                df['Tem_Email'] = False
+            else:
+                df['Tem_Email'] = df['Tem_Email'].fillna(False).astype(bool)
+
+            # Aplica sobreposição de sincronia manual da sessão se existir para Urgência
+            if 'map_email_urgencia' in st.session_state and isinstance(st.session_state.map_email_urgencia, dict):
+                col_sol_check = next((c for c in df.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
+                if col_sol_check:
+                    for sol_k, has_em in st.session_state.map_email_urgencia.items():
+                        df.loc[df[col_sol_check].astype(str) == str(sol_k), 'Tem_Email'] = bool(has_em)
+
             return df, col_malha, col_regiao, col_situacao, col_urgencia, col_data, data_extracao
         else:
             return None, None, None, None, None, None, None

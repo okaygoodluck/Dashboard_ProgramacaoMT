@@ -16,60 +16,106 @@ def render_tab_detalhes(df_filtered, col_situacao):
                     df_filtered[base_c] = df_filtered[col_cand]
                     break
 
-    col_titulo, col_btn = st.columns([3, 1.2])
+    col_titulo, col_btn = st.columns([4.8, 1.4])
     with col_titulo:
         st.subheader("📋 Base de Dados Detalhada")
     with col_btn:
-        btn_sync = st.button("🔄 Sincronizar DECP", key="btn_sync_decp", use_container_width=True, help="Consulta no Outlook a caixa SHM-gestaodecp@cemig.com.br para solicitações com CHI ≥ 1500")
+        st.markdown("<div style='padding-top: 4px;'>", unsafe_allow_html=True)
+        btn_sync = st.button("🔄 Sincronizar E-mails", key="btn_sync_emails", use_container_width=True, help="Consulta no Outlook as caixas DECP (CHI ≥ 1500) e Urgência (Fora do Prazo)")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # Disparo da Sincronização Manual sob Demanda
+    # Disparo da Sincronização Manual sob Demanda (DECP + Urgência)
     if btn_sync:
         col_solic_busca = next((c for c in df_filtered.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
         col_chi_busca = next((c for c in df_filtered.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), None)
+        col_urg_busca = next((c for c in df_filtered.columns if 'urg' in c.lower()), None)
+
+        def is_urg_busca_fn(val):
+            if pd.isna(val): return False
+            s = str(val).strip().upper()
+            if s in ['SEM', 'NÃO', 'NAO', 'N', 'FALSE', '0', '']: return False
+            return s in ['SIM', 'S', 'TRUE', '1'] or 'SIM' in s or s.startswith('S')
+
+        solics_decp = []
         if col_solic_busca and col_chi_busca:
             mask_decp = pd.to_numeric(df_filtered[col_chi_busca], errors='coerce').fillna(0) >= 1500
             solics_decp = df_filtered[mask_decp][col_solic_busca].dropna().unique().tolist()
-            if solics_decp:
-                with st.spinner(f"Consultando caixa SHM-gestaodecp@cemig.com.br no Outlook para {len(solics_decp)} solicitações..."):
-                    ids_str = ",".join([str(s) for s in solics_decp])
-                    path_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "sync_emails.ps1")
-                    cmd = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, ids_str, "SHM-gestaodecp@cemig.com.br"]
+
+        solics_urg = []
+        if col_solic_busca and col_urg_busca:
+            mask_urg = df_filtered[col_urg_busca].apply(is_urg_busca_fn)
+            solics_urg = df_filtered[mask_urg][col_solic_busca].dropna().unique().tolist()
+
+        if not solics_decp and not solics_urg:
+            st.info("Nenhuma solicitação com CHI ≥ 1500 ou Urgência encontrada para sincronizar.")
+        else:
+            path_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "sync_emails.ps1")
+            mensagens_sucesso = []
+            with st.spinner("Consultando caixas de e-mail no Outlook..."):
+                # 1. Sincronização DECP (CHI >= 1500)
+                if solics_decp:
+                    ids_str_decp = ",".join([str(s) for s in solics_decp])
+                    cmd_decp = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, ids_str_decp, "SHM-gestaodecp@cemig.com.br"]
                     try:
-                        res = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', timeout=60)
-                        if res.returncode == 0:
-                            map_res = json.loads(res.stdout)
+                        res_decp = subprocess.run(cmd_decp, capture_output=True, text=True, encoding='utf-8', timeout=60)
+                        if res_decp.returncode == 0:
+                            map_res_decp = json.loads(res_decp.stdout)
                             if 'map_email_decp' not in st.session_state:
                                 st.session_state.map_email_decp = {}
-                            st.session_state.map_email_decp.update(map_res)
+                            st.session_state.map_email_decp.update(map_res_decp)
                             try:
-                                db_manager.atualizar_email_decp_bd(map_res)
-                                db_manager.carregar_dados_recentes.clear()
+                                db_manager.atualizar_email_decp_bd(map_res_decp)
                             except Exception as e_db:
                                 print(f"[DB] Aviso ao persistir sync DECP: {e_db}")
-                            total_conf = sum(1 for v in map_res.values() if v)
-                            st.success(f"Sincronização concluída! {total_conf} de {len(map_res)} e-mails confirmados na caixa DECP.")
-                            st.rerun()
-                        else:
-                            st.error("Falha ao comunicar com o Outlook. Verifique se o aplicativo está aberto e com acesso à caixa compartilhada.")
-                    except subprocess.TimeoutExpired:
-                        st.error("Tempo limite excedido ao consultar o Outlook (60s).")
+                            conf_decp = sum(1 for v in map_res_decp.values() if v)
+                            mensagens_sucesso.append(f"DECP: {conf_decp}/{len(map_res_decp)}")
                     except Exception as e:
-                        st.error(f"Erro na sincronização: {e}")
-            else:
-                st.info("Nenhuma solicitação com CHI ≥ 1500 encontrada para sincronizar.")
-        else:
-            st.warning("Colunas de Solicitação ou CHI não disponíveis.")
+                        print(f"[Outlook DECP] Erro: {e}")
 
-    # Legenda visual para as solicitações CHI >= 1500
+                # 2. Sincronização Urgência (Fora do Prazo)
+                if solics_urg:
+                    ids_str_urg = ",".join([str(s) for s in solics_urg])
+                    cmd_urg = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, ids_str_urg, "SHM-man-urgencia@cemig.com.br"]
+                    try:
+                        res_urg = subprocess.run(cmd_urg, capture_output=True, text=True, encoding='utf-8', timeout=60)
+                        if res_urg.returncode == 0:
+                            map_res_urg = json.loads(res_urg.stdout)
+                            if 'map_email_urgencia' not in st.session_state:
+                                st.session_state.map_email_urgencia = {}
+                            st.session_state.map_email_urgencia.update(map_res_urg)
+                            try:
+                                db_manager.atualizar_email_urgencia_bd(map_res_urg)
+                            except Exception as e_db:
+                                print(f"[DB] Aviso ao persistir sync Urgência: {e_db}")
+                            conf_urg = sum(1 for v in map_res_urg.values() if v)
+                            mensagens_sucesso.append(f"Urgência: {conf_urg}/{len(map_res_urg)}")
+                    except Exception as e:
+                        print(f"[Outlook Urgência] Erro: {e}")
+
+                try:
+                    db_manager.carregar_dados_recentes.clear()
+                except Exception:
+                    pass
+
+                if mensagens_sucesso:
+                    st.success(f"Sincronização concluída! ({' | '.join(mensagens_sucesso)} e-mails confirmados).")
+                    st.rerun()
+                else:
+                    st.warning("Falha ao comunicar com o Outlook. Verifique se o aplicativo está aberto e com acesso às caixas.")
+
+    # Legenda visual para as solicitações CHI >= 1500 e Urgência
     st.markdown("""
-    <div style="display: flex; gap: 20px; align-items: center; margin: 4px 0 10px 0; font-size: 0.8rem;">
+    <div style="display: flex; gap: 20px; align-items: center; margin: 4px 0 10px 0; font-size: 0.8rem; flex-wrap: wrap;">
         <span style="display: flex; align-items: center; gap: 6px;">
             <span style="display: inline-block; width: 14px; height: 14px; background: rgba(239, 68, 68, 0.25); border: 1px solid rgba(239, 68, 68, 0.6); border-radius: 3px;"></span>
-            <span><strong>CHI ≥ 1500 (Aguardando E-mail DECP)</strong></span>
+            <span><strong>CHI ≥ 1500 ou Urgência (Aguardando E-mail)</strong></span>
         </span>
         <span style="display: flex; align-items: center; gap: 6px;">
             <span style="display: inline-block; width: 14px; height: 14px; background: rgba(16, 185, 129, 0.22); border: 1px solid rgba(16, 185, 129, 0.6); border-radius: 3px;"></span>
-            <span><strong>CHI ≥ 1500 (E-mail DECP Confirmado)</strong></span>
+            <span><strong>CHI ≥ 1500 ou Urgência (E-mail Confirmado)</strong></span>
+        </span>
+        <span style="color: #64748b; font-size: 0.75rem;">
+            *(Consulte a coluna <strong>E-mail Autorização</strong> para verificar qual e-mail foi recebido)*
         </span>
     </div>
     """, unsafe_allow_html=True)
@@ -132,27 +178,99 @@ def render_tab_detalhes(df_filtered, col_situacao):
             else:
                 cols.append(c_match)
                 
-    # Mapeamento do status de e-mail DECP antes de ocultar colunas
+    # Mapeamento dos status de e-mail DECP e Urgência antes de ocultar colunas
     col_solic = next((c for c in df_detalhe_view.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
+    col_urg_view = next((c for c in df_detalhe_view.columns if 'urg' in c.lower()), None)
+    col_chi_view = next((c for c in df_detalhe_view.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), 'CHI')
+
     email_decp_map = {}
-    if col_solic and 'Tem_Email_DECP' in df_detalhe_view.columns:
-        for k, v in zip(df_detalhe_view[col_solic].astype(str), df_detalhe_view['Tem_Email_DECP']):
+    email_urg_map = {}
+    if col_solic:
+        if 'Tem_Email_DECP' in df_detalhe_view.columns:
+            for k, v in zip(df_detalhe_view[col_solic].astype(str), df_detalhe_view['Tem_Email_DECP']):
+                k_clean = str(k).strip()
+                val = bool(v)
+                email_decp_map[k_clean] = val
+                email_decp_map[k_clean.lstrip('0')] = val
+        if 'Tem_Email' in df_detalhe_view.columns:
+            for k, v in zip(df_detalhe_view[col_solic].astype(str), df_detalhe_view['Tem_Email']):
+                k_clean = str(k).strip()
+                val = bool(v)
+                email_urg_map[k_clean] = val
+                email_urg_map[k_clean.lstrip('0')] = val
+
+    if 'map_email_decp' in st.session_state and isinstance(st.session_state.map_email_decp, dict):
+        for k, v in st.session_state.map_email_decp.items():
             k_clean = str(k).strip()
-            k_num = k_clean.lstrip('0')
             val = bool(v)
             email_decp_map[k_clean] = val
-            email_decp_map[k_num] = val
+            email_decp_map[k_clean.lstrip('0')] = val
 
-    # Remover colunas solicitadas pelo usuário (Limpeza Visual)
+    if 'map_email_urgencia' in st.session_state and isinstance(st.session_state.map_email_urgencia, dict):
+        for k, v in st.session_state.map_email_urgencia.items():
+            k_clean = str(k).strip()
+            val = bool(v)
+            email_urg_map[k_clean] = val
+            email_urg_map[k_clean.lstrip('0')] = val
+
+    def is_urgente_val(val):
+        if pd.isna(val): return False
+        s = str(val).strip().upper()
+        if s in ['SEM', 'NÃO', 'NAO', 'N', 'FALSE', '0', '']: return False
+        return s in ['SIM', 'S', 'TRUE', '1'] or 'SIM' in s or s.startswith('S')
+
+    def get_email_autorizacao(row):
+        chi_val = pd.to_numeric(row.get(col_chi_view, 0), errors='coerce')
+        is_chi = pd.notna(chi_val) and chi_val >= 1500
+        urg_val = row.get(col_urg_view, None) if col_urg_view else None
+        is_urg = is_urgente_val(urg_val)
+
+        if not is_chi and not is_urg:
+            return "—"
+
+        solic_raw = str(row.get(col_solic, '')).strip()
+        solic_trim = solic_raw.lstrip('0')
+        tem_decp = email_decp_map.get(solic_raw, False) or email_decp_map.get(solic_trim, False)
+        tem_urg = email_urg_map.get(solic_raw, False) or email_urg_map.get(solic_trim, False)
+
+        if tem_decp and tem_urg:
+            return "DECP + Urgência"
+        elif tem_decp:
+            return "DECP"
+        elif tem_urg:
+            return "Urgência"
+        else:
+            return "Pendente"
+
+    df_detalhe_view['E-mail Autorização'] = df_detalhe_view.apply(get_email_autorizacao, axis=1)
+
+    # Inserção de E-mail Autorização nas colunas visíveis logo após CHI ou Situação
+    if 'E-mail Autorização' in cols:
+        cols.remove('E-mail Autorização')
+    if 'CHI' in cols:
+        cols.insert(cols.index('CHI') + 1, 'E-mail Autorização')
+    elif col_situacao in cols:
+        cols.insert(cols.index(col_situacao) + 1, 'E-mail Autorização')
+    elif 'Situação' in cols:
+        cols.insert(cols.index('Situação') + 1, 'E-mail Autorização')
+    else:
+        cols.append('E-mail Autorização')
+
+    # Remover colunas solicitadas pelo usuário (Limpeza Visual + Is_Aprovada)
     cols_to_hide = [
         'Sol. Vinc.', 'Ações', 'Tem_Email', 'Tem_Email_DECP', 'Data_Extracao', 
-        'Status_Prazo', 'Is_Elaboracao', 'Resp. Manobra'
+        'Status_Prazo', 'Is_Elaboracao', 'Is_Aprovada', 'Resp. Manobra'
     ]
     cols = [c for c in cols if c not in cols_to_hide]
 
     df_detalhe_view = df_detalhe_view[cols]
     
     col_config = {}
+    col_config['E-mail Autorização'] = st.column_config.TextColumn(
+        "E-mail Autorização",
+        help="Identificação do e-mail recebido (DECP, Urgência, DECP + Urgência) ou Pendente",
+        width="medium"
+    )
     for c in df_detalhe_view.columns:
         if any(palavra in c.lower() for palavra in ['data', 'início', 'inicio', 'término', 'termino']):
             try:
@@ -198,23 +316,20 @@ def render_tab_detalhes(df_filtered, col_situacao):
         if col_int in df_detalhe_view.columns:
             format_styler[col_int] = '{:.0f}'
 
-    # Função de estilização para destacar a linha inteira quando CHI >= 1500
-    def aplicar_destaque_chi_decp(row):
-        chi_val = pd.to_numeric(row.get(col_chi_view, 0), errors='coerce')
-        if pd.notna(chi_val) and chi_val >= 1500:
-            solic_raw = str(row.get(col_solic, '')).strip()
-            tem_email = email_decp_map.get(solic_raw, False) or email_decp_map.get(solic_raw.lstrip('0'), False)
-            if not tem_email:
-                # Fundo avermelhado/alerta de alto contraste para CHI >= 1500 sem e-mail DECP com texto branco brilhante legível
-                return ['background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'] * len(row)
-            else:
-                # Fundo verde para CHI >= 1500 com e-mail confirmado com texto branco brilhante legível
-                return ['background-color: rgba(16, 185, 129, 0.40); font-weight: 700; color: #ffffff;'] * len(row)
+    # Função de estilização para destacar a linha inteira quando CHI >= 1500 ou Urgência == 'SIM'
+    def aplicar_destaque_autorizacao(row):
+        status_aut = str(row.get('E-mail Autorização', '—')).strip()
+        if status_aut in ['DECP', 'Urgência', 'DECP + Urgência']:
+            # Fundo verde para solicitação com e-mail confirmado (ao menos um recebido) com texto branco contrastante
+            return ['background-color: rgba(16, 185, 129, 0.40); font-weight: 700; color: #ffffff;'] * len(row)
+        elif status_aut == 'Pendente':
+            # Fundo avermelhado/alerta para solicitação aguardando e-mail com texto branco brilhante legível
+            return ['background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'] * len(row)
         return [''] * len(row)
 
     st.markdown('<div class="animate-target">', unsafe_allow_html=True)
     st.dataframe(
-        df_detalhe_view.style.format(format_styler).apply(aplicar_destaque_chi_decp, axis=1),
+        df_detalhe_view.style.format(format_styler).apply(aplicar_destaque_autorizacao, axis=1),
         use_container_width=True,
         hide_index=True,
         height=500,
