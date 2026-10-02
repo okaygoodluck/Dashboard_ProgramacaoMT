@@ -52,14 +52,14 @@ def aplicar_transferencia_slot(map_slots, matricula_alvo, slot_idx_alvo, nova_re
                 if (mat != matricula_alvo or idx != slot_idx_alvo) and reg == nova_regiao:
                     map_slots[mat][idx] = "—"
                     if session_state_ref is not None:
-                        k_outro = f"sel_slot_{mat}_{idx}"
-                        session_state_ref[k_outro] = "—"
+                        session_state_ref[f"inp_slot_{mat}_{idx}"] = ""
+                        session_state_ref[f"sel_slot_{mat}_{idx}"] = "—"
                     desocupados.append((mat, idx))
                     
     map_slots[matricula_alvo][slot_idx_alvo] = nova_regiao
     if session_state_ref is not None:
-        k_alvo = f"sel_slot_{matricula_alvo}_{slot_idx_alvo}"
-        session_state_ref[k_alvo] = nova_regiao
+        session_state_ref[f"inp_slot_{matricula_alvo}_{slot_idx_alvo}"] = nova_regiao if nova_regiao != "—" else ""
+        session_state_ref[f"sel_slot_{matricula_alvo}_{slot_idx_alvo}"] = nova_regiao
         
     return desocupados
 
@@ -67,7 +67,7 @@ def render_tab_config():
     """Renderiza a aba de configurações administrativas e escala de regiões."""
     st.header("⚙️ Configurações Administrativas")
     
-    # Injeção de CSS para estilizar os cartões e os slots compactos
+    # Injeção de CSS para estilizar os cartões e os slots compactos de digitação direta
     st.markdown("""
     <style>
     /* Ajuste de padding dos containers nativos (tiras finas) */
@@ -77,126 +77,44 @@ def render_tab_config():
         border-radius: 5px !important;
     }
     
-    /* Compactação limpa e centralização dos seletores de slot */
-    div[data-testid="stSelectbox"] {
+    /* Compactação limpa e centralização dos inputs de slot (sem dropdown) */
+    div[data-testid="stTextInput"]:has(input[placeholder="—"]) {
         margin-top: 0px !important;
         margin-bottom: 0px !important;
     }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+    div[data-testid="stTextInput"]:has(input[placeholder="—"]) div[data-baseweb="input"],
+    div[data-testid="stTextInput"]:has(input[placeholder="—"]) div[data-baseweb="base-input"] {
         min-height: 28px !important;
+        height: 28px !important;
         border-radius: 6px !important;
         padding: 0 !important;
-    }
-    /* Ocultar a seta de dropdown nos seletores de slot para liberar 100% da largura útil */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] svg {
-        display: none !important;
-    }
-    form div[data-testid="stSelectbox"] div[data-baseweb="select"] svg {
-        display: inline-block !important;
-    }
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-        min-height: 28px !important;
-        padding-left: 2px !important;
-        padding-right: 2px !important;
-        padding-top: 0px !important;
-        padding-bottom: 0px !important;
         background-color: #1e293b !important;
         border: 1px solid #475569 !important;
-        border-radius: 6px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
     }
-    /* Zerar paddings verticais em todos os containers intermediários do BaseWeb */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] div {
-        padding-top: 0px !important;
-        padding-bottom: 0px !important;
-    }
-    /* Forçar texto nítido, centralizado, branco brilhante sem truncamento (nunca virar ponto) */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
+    div[data-testid="stTextInput"]:has(input[placeholder="—"]) input {
+        height: 28px !important;
+        min-height: 28px !important;
+        padding: 0px 2px !important;
+        background-color: #1e293b !important;
         color: #ffffff !important;
         font-weight: 800 !important;
         font-size: 0.85rem !important;
         text-align: center !important;
-        justify-content: center !important;
-        overflow: visible !important;
-        white-space: nowrap !important;
+        text-transform: uppercase !important;
+        border: none !important;
     }
-    
-    /* =========================================================================
-       POPOVER / DROPDOWN DE SELEÇÃO DOS SLOTS (STREAMLIT 1.57+ BASEWEB)
-       ========================================================================= */
-    /* 1. Alargar toda a árvore do Popover para 130px independentemente do slot */
-    div[data-baseweb="popover"],
-    div[data-baseweb="popover"] > div,
-    div[data-baseweb="popover"] [data-baseweb="menu"],
-    div[data-baseweb="popover"] [data-testid="stSelectboxVirtualDropdown"],
-    div[data-baseweb="popover"] [data-testid="stSelectboxVirtualDropdown"] > div,
-    div[data-baseweb="popover"] [data-testid="stSelectboxVirtualDropdown"] > div > div,
-    div[data-baseweb="popover"] ul[role="listbox"] {
-        min-width: 130px !important;
-        width: 130px !important;
-        max-width: 160px !important;
-        box-sizing: border-box !important;
-    }
-    
-    /* 2. Estilo do container flutuante do popover */
-    div[data-baseweb="popover"] {
-        background-color: #0f172a !important;
-        border: 1px solid #475569 !important;
-        border-radius: 8px !important;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85) !important;
-        z-index: 999999 !important;
-        overflow: hidden !important;
-    }
-    div[data-baseweb="popover"] > div,
-    div[data-baseweb="popover"] [data-testid="stSelectboxVirtualDropdown"] {
-        background-color: #0f172a !important;
-    }
-
-    /* 3. Itens da lista virtualizada / opções do select */
-    div[data-baseweb="popover"] [role="option"],
-    div[data-baseweb="popover"] li[role="option"] {
-        min-width: 100% !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-        padding-left: 10px !important;
-        padding-right: 10px !important;
-        background-color: transparent !important;
-        border-radius: 4px !important;
-        cursor: pointer !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        margin: 0 !important;
-    }
-    
-    div[data-baseweb="popover"] [role="option"]:hover,
-    div[data-baseweb="popover"] [role="option"][aria-selected="true"],
-    div[data-baseweb="popover"] li[role="option"]:hover,
-    div[data-baseweb="popover"] li[role="option"][aria-selected="true"] {
-        background-color: #1e293b !important;
-    }
-    
-    /* 4. Texto nítido, centralizado e perfeitamente legível */
-    div[data-baseweb="popover"] [role="option"] *,
-    div[data-baseweb="popover"] li[role="option"] * {
-        color: #ffffff !important;
-        font-size: 0.9rem !important;
-        font-weight: 800 !important;
+    div[data-testid="stTextInput"]:has(input[placeholder="—"]) input::placeholder {
+        color: #64748b !important;
+        font-weight: 700 !important;
         text-align: center !important;
-        justify-content: center !important;
-        overflow: visible !important;
-        white-space: nowrap !important;
-        opacity: 1 !important;
-        visibility: visible !important;
     }
-    
-    div[data-baseweb="popover"] [role="option"]:hover *,
-    div[data-baseweb="popover"] [role="option"][aria-selected="true"] *,
-    div[data-baseweb="popover"] li[role="option"]:hover *,
-    div[data-baseweb="popover"] li[role="option"][aria-selected="true"] * {
+    div[data-testid="stTextInput"]:has(input[placeholder="—"]) input:focus {
+        background-color: #0f172a !important;
         color: #38bdf8 !important;
+    }
+    div[data-testid="stTextInput"]:has(input[placeholder="—"]) div[data-baseweb="input"]:focus-within {
+        border-color: #38bdf8 !important;
+        box-shadow: 0 0 0 1px #38bdf8 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -367,7 +285,7 @@ def render_tab_config():
                     time.sleep(0.8)
                     st.session_state.pop('map_slots', None)
                     for k in list(st.session_state.keys()):
-                        if isinstance(k, str) and k.startswith('sel_slot_'):
+                        if isinstance(k, str) and (k.startswith('sel_slot_') or k.startswith('inp_slot_')):
                             st.session_state.pop(k, None)
                     st.rerun()
                 else:
@@ -376,7 +294,7 @@ def render_tab_config():
         if btn_reset:
             st.session_state.pop('map_slots', None)
             for k in list(st.session_state.keys()):
-                if isinstance(k, str) and k.startswith('sel_slot_'):
+                if isinstance(k, str) and (k.startswith('sel_slot_') or k.startswith('inp_slot_')):
                     st.session_state.pop(k, None)
             st.rerun()
 
@@ -389,10 +307,19 @@ def render_tab_config():
         else:
             df_exibicao = df_ativos
 
-        # Callback para atualizar slot com transferência automática de regiões
+        # Callback para atualizar slot via digitação direta com transferência automática
         def on_slot_change(matricula, slot_idx):
-            key = f"sel_slot_{matricula}_{slot_idx}"
-            novo_val = st.session_state.get(key, "—")
+            key = f"inp_slot_{matricula}_{slot_idx}"
+            digitado = str(st.session_state.get(key, "")).strip().upper()
+            
+            # Se digitou vazio, traço ou limpou, desocupa o slot
+            if not digitado or digitado in ("-", "—"):
+                novo_val = "—"
+                st.session_state[key] = ""
+            else:
+                novo_val = digitado
+                st.session_state[key] = digitado
+
             desocupados = aplicar_transferencia_slot(
                 st.session_state.map_slots,
                 matricula,
@@ -404,7 +331,7 @@ def render_tab_config():
                 nome_ant = map_display_names.get(mat_ant, mat_ant)
                 st.toast(f"🔄 Região {novo_val} transferida de {nome_ant}!", icon="🔄")
 
-        # Renderização do cartão de um técnico (Tira Fina com 4 slots)
+        # Renderização do cartão de um técnico (Tira Fina com 4 slots de digitação direta)
         def render_cartao_tecnico(row_tec):
             mat = str(row_tec['matricula']).strip()
             nome_disp = map_display_names.get(mat, row_tec['nome'])
@@ -423,24 +350,20 @@ def render_tab_config():
                 for i_slot, col_slot in enumerate(slots_cols):
                     with col_slot:
                         val_atual = st.session_state.map_slots[mat][i_slot]
+                        val_str = val_atual if val_atual != "—" else ""
+                        key_w = f"inp_slot_{mat}_{i_slot}"
                         
-                        # Todas as regiões liberadas para escolha + opção vazia '—'
-                        opcoes_slot = ["—"] + sorted(list(todas_regioes))
-                        if val_atual and val_atual not in opcoes_slot:
-                            opcoes_slot.append(val_atual)
-                                
-                        idx_sel = opcoes_slot.index(val_atual) if val_atual in opcoes_slot else 0
-                        key_w = f"sel_slot_{mat}_{i_slot}"
-                        
-                        # Prevenção contra exceção de Streamlit caso opção mude externamente
-                        if key_w in st.session_state and st.session_state[key_w] not in opcoes_slot:
-                            st.session_state[key_w] = val_atual if val_atual in opcoes_slot else "—"
+                        # Sincroniza se o estado ainda não foi inicializado ou foi alterado por transferência
+                        if key_w not in st.session_state:
+                            st.session_state[key_w] = val_str
+                        elif st.session_state[key_w] != val_str:
+                            st.session_state[key_w] = val_str
 
-                        st.selectbox(
+                        st.text_input(
                             f"Slot {i_slot+1} de {mat}",
-                            options=opcoes_slot,
-                            index=idx_sel,
                             key=key_w,
+                            max_chars=4,
+                            placeholder="—",
                             on_change=on_slot_change,
                             args=(mat, i_slot),
                             label_visibility="collapsed"
