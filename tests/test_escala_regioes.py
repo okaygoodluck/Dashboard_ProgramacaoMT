@@ -4,7 +4,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.abspath('.'))
-from views.tab_config import formatar_nome_exibicao
+from views.tab_config import formatar_nome_exibicao, aplicar_transferencia_slot
 import db_manager
 
 class TestEscalaRegioes(unittest.TestCase):
@@ -29,33 +29,53 @@ class TestEscalaRegioes(unittest.TestCase):
         self.assertEqual(map_nomes['c005'], 'GABRIEL L*')
         self.assertEqual(map_nomes['c006'], 'LAURA')
 
-    def test_dynamic_exclusion_opcao_a(self):
-        """Verifica se a regra da Opção A impede que a mesma região seja escolhida em múltiplos slots."""
+    def test_todas_regioes_disponiveis(self):
+        """Verifica se todas as regiões cadastradas permanecem disponíveis no dropdown de qualquer slot."""
         todas_regioes = ['AX', 'BH', 'NL', 'PM', 'SL']
+        opcoes_esperadas = ['—'] + sorted(todas_regioes)
+        self.assertEqual(opcoes_esperadas, ['—', 'AX', 'BH', 'NL', 'PM', 'SL'])
+
+    def test_aplicar_transferencia_slot(self):
+        """Verifica se ao atribuir uma região já pertencente a outro técnico, ela é desocupada dele."""
         map_slots = {
-            'u1': ['BH', 'NL', '—', '—'],
-            'u2': ['PM', '—', '—', '—']
+            'tec_a': ['BH', 'NL', '—', '—'],
+            'tec_b': ['PM', '—', '—', '—']
         }
-        
-        regioes_ocupadas = {s for slots in map_slots.values() for s in slots if s and s != '—'}
-        self.assertEqual(regioes_ocupadas, {'BH', 'NL', 'PM'})
-        
-        # Opções para u1 slot 0 (atualmente 'BH')
-        val_u1_s0 = map_slots['u1'][0]
-        opcoes_u1_s0 = ['—'] + ([val_u1_s0] if val_u1_s0 != '—' else []) + [
-            r for r in todas_regioes if r not in regioes_ocupadas and r != val_u1_s0
-        ]
-        # BH continua presente como selecionada, e regiões livres são AX e SL (NL e PM estão ocupadas)
-        self.assertIn('BH', opcoes_u1_s0)
-        self.assertIn('AX', opcoes_u1_s0)
-        self.assertIn('SL', opcoes_u1_s0)
-        self.assertNotIn('NL', opcoes_u1_s0)
-        self.assertNotIn('PM', opcoes_u1_s0)
-        
-        # Opções para u2 slot 1 (atualmente '—')
-        val_u2_s1 = map_slots['u2'][1]
-        opcoes_u2_s1 = ['—'] + [r for r in todas_regioes if r not in regioes_ocupadas and r != val_u2_s1]
-        self.assertEqual(opcoes_u2_s1, ['—', 'AX', 'SL'])
+        mock_session_state = {
+            'sel_slot_tec_a_0': 'BH',
+            'sel_slot_tec_a_1': 'NL',
+            'sel_slot_tec_b_0': 'PM',
+        }
+
+        # Técnico B assume a região 'BH' no slot 1
+        desocupados = aplicar_transferencia_slot(
+            map_slots, 
+            matricula_alvo='tec_b', 
+            slot_idx_alvo=1, 
+            nova_regiao='BH', 
+            session_state_ref=mock_session_state
+        )
+
+        # Região BH deve ter saído do tec_a slot 0
+        self.assertEqual(desocupados, [('tec_a', 0)])
+        self.assertEqual(map_slots['tec_a'][0], '—')
+        self.assertEqual(mock_session_state['sel_slot_tec_a_0'], '—')
+
+        # Região BH deve estar no tec_b slot 1
+        self.assertEqual(map_slots['tec_b'][1], 'BH')
+        self.assertEqual(mock_session_state['sel_slot_tec_b_1'], 'BH')
+
+        # Se tec_b transferir 'PM' do slot 0 para o slot 2
+        desocupados_mesmo = aplicar_transferencia_slot(
+            map_slots,
+            matricula_alvo='tec_b',
+            slot_idx_alvo=2,
+            nova_regiao='PM',
+            session_state_ref=mock_session_state
+        )
+        self.assertEqual(desocupados_mesmo, [('tec_b', 0)])
+        self.assertEqual(map_slots['tec_b'][0], '—')
+        self.assertEqual(map_slots['tec_b'][2], 'PM')
 
     def test_atribuir_regioes_limite_4_slots(self):
         """Verifica se a atribuição salva com sucesso listas de até 4 regiões no banco."""

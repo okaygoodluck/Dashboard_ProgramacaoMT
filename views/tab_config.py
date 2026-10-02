@@ -39,6 +39,30 @@ def formatar_nome_exibicao(df_usuarios):
             nomes[mat] = pri
     return nomes
 
+def aplicar_transferencia_slot(map_slots, matricula_alvo, slot_idx_alvo, nova_regiao, session_state_ref=None):
+    """
+    Atualiza o slot especificado e, caso nova_regiao != "—", desocupa qualquer outro slot
+    (seja de outro técnico ou do mesmo técnico) que já possuía essa mesma região.
+    Retorna a lista de tuplas (matricula, slot_idx) dos slots desocupados.
+    """
+    desocupados = []
+    if nova_regiao and nova_regiao != "—":
+        for mat, slots in map_slots.items():
+            for idx, reg in enumerate(slots):
+                if (mat != matricula_alvo or idx != slot_idx_alvo) and reg == nova_regiao:
+                    map_slots[mat][idx] = "—"
+                    if session_state_ref is not None:
+                        k_outro = f"sel_slot_{mat}_{idx}"
+                        session_state_ref[k_outro] = "—"
+                    desocupados.append((mat, idx))
+                    
+    map_slots[matricula_alvo][slot_idx_alvo] = nova_regiao
+    if session_state_ref is not None:
+        k_alvo = f"sel_slot_{matricula_alvo}_{slot_idx_alvo}"
+        session_state_ref[k_alvo] = nova_regiao
+        
+    return desocupados
+
 def render_tab_config():
     """Renderiza a aba de configurações administrativas e escala de regiões."""
     st.header("⚙️ Configurações Administrativas")
@@ -97,6 +121,46 @@ def render_tab_config():
         justify-content: center !important;
         overflow: visible !important;
         white-space: nowrap !important;
+    }
+    
+    /* Popover/Dropdown de seleção dos slots com largura confortável e independente do slot */
+    div[data-baseweb="popover"] {
+        min-width: 105px !important;
+        width: auto !important;
+        max-width: 160px !important;
+        background-color: #0f172a !important;
+        border: 1px solid #475569 !important;
+        border-radius: 8px !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8) !important;
+        z-index: 999999 !important;
+    }
+    div[data-baseweb="popover"] ul[role="listbox"] {
+        min-width: 105px !important;
+        width: 100% !important;
+        max-height: 240px !important;
+        overflow-y: auto !important;
+        padding: 4px !important;
+        background-color: #0f172a !important;
+    }
+    div[data-baseweb="popover"] li[role="option"] {
+        padding: 6px 10px !important;
+        min-height: 30px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        font-size: 0.88rem !important;
+        font-weight: 800 !important;
+        color: #f8fafc !important;
+        border-radius: 4px !important;
+        margin-bottom: 2px !important;
+        cursor: pointer !important;
+        background: transparent !important;
+    }
+    div[data-baseweb="popover"] li[role="option"]:hover,
+    div[data-baseweb="popover"] li[aria-selected="true"] {
+        background-color: #1e293b !important;
+        color: #38bdf8 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -289,11 +353,20 @@ def render_tab_config():
         else:
             df_exibicao = df_ativos
 
-        # Callback para atualizar slot com Opção A (filtro dinâmico)
+        # Callback para atualizar slot com transferência automática de regiões
         def on_slot_change(matricula, slot_idx):
             key = f"sel_slot_{matricula}_{slot_idx}"
             novo_val = st.session_state.get(key, "—")
-            st.session_state.map_slots[matricula][slot_idx] = novo_val
+            desocupados = aplicar_transferencia_slot(
+                st.session_state.map_slots,
+                matricula,
+                slot_idx,
+                novo_val,
+                session_state_ref=st.session_state
+            )
+            for mat_ant, _ in desocupados:
+                nome_ant = map_display_names.get(mat_ant, mat_ant)
+                st.toast(f"🔄 Região {novo_val} transferida de {nome_ant}!", icon="🔄")
 
         # Renderização do cartão de um técnico (Tira Fina com 4 slots)
         def render_cartao_tecnico(row_tec):
@@ -315,18 +388,15 @@ def render_tab_config():
                     with col_slot:
                         val_atual = st.session_state.map_slots[mat][i_slot]
                         
-                        # Opções disponíveis (Opção A):
-                        opcoes_slot = ["—"]
-                        if val_atual != "—":
+                        # Todas as regiões liberadas para escolha + opção vazia '—'
+                        opcoes_slot = ["—"] + sorted(list(todas_regioes))
+                        if val_atual and val_atual not in opcoes_slot:
                             opcoes_slot.append(val_atual)
-                        for r in sorted(todas_regioes):
-                            if r not in regioes_ocupadas and r != val_atual:
-                                opcoes_slot.append(r)
                                 
                         idx_sel = opcoes_slot.index(val_atual) if val_atual in opcoes_slot else 0
                         key_w = f"sel_slot_{mat}_{i_slot}"
                         
-                        # Prevenção contra exceção de Streamlit caso opção mude
+                        # Prevenção contra exceção de Streamlit caso opção mude externamente
                         if key_w in st.session_state and st.session_state[key_w] not in opcoes_slot:
                             st.session_state[key_w] = val_atual if val_atual in opcoes_slot else "—"
 
