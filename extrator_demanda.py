@@ -950,5 +950,14 @@ def extrair_dados():
         return True
 
 if __name__ == "__main__":
+    if any(arg in sys.argv for arg in ("--teste", "--local", "-t")):
+        os.environ["CCP_MODO_TESTE"] = "1"
+        os.environ["CCP_NAO_COPIAR_REDE"] = "1"
+        print("\n" + "="*60)
+        print("  [EXTRATOR] MODO DE TESTE LOCAL ISOLADO ATIVADO")
+        print("  -> Gravação restrita à pasta do projeto.")
+        print("  -> Cópia para a rede corporativa BLOQUEADA.")
+        print("="*60 + "\n")
     sys.exit(0 if extrair_dados() else 1)
+
  

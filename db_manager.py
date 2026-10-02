@@ -126,6 +126,12 @@ def _get_path(filename, network_path, alt_env_key=None):
       - Modo Servidor (CCP_SERVER_MODE=true): Ambiente > Local SSD > Rede (Fallback)
       - Modo Cliente / Home Office: Ambiente > Rede Compartilhada > Local Offline (Fallback)
     """
+    # 0. Modo de Teste Isolado / Forçar Local: Prioridade Máxima
+    if os.environ.get("CCP_MODO_TESTE") == "1" or os.environ.get("CCP_FORCAR_LOCAL") == "1":
+        local = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+        if os.path.exists(local):
+            return local
+
     # 1. Variável de Ambiente (Padronizada)
     env_key = f"CCP_{filename.upper().replace('.','_')}_PATH"
     env_val = os.environ.get(env_key)
@@ -233,6 +239,12 @@ def publicar_db_rede(retries=3, delay_seconds=2):
         sucesso_local = True
     except Exception as e_local:
         print(f"[AVISO LOCAL] Falha ao atualizar cópia local ccp_data.db: {e_local}")
+
+    # 1.1 Trava de Segurança de Teste: Não replica na rede se estiver em modo de teste
+    if os.environ.get("CCP_MODO_TESTE") == "1" or os.environ.get("CCP_NAO_COPIAR_REDE") == "1":
+        print("\n[MODO TESTE ATIVO] Base local ccp_data.db atualizada com sucesso.")
+        print("[SEGURANÇA] Cópia para a rede corporativa BLOQUEADA (Ambiente de Teste Isolado).")
+        return sucesso_local
 
     # 2. Sincronização de Rede (Réplica para Home Office)
     try:
