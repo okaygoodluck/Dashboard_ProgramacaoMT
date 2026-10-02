@@ -315,13 +315,20 @@ def load_latest_data():
             # Calcula dias úteis RESTANTES para cada linha
             df['Dias_Uteis_Restantes'] = df[col_data].apply(calcular_dias_uteis_restantes)
             
-            # Identifica outras colunas
             cols = df.columns.tolist()
-            col_malha = 'Ref_Malha' if 'Ref_Malha' in cols else cols[0]
-            col_regiao = 'Ref_Regiao' if 'Ref_Regiao' in cols else cols[1]
+            col_malha = 'Ref_Malha' if 'Ref_Malha' in cols else ('Malha' if 'Malha' in cols else cols[0])
+            col_regiao = 'Ref_Regiao' if 'Ref_Regiao' in cols else ('Região' if 'Região' in cols else cols[1])
             col_situacao = next((c for c in cols if 'situa' in c.lower()), None)
             col_urgencia = next((c for c in cols if 'urg' in c.lower()), None)
             col_finalidade = next((c for c in cols if 'finalidade' in c.lower()), None)
+            
+            # Sanitização contra nulos em colunas categóricas
+            if col_malha in df.columns:
+                df[col_malha] = df[col_malha].fillna('Não Definida').astype(str)
+            if col_regiao in df.columns:
+                df[col_regiao] = df[col_regiao].fillna('Não Definida').astype(str)
+            if 'Responsavel' in df.columns:
+                df['Responsavel'] = df['Responsavel'].fillna('Não Atribuído').astype(str)
             
             # Garante que colunas essenciais existam com os nomes esperados para a função
             if col_finalidade:
@@ -683,10 +690,17 @@ if df is not None:
 
     st.sidebar.markdown("<hr style='border-color: rgba(255,255,255,0.08); margin: 12px 0;' />", unsafe_allow_html=True)
     
+    # Função utilitária para ordenação segura contra nulos e tipos mistos (evita TypeError float vs str)
+    def safe_sorted_unique(series):
+        if series is None:
+            return []
+        vals = [str(x).strip() for x in series.dropna().unique() if str(x).strip() and str(x).strip().lower() != 'nan']
+        return sorted(list(set(vals)))
+
     # 3. BLOCO FOCO OPERACIONAL
     st.sidebar.markdown("<div style='font-size:0.75rem; font-weight:800; color:#38bdf8; letter-spacing:0.5px; margin-bottom:6px;'>🎯 FOCO OPERACIONAL</div>", unsafe_allow_html=True)
     
-    lista_responsaveis = sorted(df_top['Responsavel'].unique())
+    lista_responsaveis = safe_sorted_unique(df_top['Responsavel'])
     if st.session_state.user_nivel == "Usuario":
         if st.session_state.user_nome in lista_responsaveis:
             filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável (Travado)", options=lista_responsaveis, default=[st.session_state.user_nome], key="v_filter_resp", disabled=True)
@@ -694,17 +708,17 @@ if df is not None:
             st.sidebar.error(f"Seu nome ({st.session_state.user_nome}) não foi encontrado como responsável.")
             filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável", options=lista_responsaveis, default=lista_responsaveis, key="v_filter_resp")
     else:
-        filtro_responsaveis_all = sorted(df['Responsavel'].unique())
+        filtro_responsaveis_all = safe_sorted_unique(df['Responsavel'])
         filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável", options=filtro_responsaveis_all, default=filtro_responsaveis_all, key="v_filter_resp")
         
     df_filtered_resp = df[df['Responsavel'].isin(filtro_responsavel)]
 
-    lista_regioes_total = sorted(df_top[col_regiao].unique())
-    default_regioes = sorted(df_filtered_resp[col_regiao].unique()) if not df_filtered_resp.empty else []
+    lista_regioes_total = safe_sorted_unique(df_top[col_regiao])
+    default_regioes = safe_sorted_unique(df_filtered_resp[col_regiao]) if not df_filtered_resp.empty else []
     filtro_regiao = st.sidebar.multiselect("🗺️ Região", options=lista_regioes_total, default=default_regioes, key="v_filter_regiao")
 
     # Malha padrão (sem filtro no sidebar)
-    filtro_malha = sorted(df_top[col_malha].unique())
+    filtro_malha = safe_sorted_unique(df_top[col_malha])
 
     # 4. BOTÃO DE RESET GLOBAL E SAIR
     def trigger_reset_all():
