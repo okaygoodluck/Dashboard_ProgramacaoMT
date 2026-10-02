@@ -205,11 +205,11 @@ def render_tab_detalhes(df_filtered, col_situacao):
             solic_raw = str(row.get(col_solic, '')).strip()
             tem_email = email_decp_map.get(solic_raw, False) or email_decp_map.get(solic_raw.lstrip('0'), False)
             if not tem_email:
-                # Fundo avermelhado/alerta de alto contraste para CHI >= 1500 sem e-mail DECP
-                return ['background-color: rgba(239, 68, 68, 0.38); font-weight: 700; color: inherit;'] * len(row)
+                # Fundo avermelhado/alerta de alto contraste para CHI >= 1500 sem e-mail DECP com texto branco brilhante legível
+                return ['background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'] * len(row)
             else:
-                # Fundo verde para CHI >= 1500 com e-mail confirmado
-                return ['background-color: rgba(16, 185, 129, 0.30); font-weight: 600; color: inherit;'] * len(row)
+                # Fundo verde para CHI >= 1500 com e-mail confirmado com texto branco brilhante legível
+                return ['background-color: rgba(16, 185, 129, 0.40); font-weight: 700; color: #ffffff;'] * len(row)
         return [''] * len(row)
 
     st.markdown('<div class="animate-target">', unsafe_allow_html=True)

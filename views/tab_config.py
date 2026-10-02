@@ -43,40 +43,57 @@ def render_tab_config():
     """Renderiza a aba de configurações administrativas e escala de regiões."""
     st.header("⚙️ Configurações Administrativas")
     
-    # Injeção de CSS para estilizar os cartões e os 4 slots em 4 colunas ultra-compactas
+    # Injeção de CSS para estilizar os cartões e os slots compactos
     st.markdown("""
     <style>
-    /* Ajuste de padding dos containers nativos (tiras finas em 4 colunas) */
+    /* Ajuste de padding dos containers nativos (tiras finas) */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         padding: 2px 4px !important;
         margin-bottom: 3px !important;
         border-radius: 5px !important;
     }
     
-    /* Compactação radical dos seletores de slot (quadradinhos de 26px) */
+    /* Compactação dos seletores de slot */
     div[data-testid="stSelectbox"] {
         margin-top: 0px !important;
         margin-bottom: 0px !important;
     }
     div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-        min-height: 26px !important;
-        height: 26px !important;
-        border-radius: 4px !important;
-        font-weight: 700 !important;
-        font-size: 0.78rem !important;
+        min-height: 28px !important;
+        height: 28px !important;
+        border-radius: 5px !important;
+        font-weight: 800 !important;
+        font-size: 0.85rem !important;
         padding: 0 !important;
+        background-color: #1e293b !important;
+        border: 1px solid #475569 !important;
+    }
+    /* Ocultar a seta de dropdown nos seletores de slot para liberar 100% da largura útil */
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] svg {
+        display: none !important;
+    }
+    form div[data-testid="stSelectbox"] div[data-baseweb="select"] svg {
+        display: inline-block !important;
     }
     div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
         justify-content: center !important;
-        padding-left: 1px !important;
-        padding-right: 1px !important;
-        min-height: 26px !important;
-        height: 26px !important;
-        line-height: 26px !important;
+        padding: 0 1px !important;
+        min-height: 28px !important;
+        height: 28px !important;
+        line-height: 28px !important;
     }
-    div[data-testid="stSelectbox"] svg {
-        width: 10px !important;
-        height: 10px !important;
+    /* Forçar texto nítido, centralizado, branco brilhante sem truncamento (nunca virar ponto) */
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] div[aria-haspopup="listbox"],
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] div[role="combobox"],
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] span {
+        font-size: 0.85rem !important;
+        font-weight: 800 !important;
+        text-align: center !important;
+        width: 100% !important;
+        color: #ffffff !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        white-space: nowrap !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -89,7 +106,14 @@ def render_tab_config():
     if not df_users.empty:
         df_ativos = df_users[~df_users['nome'].str.contains('desligado', case=False, na=False)].copy()
         df_ativos['primeiro_nome'] = df_ativos['nome'].str.strip().str.split().str[0].str.upper()
-        df_ativos = df_ativos.sort_values(by=['primeiro_nome', 'nome']).reset_index(drop=True)
+        
+        # Mapeia quantidade de regiões atribuídas no banco para priorizar quem tem região no topo
+        map_qtd_reg = df_map_atual.groupby('matricula')['sigla_regiao'].count().to_dict()
+        df_ativos['qtd_reg'] = df_ativos['matricula'].astype(str).str.strip().map(lambda m: map_qtd_reg.get(m, 0))
+        df_ativos['tem_reg'] = df_ativos['qtd_reg'] > 0
+        
+        # Ordenação inteligente: Primeiro técnicos COM região, depois alfabético por primeiro nome
+        df_ativos = df_ativos.sort_values(by=['tem_reg', 'primeiro_nome', 'nome'], ascending=[False, True, True]).reset_index(drop=True)
     else:
         df_ativos = pd.DataFrame(columns=['matricula', 'nome', 'nivel'])
 
@@ -239,12 +263,18 @@ def render_tab_config():
                     st.success("Escala de regiões salva com sucesso!")
                     time.sleep(0.8)
                     st.session_state.pop('map_slots', None)
+                    for k in list(st.session_state.keys()):
+                        if k.startswith('sel_slot_'):
+                            st.session_state.pop(k, None)
                     st.rerun()
                 else:
                     st.error("Ocorreu um erro ao salvar algumas regiões. Verifique os logs.")
 
         if btn_reset:
             st.session_state.pop('map_slots', None)
+            for k in list(st.session_state.keys()):
+                if k.startswith('sel_slot_'):
+                    st.session_state.pop(k, None)
             st.rerun()
 
         # Filtro de busca na listagem dos técnicos
@@ -269,7 +299,7 @@ def render_tab_config():
             nome_completo = str(row_tec['nome']).strip()
             
             with st.container(border=True):
-                c_nom, c1, c2, c3, c4 = st.columns([1.5, 0.75, 0.75, 0.75, 0.75], gap="small", vertical_alignment="center")
+                c_nom, c1, c2, c3, c4 = st.columns([1.3, 0.8, 0.8, 0.8, 0.8], gap="small", vertical_alignment="center")
                 
                 with c_nom:
                     st.markdown(
