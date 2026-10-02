@@ -65,16 +65,16 @@ def premium_metric_card(title, value, delta=None, icon_name="info", color=None, 
         delta_html = f'<div style="color: {d_color}; font-size: 0.85rem; font-weight: 600; margin-top: 4px;">{d_icon} {abs(delta)}% em relação a ontem</div>'
 
     html = f"""
-    <div class="premium-card {card_extra_class} {vanguard_class} animate-target" style="{extra_style} display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
-        <div style="display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); position: relative; z-index: 2;">
-            <div style="color: {accent}; display: flex; align-items: center;">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <div class="premium-card {card_extra_class} {vanguard_class} animate-target" style="{extra_style} display: flex; flex-direction: column; justify-content: space-between; min-height: 125px; height: 125px; padding: 14px 16px;">
+        <div style="display: flex; align-items: flex-start; gap: 8px; min-height: 40px; position: relative; z-index: 2;">
+            <div style="color: {accent}; display: flex; align-items: center; flex-shrink: 0; margin-top: 1px;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     {icon_svg}
                 </svg>
             </div>
-            <span style="{title_style} font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">{title}</span>
+            <span style="{title_style} font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; line-height: 1.25;">{title}</span>
         </div>
-        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; {val_color_style} line-height: 1; position: relative; z-index: 2;">
+        <div style="font-family: 'Space Grotesk', sans-serif; font-size: 1.9rem; font-weight: 700; {val_color_style} line-height: 1; position: relative; z-index: 2; margin-top: auto;">
             {value}
         </div>
         {delta_html}

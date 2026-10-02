@@ -860,14 +860,15 @@ if df is not None:
     div[data-testid="element-container"]:has(#kpi-columns-anchor) + div[data-testid="element-container"] div[data-testid="column"] {
         position: relative !important;
     }
-    /* Estica os botões contidos nas colunas para o tamanho da coluna toda e zera opacidade */
-    div[data-testid="element-container"]:has(#kpi-columns-anchor) + div[data-testid="element-container"] div[data-testid="column"] div[data-testid="stButton"] {
-        position: absolute !important;
-        top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important;
-        opacity: 0 !important; z-index: 999 !important;
-    }
+    /* Estilização e alinhamento uniforme dos botões de ação dos KPIs */
     div[data-testid="element-container"]:has(#kpi-columns-anchor) + div[data-testid="element-container"] div[data-testid="column"] div[data-testid="stButton"] button {
-        width: 100% !important; height: 100% !important; cursor: pointer !important;
+        height: 32px !important;
+        min-height: 32px !important;
+        font-size: 0.76rem !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        padding: 2px 4px !important;
+        margin-top: 6px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -890,12 +891,12 @@ if df is not None:
             show_kpi_dialog("Foras do Prazo (Caixa)", df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
 
     with kpi_col4:
-        premium_metric_card("CHI ≥ 1500", qtd_chi_critico, icon_name="danger", color="#f97316")
-        if st.button("CHI ≥ 1500", key="kpi_btn_chi", use_container_width=True):
-            show_kpi_dialog("Solicitações com CHI ≥ 1500", df_chi_critico)
+        premium_metric_card("Limite do DEC", qtd_chi_critico, icon_name="danger", color="#f97316")
+        if st.button("Limite do DEC", key="kpi_btn_chi", use_container_width=True):
+            show_kpi_dialog("Solicitações no Limite do DEC (CHI ≥ 1500)", df_chi_critico)
         
     with kpi_col5:
-        premium_metric_card("8 dias - Prazo p/ Enviar Aviso", qtd_alerta, icon_name="info", color="#818cf8")
+        premium_metric_card("8 Dias - Prazo p/ Aviso", qtd_alerta, icon_name="info", color="#818cf8")
         if st.button("Aviso (8 dias)", key="kpi_btn_alertas", use_container_width=True):
             show_kpi_dialog("8 dias - Prazo p/ Enviar Aviso", df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
         
