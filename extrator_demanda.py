@@ -1,5 +1,6 @@
 import time
 import os
+import glob
 import datetime
 import json
 import sys
@@ -709,7 +710,6 @@ def extrair_dados():
                 
                 # --- FILTRAR DUPLICATAS POR REGIÃO PRINCIPAL (USANDO MESÃO) ---
                 try:
-                    import glob
                     pasta_mesao = os.environ.get("CCP_MESAO_DIARIO_PATH")
                     if not pasta_mesao or not os.path.exists(pasta_mesao):
                         _cands_mesao = [
