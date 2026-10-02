@@ -43,22 +43,40 @@ def render_tab_config():
     """Renderiza a aba de configurações administrativas e escala de regiões."""
     st.header("⚙️ Configurações Administrativas")
     
-    # Injeção de CSS para estilizar os cartões e os 4 slots quadrados
+    # Injeção de CSS para estilizar os cartões e os 4 slots em tiras ultra-compactas
     st.markdown("""
     <style>
-    /* Estilização moderna dos seletores de slot (quadradinhos) */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] {
-        min-height: 38px !important;
-        height: 38px !important;
+    /* Ajuste de padding dos containers nativos (tiras finas) */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        padding: 2px 8px !important;
+        margin-bottom: 3px !important;
         border-radius: 6px !important;
-        text-align: center !important;
+    }
+    
+    /* Compactação radical dos seletores de slot (quadradinhos) */
+    div[data-testid="stSelectbox"] {
+        margin-top: 0px !important;
+        margin-bottom: 0px !important;
+    }
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+        min-height: 28px !important;
+        height: 28px !important;
+        border-radius: 5px !important;
         font-weight: 700 !important;
-        font-size: 0.9rem !important;
+        font-size: 0.82rem !important;
+        padding: 0 !important;
     }
     div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
         justify-content: center !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
+        padding-left: 3px !important;
+        padding-right: 3px !important;
+        min-height: 28px !important;
+        height: 28px !important;
+        line-height: 28px !important;
+    }
+    div[data-testid="stSelectbox"] svg {
+        width: 12px !important;
+        height: 12px !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -69,7 +87,7 @@ def render_tab_config():
     ])
 
     # =========================================================================
-    # TAB 1: ESCALA DE REGIÕES (LAYOUT EM CARTÕES COM 4 QUADRADINHOS)
+    # TAB 1: ESCALA DE REGIÕES (LAYOUT ULTRA-COMPACTO EM 2 COLUNAS)
     # =========================================================================
     with tab_escala:
         todas_regioes = db_manager.get_regioes_disponiveis_data()
@@ -115,28 +133,18 @@ def render_tab_config():
                     regioes_ocupadas.add(s)
 
         regioes_livres = sorted([r for r in todas_regioes if r not in regioes_ocupadas])
-        tecnicos_escalados = len([m for m, slots in st.session_state.map_slots.items() if any(s != "—" for s in slots)])
 
-        # Painel de Métricas e Status
-        col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-        col_m1.metric("🗺️ Total de Regiões", len(todas_regioes))
-        col_m2.metric("👥 Técnicos com Região", f"{tecnicos_escalados} / {len(df_ativos)}")
-        col_m3.metric("✅ Regiões Atribuídas", len(regioes_ocupadas))
-        col_m4.metric("⚠️ Regiões Livres", len(regioes_livres))
-
-        if regioes_livres:
-            st.warning(f"⚠️ **{len(regioes_livres)} regiões sem responsável:** {', '.join(regioes_livres)}")
-        else:
-            st.success("✅ Todas as regiões presentes no sistema possuem um técnico responsável atribuído!")
-
-        # Barra de Ações (Salvar, Desfazer, Busca)
-        col_btn_salvar, col_btn_reset, col_busca = st.columns([1.5, 1.2, 2.5], vertical_alignment="center")
-        with col_btn_salvar:
-            btn_salvar = st.button("💾 Salvar Novo Mapeamento", type="primary", use_container_width=True, help="Grava no banco de dados todas as regiões atribuídas aos 4 slots")
-        with col_btn_reset:
-            btn_reset = st.button("🔄 Desfazer / Recarregar", use_container_width=True, help="Restaura as atribuições salvas atualmente no banco")
-        with col_busca:
-            busca_tec = st.text_input("🔍 Filtrar técnico...", placeholder="Nome ou Matrícula", label_visibility="collapsed")
+        # Barra Única Compacta: Ações, Status Inline e Busca
+        c_salvar, c_reset, c_stats, c_busca = st.columns([1.5, 1.2, 3.2, 2.5], vertical_alignment="center")
+        with c_salvar:
+            btn_salvar = st.button("💾 Salvar Mapeamento", type="primary", use_container_width=True, help="Grava no banco de dados todas as regiões atribuídas aos 4 slots")
+        with c_reset:
+            btn_reset = st.button("🔄 Recarregar", use_container_width=True, help="Restaura as atribuições salvas atualmente no banco")
+        with c_stats:
+            alerta_html = f"<span style='color: #ef4444; font-weight: 700;'>⚠️ {len(regioes_livres)} Livres ({', '.join(regioes_livres[:5])}{'...' if len(regioes_livres)>5 else ''})</span>" if regioes_livres else "<span style='color: #10b981; font-weight: 700;'>✅ 100% Atribuídas</span>"
+            st.markdown(f"<div style='font-size: 0.85rem; line-height: 32px;'><b>Total:</b> {len(todas_regioes)} &nbsp;|&nbsp; <b>Atribuídas:</b> {len(regioes_ocupadas)} &nbsp;|&nbsp; {alerta_html}</div>", unsafe_allow_html=True)
+        with c_busca:
+            busca_tec = st.text_input("🔍 Filtrar técnico...", placeholder="Filtrar por nome...", label_visibility="collapsed")
 
         # Ações de Salvamento e Reset
         if btn_salvar:
@@ -161,7 +169,7 @@ def render_tab_config():
             st.session_state.pop('map_slots', None)
             st.rerun()
 
-        st.markdown("---")
+        st.markdown("<div style='margin-bottom: 8px;'></div>", unsafe_allow_html=True)
 
         # Filtro de busca na listagem dos cartões
         if busca_tec:
@@ -178,18 +186,20 @@ def render_tab_config():
             novo_val = st.session_state.get(key, "—")
             st.session_state.map_slots[matricula][slot_idx] = novo_val
 
-        # Renderização do cartão de um técnico
+        # Renderização do cartão de um técnico (Tira Fina e Compacta)
         def render_cartao_tecnico(row_tec):
             mat = str(row_tec['matricula']).strip()
             nome_disp = map_display_names.get(mat, row_tec['nome'])
+            nome_completo = str(row_tec['nome']).strip()
             
             with st.container(border=True):
-                c_nom, c1, c2, c3, c4 = st.columns([2.5, 1, 1, 1, 1], vertical_alignment="center")
+                c_nom, c1, c2, c3, c4 = st.columns([2.6, 0.9, 0.9, 0.9, 0.9], gap="small", vertical_alignment="center")
                 
                 with c_nom:
-                    nome_completo = str(row_tec['nome']).strip()
-                    st.markdown(f"<div style='font-size: 0.95rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;' title='{nome_completo}'>{nome_disp}</div>", unsafe_allow_html=True)
-                    st.caption(f"ID: {mat}")
+                    st.markdown(
+                        f"<div style='font-size: 0.88rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 28px;' title='{nome_completo} ({mat})'>{nome_disp}</div>", 
+                        unsafe_allow_html=True
+                    )
                 
                 slots_cols = [c1, c2, c3, c4]
                 for i_slot, col_slot in enumerate(slots_cols):
@@ -197,9 +207,6 @@ def render_tab_config():
                         val_atual = st.session_state.map_slots[mat][i_slot]
                         
                         # Opções disponíveis (Opção A):
-                        # 1. "—"
-                        # 2. O valor atual deste slot (se selecionado)
-                        # 3. Regiões que não estão ocupadas em nenhum outro slot
                         opcoes_slot = ["—"]
                         if val_atual != "—":
                             opcoes_slot.append(val_atual)
