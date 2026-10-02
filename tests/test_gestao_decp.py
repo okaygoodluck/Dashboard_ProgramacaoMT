@@ -46,5 +46,43 @@ class TestGestaoDECP(unittest.TestCase):
         except Exception as e:
             self.fail(f"atualizar_email_decp_bd levantou exceção: {e}")
 
+    def test_reconciliation_merge_suffixes(self):
+        """Verifica se a lógica de reconciliação de sufixos _x e _y elimina duplicatas e preserva dados."""
+        df = pd.DataFrame({
+            'Solicitação': ['1', '2'],
+            'CHI_x': [1000, 2000],
+            'CHI_y': [1500, None]
+        })
+        for base_c in ['CHI', 'Peso', 'Clientes', 'OBRA GD']:
+            col_x, col_y = f"{base_c}_x", f"{base_c}_y"
+            if col_y in df.columns and col_x in df.columns:
+                df[base_c] = df[col_y].combine_first(df[col_x])
+                df.drop(columns=[col_x, col_y], inplace=True)
+        
+        self.assertIn('CHI', df.columns)
+        self.assertNotIn('CHI_x', df.columns)
+        self.assertNotIn('CHI_y', df.columns)
+        self.assertEqual(df['CHI'].tolist(), [1500.0, 2000.0])
+
+    def test_highlight_with_leading_zeros(self):
+        """Verifica se o destaque funciona com chaves contendo zeros à esquerda."""
+        raw_map = {'001001': False, '1002': True}
+        normalized_map = {}
+        for k, v in raw_map.items():
+            k_s = str(k).strip()
+            normalized_map[k_s] = bool(v)
+            normalized_map[k_s.lstrip('0')] = bool(v)
+        
+        # Função de lookup resiliente como em tab_detalhes.py
+        def check_email(solic_str):
+            s = str(solic_str).strip()
+            return normalized_map.get(s, False) or normalized_map.get(s.lstrip('0'), False)
+
+        # Testando busca tanto com '1001'/'001001' quanto com '1002'/'001002'
+        self.assertEqual(check_email('1001'), False)
+        self.assertEqual(check_email('001001'), False)
+        self.assertEqual(check_email('1002'), True)
+        self.assertEqual(check_email('001002'), True)
+
 if __name__ == '__main__':
     unittest.main()

@@ -7,6 +7,15 @@ import db_manager
 
 def render_tab_detalhes(df_filtered, col_situacao):
     """Renderiza a aba de dados detalhados com filtros, sincronização DECP e tabelas customizadas."""
+    # Normalização preventiva de colunas (caso ainda existam sufixos _x/_y)
+    for base_c in ['CHI', 'Peso', 'Clientes', 'OBRA GD']:
+        if base_c not in df_filtered.columns:
+            for sfx in ['_y', '_x']:
+                col_cand = f"{base_c}{sfx}"
+                if col_cand in df_filtered.columns:
+                    df_filtered[base_c] = df_filtered[col_cand]
+                    break
+
     col_titulo, col_btn = st.columns([3, 1.2])
     with col_titulo:
         st.subheader("📋 Base de Dados Detalhada")
@@ -16,8 +25,9 @@ def render_tab_detalhes(df_filtered, col_situacao):
     # Disparo da Sincronização Manual sob Demanda
     if btn_sync:
         col_solic_busca = next((c for c in df_filtered.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
-        if col_solic_busca and 'CHI' in df_filtered.columns:
-            mask_decp = pd.to_numeric(df_filtered['CHI'], errors='coerce').fillna(0) >= 1500
+        col_chi_busca = next((c for c in df_filtered.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), None)
+        if col_solic_busca and col_chi_busca:
+            mask_decp = pd.to_numeric(df_filtered[col_chi_busca], errors='coerce').fillna(0) >= 1500
             solics_decp = df_filtered[mask_decp][col_solic_busca].dropna().unique().tolist()
             if solics_decp:
                 with st.spinner(f"Consultando caixa SHM-gestaodecp@cemig.com.br no Outlook para {len(solics_decp)} solicitações..."):
@@ -108,8 +118,9 @@ def render_tab_detalhes(df_filtered, col_situacao):
     # Reordenação de colunas
     cols = list(df_detalhe_view.columns)
     for col_name in ['CHI', 'Clientes', 'Peso', 'OBRA GD']:
-        if col_name in cols:
-            cols.remove(col_name)
+        matching_cols = [c for c in cols if c == col_name or c.startswith(f"{col_name}_")]
+        for c_match in matching_cols:
+            cols.remove(c_match)
             idx = -1
             if col_situacao in cols:
                 idx = cols.index(col_situacao) + 1
@@ -117,15 +128,20 @@ def render_tab_detalhes(df_filtered, col_situacao):
                 idx = cols.index('Situação') + 1
             
             if idx > 0:
-                cols.insert(idx, col_name)
+                cols.insert(idx, c_match)
             else:
-                cols.append(col_name)
+                cols.append(c_match)
                 
     # Mapeamento do status de e-mail DECP antes de ocultar colunas
     col_solic = next((c for c in df_detalhe_view.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
     email_decp_map = {}
     if col_solic and 'Tem_Email_DECP' in df_detalhe_view.columns:
-        email_decp_map = {str(k): bool(v) for k, v in zip(df_detalhe_view[col_solic].astype(str), df_detalhe_view['Tem_Email_DECP'])}
+        for k, v in zip(df_detalhe_view[col_solic].astype(str), df_detalhe_view['Tem_Email_DECP']):
+            k_clean = str(k).strip()
+            k_num = k_clean.lstrip('0')
+            val = bool(v)
+            email_decp_map[k_clean] = val
+            email_decp_map[k_num] = val
 
     # Remover colunas solicitadas pelo usuário (Limpeza Visual)
     cols_to_hide = [
@@ -150,18 +166,21 @@ def render_tab_detalhes(df_filtered, col_situacao):
     if col_inicio:
         df_detalhe_view = df_detalhe_view.sort_values(by=col_inicio, ascending=True)
 
+    # Identifica dinamicamente a coluna de CHI na visão
+    col_chi_view = next((c for c in df_detalhe_view.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), 'CHI')
+
     # Função de estilização para destacar a linha inteira quando CHI >= 1500
     def aplicar_destaque_chi_decp(row):
-        chi_val = pd.to_numeric(row.get('CHI', 0), errors='coerce')
+        chi_val = pd.to_numeric(row.get(col_chi_view, 0), errors='coerce')
         if pd.notna(chi_val) and chi_val >= 1500:
-            solic_val = str(row.get(col_solic, ''))
-            tem_email = email_decp_map.get(solic_val, False)
+            solic_raw = str(row.get(col_solic, '')).strip()
+            tem_email = email_decp_map.get(solic_raw, False) or email_decp_map.get(solic_raw.lstrip('0'), False)
             if not tem_email:
-                # Fundo avermelhado/alerta para CHI >= 1500 sem e-mail DECP
-                return ['background-color: rgba(239, 68, 68, 0.22); font-weight: 600;'] * len(row)
+                # Fundo avermelhado/alerta de alto contraste para CHI >= 1500 sem e-mail DECP
+                return ['background-color: rgba(239, 68, 68, 0.38); font-weight: 700; color: inherit;'] * len(row)
             else:
-                # Fundo verde suave para CHI >= 1500 com e-mail confirmado
-                return ['background-color: rgba(16, 185, 129, 0.18); font-weight: 500;'] * len(row)
+                # Fundo verde para CHI >= 1500 com e-mail confirmado
+                return ['background-color: rgba(16, 185, 129, 0.30); font-weight: 600; color: inherit;'] * len(row)
         return [''] * len(row)
 
     st.markdown('<div class="animate-target">', unsafe_allow_html=True)

@@ -428,6 +428,18 @@ def load_latest_data():
                             df_mesao_sub = df_mesao[colunas_mesao].drop_duplicates(subset=['Solicitação_Merge'])
                             df = pd.merge(df, df_mesao_sub, on='Solicitação_Merge', how='left')
                             df.drop(columns=['Solicitação_Merge'], inplace=True)
+                            
+                            # Reconciliação para evitar colunas duplicadas _x e _y geradas pelo merge
+                            for base_c in ['CHI', 'Peso', 'Clientes', 'OBRA GD', 'PLE']:
+                                col_x, col_y = f"{base_c}_x", f"{base_c}_y"
+                                if col_y in df.columns and col_x in df.columns:
+                                    # Dados do Mesão (_y) têm precedência, preenchendo com os do banco (_x) se ausentes
+                                    df[base_c] = df[col_y].combine_first(df[col_x])
+                                    df.drop(columns=[col_x, col_y], inplace=True)
+                                elif col_x in df.columns and base_c not in df.columns:
+                                    df.rename(columns={col_x: base_c}, inplace=True)
+                                elif col_y in df.columns and base_c not in df.columns:
+                                    df.rename(columns={col_y: base_c}, inplace=True)
                         
                         # Preenche valores Vazios com 0 nas colunas numéricas / vazio para texto
                         if 'Peso' in df.columns:
@@ -447,6 +459,20 @@ def load_latest_data():
             except Exception as e:
                 st.sidebar.warning(f"Erro ao carregar Mesão Diário: {e}")
             # --------------------------------
+
+            # Reconciliação defensiva final para garantir que nenhuma coluna fique com _x ou _y
+            for base_c in ['CHI', 'Peso', 'Clientes', 'OBRA GD', 'PLE']:
+                col_x, col_y = f"{base_c}_x", f"{base_c}_y"
+                if col_y in df.columns and col_x in df.columns:
+                    df[base_c] = df[col_y].combine_first(df[col_x])
+                    df.drop(columns=[col_x, col_y], inplace=True)
+                elif col_x in df.columns and base_c not in df.columns:
+                    df.rename(columns={col_x: base_c}, inplace=True)
+                elif col_y in df.columns and base_c not in df.columns:
+                    df.rename(columns={col_y: base_c}, inplace=True)
+
+            if 'CHI' in df.columns:
+                df['CHI'] = pd.to_numeric(df['CHI'], errors='coerce').fillna(0)
 
             # Guarda para coluna de e-mail da Gestão DECP
             if 'Tem_Email_DECP' not in df.columns:
