@@ -53,20 +53,15 @@ def render_tab_config():
         border-radius: 5px !important;
     }
     
-    /* Compactação dos seletores de slot */
+    /* Compactação limpa e centralização dos seletores de slot */
     div[data-testid="stSelectbox"] {
         margin-top: 0px !important;
         margin-bottom: 0px !important;
     }
     div[data-testid="stSelectbox"] div[data-baseweb="select"] {
         min-height: 28px !important;
-        height: 28px !important;
-        border-radius: 5px !important;
-        font-weight: 800 !important;
-        font-size: 0.85rem !important;
+        border-radius: 6px !important;
         padding: 0 !important;
-        background-color: #1e293b !important;
-        border: 1px solid #475569 !important;
     }
     /* Ocultar a seta de dropdown nos seletores de slot para liberar 100% da largura útil */
     div[data-testid="stSelectbox"] div[data-baseweb="select"] svg {
@@ -76,23 +71,31 @@ def render_tab_config():
         display: inline-block !important;
     }
     div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
-        justify-content: center !important;
-        padding: 0 1px !important;
         min-height: 28px !important;
-        height: 28px !important;
-        line-height: 28px !important;
+        padding-left: 2px !important;
+        padding-right: 2px !important;
+        padding-top: 0px !important;
+        padding-bottom: 0px !important;
+        background-color: #1e293b !important;
+        border: 1px solid #475569 !important;
+        border-radius: 6px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    /* Zerar paddings verticais em todos os containers intermediários do BaseWeb */
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] div {
+        padding-top: 0px !important;
+        padding-bottom: 0px !important;
     }
     /* Forçar texto nítido, centralizado, branco brilhante sem truncamento (nunca virar ponto) */
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] div[aria-haspopup="listbox"],
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] div[role="combobox"],
-    div[data-testid="stSelectbox"] div[data-baseweb="select"] span {
-        font-size: 0.85rem !important;
-        font-weight: 800 !important;
-        text-align: center !important;
-        width: 100% !important;
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
         color: #ffffff !important;
+        font-weight: 800 !important;
+        font-size: 0.85rem !important;
+        text-align: center !important;
+        justify-content: center !important;
         overflow: visible !important;
-        text-overflow: clip !important;
         white-space: nowrap !important;
     }
     </style>
