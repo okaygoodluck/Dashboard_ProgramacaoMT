@@ -161,6 +161,29 @@ def render_tab_detalhes(df_filtered, col_situacao):
             except Exception:
                 pass
 
+    # Garante que colunas de valores numéricos sejam estritamente números inteiros (sem frações/decimais)
+    for col_int in ['CHI', 'Clientes']:
+        if col_int in df_detalhe_view.columns:
+            df_detalhe_view[col_int] = pd.to_numeric(df_detalhe_view[col_int], errors='coerce').fillna(0).round().astype(int)
+            col_config[col_int] = st.column_config.NumberColumn(format="%d")
+
+    # Tratamento de Peso para evitar frações como '1.0', mantendo textos como 'PLE'
+    if 'Peso' in df_detalhe_view.columns:
+        def limpar_peso_inteiro(v):
+            if pd.isna(v) or str(v).strip() == '' or str(v).strip().lower() == 'nan':
+                return '0'
+            try:
+                val_float = float(v)
+                return str(int(round(val_float)))
+            except (ValueError, TypeError):
+                return str(v).strip()
+        df_detalhe_view['Peso'] = df_detalhe_view['Peso'].apply(limpar_peso_inteiro)
+
+    # Converte qualquer outra coluna com tipo float remanescente para número inteiro
+    for c in df_detalhe_view.select_dtypes(include=['float', 'float64']).columns:
+        df_detalhe_view[c] = df_detalhe_view[c].fillna(0).round().astype(int)
+        col_config[c] = st.column_config.NumberColumn(format="%d")
+
     # 4. Ordenar por padrão pela data início em ordem crescente
     col_inicio = next((c for c in df_detalhe_view.columns if 'início' in c.lower() or 'inicio' in c.lower()), None)
     if col_inicio:
@@ -168,6 +191,12 @@ def render_tab_detalhes(df_filtered, col_situacao):
 
     # Identifica dinamicamente a coluna de CHI na visão
     col_chi_view = next((c for c in df_detalhe_view.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), 'CHI')
+
+    # Dicionário de formatação de exibição do Styler para garantir números sem decimais
+    format_styler = {}
+    for col_int in ['CHI', 'Clientes']:
+        if col_int in df_detalhe_view.columns:
+            format_styler[col_int] = '{:.0f}'
 
     # Função de estilização para destacar a linha inteira quando CHI >= 1500
     def aplicar_destaque_chi_decp(row):
@@ -185,7 +214,7 @@ def render_tab_detalhes(df_filtered, col_situacao):
 
     st.markdown('<div class="animate-target">', unsafe_allow_html=True)
     st.dataframe(
-        df_detalhe_view.style.apply(aplicar_destaque_chi_decp, axis=1),
+        df_detalhe_view.style.format(format_styler).apply(aplicar_destaque_chi_decp, axis=1),
         use_container_width=True,
         hide_index=True,
         height=500,

@@ -453,8 +453,8 @@ def load_latest_data():
                                 df.loc[mask_peso_vazio & mask_ple_preenchido, 'Peso'] = df.loc[mask_peso_vazio & mask_ple_preenchido, 'PLE'].astype(str).str.strip()
                                 df.drop(columns=['PLE'], inplace=True)
                                 
-                        if 'Clientes' in df.columns: df['Clientes'] = pd.to_numeric(df['Clientes'], errors='coerce').fillna(0)
-                        if 'CHI' in df.columns: df['CHI'] = pd.to_numeric(df['CHI'], errors='coerce').fillna(0)
+                        if 'Clientes' in df.columns: df['Clientes'] = pd.to_numeric(df['Clientes'], errors='coerce').fillna(0).round().astype(int)
+                        if 'CHI' in df.columns: df['CHI'] = pd.to_numeric(df['CHI'], errors='coerce').fillna(0).round().astype(int)
                         if 'OBRA GD' in df.columns: df['OBRA GD'] = df['OBRA GD'].fillna('')
             except Exception as e:
                 st.sidebar.warning(f"Erro ao carregar Mesão Diário: {e}")
@@ -472,7 +472,9 @@ def load_latest_data():
                     df.rename(columns={col_y: base_c}, inplace=True)
 
             if 'CHI' in df.columns:
-                df['CHI'] = pd.to_numeric(df['CHI'], errors='coerce').fillna(0)
+                df['CHI'] = pd.to_numeric(df['CHI'], errors='coerce').fillna(0).round().astype(int)
+            if 'Clientes' in df.columns:
+                df['Clientes'] = pd.to_numeric(df['Clientes'], errors='coerce').fillna(0).round().astype(int)
 
             # Guarda para coluna de e-mail da Gestão DECP
             if 'Tem_Email_DECP' not in df.columns:

@@ -84,5 +84,33 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(check_email('1002'), True)
         self.assertEqual(check_email('001002'), True)
 
+    def test_numeric_columns_integer_formatting(self):
+        """Verifica se CHI, Clientes e Peso são formatados como números inteiros sem partes fracionadas."""
+        df = pd.DataFrame({
+            'CHI': [1500.0, 850.6, None],
+            'Clientes': [12.0, 0.0, None],
+            'Peso': ['1.0', '10.0', 'PLE']
+        })
+        
+        # Conversão CHI e Clientes
+        for col_int in ['CHI', 'Clientes']:
+            df[col_int] = pd.to_numeric(df[col_int], errors='coerce').fillna(0).round().astype(int)
+        
+        # Tratamento Peso
+        def limpar_peso_inteiro(v):
+            if pd.isna(v) or str(v).strip() == '' or str(v).strip().lower() == 'nan':
+                return '0'
+            try:
+                val_float = float(v)
+                return str(int(round(val_float)))
+            except (ValueError, TypeError):
+                return str(v).strip()
+        df['Peso'] = df['Peso'].apply(limpar_peso_inteiro)
+
+        self.assertEqual(df['CHI'].tolist(), [1500, 851, 0])
+        self.assertEqual(df['Clientes'].tolist(), [12, 0, 0])
+        self.assertEqual(df['Peso'].tolist(), ['1', '10', 'PLE'])
+        self.assertTrue('int' in str(df['CHI'].dtype))
+
 if __name__ == '__main__':
     unittest.main()
