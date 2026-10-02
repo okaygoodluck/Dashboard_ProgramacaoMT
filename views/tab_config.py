@@ -267,7 +267,7 @@ def render_tab_config():
                     time.sleep(0.8)
                     st.session_state.pop('map_slots', None)
                     for k in list(st.session_state.keys()):
-                        if k.startswith('sel_slot_'):
+                        if isinstance(k, str) and k.startswith('sel_slot_'):
                             st.session_state.pop(k, None)
                     st.rerun()
                 else:
@@ -276,7 +276,7 @@ def render_tab_config():
         if btn_reset:
             st.session_state.pop('map_slots', None)
             for k in list(st.session_state.keys()):
-                if k.startswith('sel_slot_'):
+                if isinstance(k, str) and k.startswith('sel_slot_'):
                     st.session_state.pop(k, None)
             st.rerun()
 
