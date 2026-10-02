@@ -123,43 +123,79 @@ def render_tab_config():
         white-space: nowrap !important;
     }
     
-    /* Popover/Dropdown de seleção dos slots com largura confortável e independente do slot */
-    div[data-baseweb="popover"] {
-        min-width: 105px !important;
-        width: auto !important;
+    /* =========================================================================
+       POPOVER / DROPDOWN DE SELEÇÃO DOS SLOTS (STREAMLIT 1.57+ BASEWEB)
+       ========================================================================= */
+    /* 1. Alargar toda a árvore do Popover para 130px independentemente do slot */
+    div[data-baseweb="popover"],
+    div[data-baseweb="popover"] > div,
+    div[data-baseweb="popover"] [data-baseweb="menu"],
+    div[data-baseweb="popover"] [data-testid="stSelectboxVirtualDropdown"],
+    div[data-baseweb="popover"] [data-testid="stSelectboxVirtualDropdown"] > div,
+    div[data-baseweb="popover"] [data-testid="stSelectboxVirtualDropdown"] > div > div,
+    div[data-baseweb="popover"] ul[role="listbox"] {
+        min-width: 130px !important;
+        width: 130px !important;
         max-width: 160px !important;
+        box-sizing: border-box !important;
+    }
+    
+    /* 2. Estilo do container flutuante do popover */
+    div[data-baseweb="popover"] {
         background-color: #0f172a !important;
         border: 1px solid #475569 !important;
         border-radius: 8px !important;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8) !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85) !important;
         z-index: 999999 !important;
+        overflow: hidden !important;
     }
-    div[data-baseweb="popover"] ul[role="listbox"] {
-        min-width: 105px !important;
-        width: 100% !important;
-        max-height: 240px !important;
-        overflow-y: auto !important;
-        padding: 4px !important;
+    div[data-baseweb="popover"] > div,
+    div[data-baseweb="popover"] [data-testid="stSelectboxVirtualDropdown"] {
         background-color: #0f172a !important;
     }
+
+    /* 3. Itens da lista virtualizada / opções do select */
+    div[data-baseweb="popover"] [role="option"],
     div[data-baseweb="popover"] li[role="option"] {
-        padding: 6px 10px !important;
-        min-height: 30px !important;
+        min-width: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding-left: 10px !important;
+        padding-right: 10px !important;
+        background-color: transparent !important;
+        border-radius: 4px !important;
+        cursor: pointer !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        text-align: center !important;
-        font-size: 0.88rem !important;
-        font-weight: 800 !important;
-        color: #f8fafc !important;
-        border-radius: 4px !important;
-        margin-bottom: 2px !important;
-        cursor: pointer !important;
-        background: transparent !important;
+        margin: 0 !important;
     }
+    
+    div[data-baseweb="popover"] [role="option"]:hover,
+    div[data-baseweb="popover"] [role="option"][aria-selected="true"],
     div[data-baseweb="popover"] li[role="option"]:hover,
-    div[data-baseweb="popover"] li[aria-selected="true"] {
+    div[data-baseweb="popover"] li[role="option"][aria-selected="true"] {
         background-color: #1e293b !important;
+    }
+    
+    /* 4. Texto nítido, centralizado e perfeitamente legível */
+    div[data-baseweb="popover"] [role="option"] *,
+    div[data-baseweb="popover"] li[role="option"] * {
+        color: #ffffff !important;
+        font-size: 0.9rem !important;
+        font-weight: 800 !important;
+        text-align: center !important;
+        justify-content: center !important;
+        overflow: visible !important;
+        white-space: nowrap !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
+    
+    div[data-baseweb="popover"] [role="option"]:hover *,
+    div[data-baseweb="popover"] [role="option"][aria-selected="true"] *,
+    div[data-baseweb="popover"] li[role="option"]:hover *,
+    div[data-baseweb="popover"] li[role="option"][aria-selected="true"] * {
         color: #38bdf8 !important;
     }
     </style>
