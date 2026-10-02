@@ -738,6 +738,13 @@ def extrair_dados():
                             df_mesao['Regiao_Sigla'] = df_mesao[col_regiao_mesao].astype(str).str[:2].str.upper().str.strip()
                             mapa_regioes = df_mesao.set_index('_solic_key')['Regiao_Sigla'].to_dict()
                             
+                            # Mapeia CHI do Mesão se disponível
+                            col_chi_mesao = next((c for c in df_mesao.columns if c.strip().upper() == 'CHI'), None)
+                            if col_chi_mesao:
+                                df_mesao['_chi_val'] = pd.to_numeric(df_mesao[col_chi_mesao], errors='coerce').fillna(0)
+                                mapa_chi = df_mesao.set_index('_solic_key')['_chi_val'].to_dict()
+                                df['CHI'] = df['_solic_key'].map(mapa_chi).fillna(0)
+                            
                             df_antes_count = len(df)
                             
                             # 1. Definimos uma pontuação de prioridade para cada linha
@@ -815,8 +822,45 @@ def extrair_dados():
                     else:
                         df['Tem_Email'] = False
                 except Exception as e_email:
-                    print(f"\n[AVISO] Erro na sincronia de e-mails: {e_email}")
+                    print(f"\n[AVISO] Erro na sincronia de e-mails urgentes: {e_email}")
                     df['Tem_Email'] = False
+
+                # --- 6.1 SINCRONIA DE E-MAIL GESTÃO DECP (CHI >= 1500) ---
+                try:
+                    col_solic = next((c for c in df.columns if 'solicita' in c.lower()), None)
+                    ids_decp = []
+                    if 'CHI' in df.columns and col_solic:
+                        mask_decp = pd.to_numeric(df['CHI'], errors='coerce').fillna(0) >= 1500
+                        ids_decp = df[mask_decp][col_solic].dropna().unique().tolist()
+
+                    if ids_decp:
+                        print(f"\n[EMAIL DECP] Sincronizando e-mails para {len(ids_decp)} protocolos com CHI >= 1500...")
+                        ids_str_decp = ",".join([str(i) for i in ids_decp])
+                        path_script = os.path.join(os.path.dirname(__file__), "scripts", "sync_emails.ps1")
+
+                        cmd_decp = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, ids_str_decp, "SHM-gestaodecp@cemig.com.br"]
+                        try:
+                            result_decp = subprocess.run(cmd_decp, capture_output=True, text=True, encoding='utf-8', timeout=60)
+                            if result_decp.returncode == 0:
+                                try:
+                                    map_email_decp = json.loads(result_decp.stdout)
+                                    df['Tem_Email_DECP'] = df[col_solic].astype(str).map(lambda x: map_email_decp.get(x, False))
+                                    print(f"    -> Sincronização DECP concluída. {df['Tem_Email_DECP'].sum()} e-mails confirmados.")
+                                except Exception as e_json_decp:
+                                    print(f"    -> [ERRO] Falha ao processar JSON do e-mail DECP: {e_json_decp}")
+                                    df['Tem_Email_DECP'] = False
+                            else:
+                                print("    -> [AVISO] Falha no motor de e-mail DECP (Outlook pode estar fechado).")
+                                df['Tem_Email_DECP'] = False
+                        except subprocess.TimeoutExpired:
+                            print("    -> [ALERTA] Timeout: O Outlook demorou mais de 60s para responder para DECP.")
+                            df['Tem_Email_DECP'] = False
+                    else:
+                        print("\n[EMAIL DECP] Nenhuma solicitação com CHI >= 1500 detectada para sincronização.")
+                        df['Tem_Email_DECP'] = False
+                except Exception as e_email_decp:
+                    print(f"\n[AVISO] Erro na sincronia de e-mails DECP: {e_email_decp}")
+                    df['Tem_Email_DECP'] = False
     
                 # --- 1. SALVAR NO BANCO DE DADOS (SQLite) ---
                 try:

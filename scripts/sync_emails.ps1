@@ -20,6 +20,9 @@ try {
     $namespace = $outlook.GetNamespace("MAPI")
     
     $emailCaixa = "SHM-man-urgencia@cemig.com.br"
+    if ($args.Count -ge 2 -and -not [string]::IsNullOrWhiteSpace($args[1])) {
+        $emailCaixa = $args[1].Trim()
+    }
     $recipient = $namespace.CreateRecipient($emailCaixa)
     
     if ($recipient.Resolve()) {

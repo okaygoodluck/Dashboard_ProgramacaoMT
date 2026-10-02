@@ -441,6 +441,19 @@ def load_latest_data():
                 st.sidebar.warning(f"Erro ao carregar Mesão Diário: {e}")
             # --------------------------------
 
+            # Guarda para coluna de e-mail da Gestão DECP
+            if 'Tem_Email_DECP' not in df.columns:
+                df['Tem_Email_DECP'] = False
+            else:
+                df['Tem_Email_DECP'] = df['Tem_Email_DECP'].fillna(False).astype(bool)
+
+            # Aplica sobreposição de sincronia manual da sessão se existir
+            if 'map_email_decp' in st.session_state and isinstance(st.session_state.map_email_decp, dict):
+                col_sol_check = next((c for c in df.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
+                if col_sol_check:
+                    for sol_k, has_em in st.session_state.map_email_decp.items():
+                        df.loc[df[col_sol_check].astype(str) == str(sol_k), 'Tem_Email_DECP'] = bool(has_em)
+
             return df, col_malha, col_regiao, col_situacao, col_urgencia, col_data, data_extracao
         else:
             return None, None, None, None, None, None, None

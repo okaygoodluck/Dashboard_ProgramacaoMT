@@ -534,6 +534,28 @@ def carregar_dados_recentes():
     finally:
         conn.close()
 
+def atualizar_email_decp_bd(map_email):
+    """Atualiza a coluna Tem_Email_DECP na tabela demanda_atual para as solicitações mapeadas."""
+    if not map_email:
+        return
+    conn = get_connection_write()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(demanda_atual)")
+        cols = [c[1] for c in cursor.fetchall()]
+        if 'Tem_Email_DECP' not in cols:
+            cursor.execute("ALTER TABLE demanda_atual ADD COLUMN Tem_Email_DECP BOOLEAN DEFAULT 0")
+
+        col_sol = next((c for c in cols if 'solicita' in c.lower() and 'status' not in c.lower()), None)
+        if col_sol:
+            for solic, tem_email in map_email.items():
+                cursor.execute(f"UPDATE demanda_atual SET Tem_Email_DECP = ? WHERE CAST({col_sol} AS TEXT) = ?", (1 if tem_email else 0, str(solic)))
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Erro ao atualizar status de email DECP: {e}")
+    finally:
+        conn.close()
+
 # --- NOVAS FUNÇÕES DE SEGURANÇA E GESTÃO ---
 
 def verificar_login(matricula, password):
