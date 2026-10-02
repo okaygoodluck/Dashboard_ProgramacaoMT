@@ -192,5 +192,23 @@ class TestGestaoDECP(unittest.TestCase):
         ]
         self.assertIn('Is_Aprovada', cols_to_hide)
 
+    def test_chi_critico_kpi_calculation(self):
+        """Verifica o cálculo de contagem e filtro do novo KPI CHI >= 1500."""
+        df = pd.DataFrame([
+            {'Solicitação': '1', 'CHI': 1500},
+            {'Solicitação': '2', 'CHI': 2500.5},
+            {'Solicitação': '3', 'CHI': 800},
+            {'Solicitação': '4', 'CHI': None},
+            {'Solicitação': '5', 'CHI': '1600'}
+        ])
+        col_chi_calc = next((c for c in df.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), None)
+        self.assertIsNotNone(col_chi_calc)
+        
+        mask = pd.to_numeric(df[col_chi_calc], errors='coerce').fillna(0) >= 1500
+        df_chi_critico = df[mask]
+        
+        self.assertEqual(len(df_chi_critico), 3) # 1500, 2500.5, 1600
+        self.assertEqual(df_chi_critico['Solicitação'].tolist(), ['1', '2', '5'])
+
 if __name__ == '__main__':
     unittest.main()

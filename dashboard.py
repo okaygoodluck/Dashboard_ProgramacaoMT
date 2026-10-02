@@ -800,6 +800,14 @@ if df is not None:
     qtd_alerta = len(df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
     qtd_aprovadas = len(df_filtered[df_filtered['Is_Aprovada'] == True]) if 'Is_Aprovada' in df_filtered.columns else 0
     qtd_elaboracao = len(df_filtered[df_filtered['Is_Elaboracao'] == True]) if 'Is_Elaboracao' in df_filtered.columns else 0
+
+    col_chi_calc = next((c for c in df_filtered.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), None)
+    if col_chi_calc:
+        df_chi_critico = df_filtered[pd.to_numeric(df_filtered[col_chi_calc], errors='coerce').fillna(0) >= 1500]
+        qtd_chi_critico = len(df_chi_critico)
+    else:
+        df_chi_critico = df_filtered.iloc[0:0]
+        qtd_chi_critico = 0
     
     # --- CABEÇALHO DE CONTROLE ---
     st.markdown(f"""
@@ -839,7 +847,7 @@ if df is not None:
             st.info("Nenhuma solicitação encontrada para este filtro.")
         else:
             # Exibir colunas mais relevantes primeiro
-            cols_prioridade = [col_sol, 'Responsavel', col_regiao, col_malha, 'Status_Prazo', 'Dias_Uteis_Restantes']
+            cols_prioridade = [col_sol, 'Responsavel', col_regiao, col_malha, 'Status_Prazo', 'CHI', 'Dias_Uteis_Restantes']
             cols_exibicao = [c for c in cols_prioridade if c in df_kpi.columns]
             cols_restantes = [c for c in df_kpi.columns if c not in cols_exibicao]
             st.dataframe(df_kpi[cols_exibicao + cols_restantes], use_container_width=True, hide_index=True)
@@ -864,7 +872,7 @@ if df is not None:
     </style>
     """, unsafe_allow_html=True)
 
-    kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5, kpi_col6 = st.columns(6)
+    kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5, kpi_col6, kpi_col7 = st.columns(7)
     
     with kpi_col1:
         premium_metric_card("Total Geral", total_solicitacoes, icon_name="people", color="#3b82f6", is_vanguard=True)
@@ -880,18 +888,23 @@ if df is not None:
         premium_metric_card("Foras do Prazo (Caixa)", qtd_urgencia, icon_name="flash", color="#fbbf24")
         if st.button("Fora do Prazo", key="kpi_btn_urgentes", use_container_width=True):
             show_kpi_dialog("Foras do Prazo (Caixa)", df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
-        
+
     with kpi_col4:
+        premium_metric_card("CHI ≥ 1500", qtd_chi_critico, icon_name="danger", color="#f97316")
+        if st.button("CHI ≥ 1500", key="kpi_btn_chi", use_container_width=True):
+            show_kpi_dialog("Solicitações com CHI ≥ 1500", df_chi_critico)
+        
+    with kpi_col5:
         premium_metric_card("8 dias - Prazo p/ Enviar Aviso", qtd_alerta, icon_name="info", color="#818cf8")
         if st.button("Aviso (8 dias)", key="kpi_btn_alertas", use_container_width=True):
             show_kpi_dialog("8 dias - Prazo p/ Enviar Aviso", df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
         
-    with kpi_col5:
+    with kpi_col6:
         premium_metric_card("Total Em elaboração", qtd_elaboracao, icon_name="edit", color="#38bdf8")
         if st.button("Em elaboração", key="kpi_btn_elaboracao", use_container_width=True):
             show_kpi_dialog("Total Em elaboração", df_filtered[df_filtered['Is_Elaboracao'] == True])
         
-    with kpi_col6:
+    with kpi_col7:
         premium_metric_card("Total de Aprovadas", qtd_aprovadas, icon_name="tick", color="#34d399")
         if st.button("Aprovadas", key="kpi_btn_aprovadas", use_container_width=True):
             show_kpi_dialog("Total de Aprovadas", df_filtered[df_filtered['Is_Aprovada'] == True])
