@@ -5,6 +5,8 @@ import subprocess
 import zipfile
 
 # Caminhos da Rede (Sincronizado com db_manager.py)
+_UNC_FQDN_ACC = r"\\SACORPARQ1.cemig.ad.corp\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
+_UNC_FQDN_NORM = r"\\SACORPARQ1.cemig.ad.corp\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
 _UNC_REDE_ACC = r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
 _UNC_REDE_NORM = r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
 _REDE_ACC = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
@@ -12,12 +14,14 @@ _REDE_NORM = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard M
 
 _CANDIDATOS_BUILD = [
     os.environ.get("CCP_DASHBOARD_DB_PATH"),
+    _UNC_FQDN_ACC,
+    _UNC_FQDN_NORM,
     _UNC_REDE_ACC,
     _UNC_REDE_NORM,
     _REDE_ACC,
     _REDE_NORM
 ]
-REDE_BASE = next((c for c in _CANDIDATOS_BUILD if c and os.path.exists(c)), _UNC_REDE_ACC)
+REDE_BASE = next((c for c in _CANDIDATOS_BUILD if c and os.path.exists(c)), _UNC_FQDN_ACC)
 
 def build_package():
     print("========================================================")
@@ -54,6 +58,7 @@ def build_package():
 
     # 2. Whitelist de arquivos essenciais
     essential_files = [
+        '.env',
         'dashboard.py',
         'extrator_demanda.py',
         'db_manager.py',

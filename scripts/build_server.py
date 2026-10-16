@@ -27,6 +27,7 @@ def build_server_package():
 
     # 2. Arquivos de Código e Configuração
     essential_files = [
+        '.env',
         'dashboard.py',
         'extrator_demanda.py',
         'db_manager.py',

@@ -379,6 +379,7 @@ def load_latest_data():
                 pasta_mesao = os.environ.get("CCP_MESAO_DIARIO_PATH")
                 if not pasta_mesao or not os.path.exists(pasta_mesao):
                     _cands_mesao = [
+                        r"\\SACORPARQ1.cemig.ad.corp\GROUPS\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario",
                         r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario",
                         r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario"
                     ]
@@ -625,6 +626,29 @@ if df is not None:
                 <span style="display: inline-block; margin-top: 2px; padding: 2px 8px; border-radius: 6px; font-size: 0.6rem; font-weight: 800; letter-spacing: 0.5px; {badge_style}">
                     {badge_label}
                 </span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # STATUS DA CONEXÃO COM O BANCO DE DADOS
+    db_status = db_manager.get_db_status()
+    if db_status.get("is_network"):
+        status_bg = "background: rgba(16, 185, 129, 0.10); border: 1px solid rgba(16, 185, 129, 0.30);"
+        status_dot = "#10b981"
+        status_title = "REDE CORPORATIVA"
+        status_desc = "Base conectada e sincronizada"
+    else:
+        status_bg = "background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35);"
+        status_dot = "#f59e0b"
+        status_title = "MODO LOCAL (OFFLINE)"
+        status_desc = "Rede inacessível. Conecte-se à VPN Cemig."
+
+    st.sidebar.markdown(f"""
+        <div style="{status_bg} padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+            <div style="width: 8px; height: 8px; border-radius: 50%; background: {status_dot}; box-shadow: 0 0 8px {status_dot}; flex-shrink: 0;"></div>
+            <div style="flex: 1; min-width: 0;">
+                <div style="font-size: 0.68rem; font-weight: 800; color: #f8fafc; letter-spacing: 0.4px;">{status_title}</div>
+                <div style="font-size: 0.62rem; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{status_desc}</div>
             </div>
         </div>
     """, unsafe_allow_html=True)

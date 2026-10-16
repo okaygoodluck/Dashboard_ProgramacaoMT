@@ -713,6 +713,7 @@ def extrair_dados():
                     pasta_mesao = os.environ.get("CCP_MESAO_DIARIO_PATH")
                     if not pasta_mesao or not os.path.exists(pasta_mesao):
                         _cands_mesao = [
+                            r"\\SACORPARQ1.cemig.ad.corp\GROUPS\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario",
                             r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario",
                             r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario"
                         ]

@@ -66,6 +66,8 @@ try:
 except ImportError:
     pass # Permite rodar sem a biblioteca python-dotenv, caso não esteja instalada ainda
 
+_UNC_FQDN_ACC = r"\\SACORPARQ1.cemig.ad.corp\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
+_UNC_FQDN_NORM = r"\\SACORPARQ1.cemig.ad.corp\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
 _UNC_REDE_ACC = r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
 _UNC_REDE_NORM = r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programacao\Dashboard MT"
 _REDE_ACC = r"I:\IT\ODCO\PROGRAMACAO_MT\1 - Sistemas da programação\Dashboard MT"
@@ -75,6 +77,8 @@ _ENV_REDE_BASE = os.environ.get("CCP_DASHBOARD_DB_PATH")
 
 _CANDIDATOS_REDE = [
     _ENV_REDE_BASE,
+    _UNC_FQDN_ACC,
+    _UNC_FQDN_NORM,
     _UNC_REDE_ACC,
     _UNC_REDE_NORM,
     _REDE_ACC,
@@ -88,7 +92,7 @@ for cand in _CANDIDATOS_REDE:
         break
 
 if not REDE_BASE:
-    REDE_BASE = _ENV_REDE_BASE or _UNC_REDE_ACC
+    REDE_BASE = _ENV_REDE_BASE or _UNC_FQDN_ACC
 
 REDE_APP_PATH = os.path.join(REDE_BASE, DB_APP_NAME)
 REDE_DATA_PATH = os.path.join(REDE_BASE, DB_DATA_NAME)
@@ -207,6 +211,26 @@ def get_data_db_path():
             return alt_network
             
     return p if p else LOCAL_DB_NAME # Fallback para o local se nada for encontrado
+
+def get_db_status() -> dict:
+    """
+    Retorna o diagnóstico da base de dados ativa:
+    - is_network: True se os dados de demanda estão sendo lidos da rede corporativa (UNC ou drive mapeado)
+    - data_path: caminho absoluto do banco de dados de demanda em uso
+    - app_path: caminho absoluto do banco de configurações/usuários
+    - rede_base: pasta base de rede identificada ou configurada
+    - is_server: True se a aplicação está rodando em modo servidor dedicado
+    """
+    data_path = get_data_db_path()
+    app_path = get_app_db_path()
+    is_network = _is_network_path(data_path) if data_path else False
+    return {
+        "is_network": is_network,
+        "data_path": data_path,
+        "app_path": app_path,
+        "rede_base": REDE_BASE,
+        "is_server": is_server_mode()
+    }
 
 def publicar_db_rede(retries=3, delay_seconds=2):
     """

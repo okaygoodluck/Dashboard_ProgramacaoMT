@@ -67,5 +67,15 @@ class TestDemandAnalysisFixes(unittest.TestCase):
         conn_app.close()
         conn_data.close()
 
+    def test_db_status_diagnostics(self):
+        """Verifica se get_db_status() retorna o diagnóstico completo da base de dados."""
+        status = db_manager.get_db_status()
+        self.assertIn("is_network", status)
+        self.assertIn("data_path", status)
+        self.assertIn("app_path", status)
+        self.assertIn("rede_base", status)
+        self.assertIn("is_server", status)
+        self.assertIsInstance(status["is_network"], bool)
+
 if __name__ == '__main__':
     unittest.main()
