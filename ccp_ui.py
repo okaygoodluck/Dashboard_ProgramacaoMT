@@ -383,12 +383,22 @@ def login_screen(cookie_manager=None):
                 if user_data:
                     matricula, nome, nivel, is_provisional = user_data
                     
-                    # Gera um TOKEN REAL de persistência no Banco de Dados
-                    session_token = db_manager.gerar_token_sessao(matricula)
-                    if session_token:
-                        # Passamos o token instantaneamente para o dashboard.py via session_state (100% seguro contra reruns)
-                        st.session_state['login_token_ready'] = session_token
-                        st.rerun()
+                    # 1. Autentica a sessão do Streamlit imediatamente (independe de permissão de escrita na rede)
+                    st.session_state.logged_in = True
+                    st.session_state.user_matricula = matricula
+                    st.session_state.user_nome = nome
+                    st.session_state.user_nivel = nivel
+                    st.session_state.senha_provisoria = bool(is_provisional)
+                    
+                    # 2. Tenta gerar e salvar token para persistência (30 dias no cookie/banco local)
+                    try:
+                        session_token = db_manager.gerar_token_sessao(matricula)
+                        if session_token:
+                            st.session_state['login_token_ready'] = session_token
+                    except Exception as e_tok:
+                        print(f"[AUTH AVISO] Sessão iniciada sem persistência de longo prazo: {e_tok}")
+                        
+                    st.rerun()
                 else:
                     st.error("Credenciais inválidas.")
         

@@ -262,7 +262,7 @@ def tratar_snapshot_diario(total, atrasadas, alertas, urgencias, no_prazo):
         if df_hist.iloc[0]['data_ref'] == hoje:
             needs_update = False
             
-    if needs_update:
+    if needs_update and db_manager.is_server_mode():
         kpis = {
             'total': total,
             'atrasadas': atrasadas,
@@ -554,23 +554,23 @@ if df is not None:
         df['Responsavel'] = df['Responsavel_Regiao']
         df['Matricula'] = df['Matricula_Regiao']
 
-    # 4. Grava novas travas no banco para solicitações "Em elaboração" que não estavam travadas
-    # Se 'Is_Elaboracao' é True e ainda não estava na tabela de travas, ele salva a trava agora.
-    solicitacoes_ja_travadas = df_travadas['solicitacao'].tolist() if not df_travadas.empty else []
-    novas_para_travar = df[(df['Is_Elaboracao'] == True) & (df['Matricula'].notna()) & (~df[col_sol].astype(str).str.strip().isin(solicitacoes_ja_travadas))]
-    
-    if not novas_para_travar.empty:
-        db_manager.travar_solicitacoes(novas_para_travar[[col_sol, 'Matricula']].rename(columns={col_sol: 'Solicitação'}))
+    # 4. Grava novas travas e snapshots apenas se estiver em modo servidor (evita escrita em rede readonly no cliente)
+    if db_manager.is_server_mode():
+        solicitacoes_ja_travadas = df_travadas['solicitacao'].tolist() if not df_travadas.empty else []
+        novas_para_travar = df[(df['Is_Elaboracao'] == True) & (df['Matricula'].notna()) & (~df[col_sol].astype(str).str.strip().isin(solicitacoes_ja_travadas))]
+        
+        if not novas_para_travar.empty:
+            db_manager.travar_solicitacoes(novas_para_travar[[col_sol, 'Matricula']].rename(columns={col_sol: 'Solicitação'}))
 
-    # 4.5 Remove travas antigas de solicitações que já não estão mais "Em elaboração"
-    solicitacoes_hoje_em_elaboracao = df[df['Is_Elaboracao'] == True][col_sol].astype(str).str.strip().tolist()
-    travas_para_remover = [s for s in solicitacoes_ja_travadas if s not in solicitacoes_hoje_em_elaboracao]
-    
-    if travas_para_remover:
-        db_manager.destravar_solicitacoes(travas_para_remover)
+        # 4.5 Remove travas antigas de solicitações que já não estão mais "Em elaboração"
+        solicitacoes_hoje_em_elaboracao = df[df['Is_Elaboracao'] == True][col_sol].astype(str).str.strip().tolist()
+        travas_para_remover = [s for s in solicitacoes_ja_travadas if s not in solicitacoes_hoje_em_elaboracao]
+        
+        if travas_para_remover:
+            db_manager.destravar_solicitacoes(travas_para_remover)
 
-    # 5. Atualiza o snapshot de pendentes do dia com os dados atuais mapeados
-    db_manager.registrar_snapshot_pendentes(df)
+        # 5. Atualiza o snapshot de pendentes do dia com os dados atuais mapeados
+        db_manager.registrar_snapshot_pendentes(df)
 
     # --- DEFINIÇÃO DE ESCOPO DE KPIs (Regra de Acesso) ---
     if st.session_state.user_nivel == "Usuario":

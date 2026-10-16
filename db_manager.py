@@ -617,11 +617,11 @@ def atualizar_email_urgencia_bd(map_email):
 # --- NOVAS FUNÇÕES DE SEGURANÇA E GESTÃO ---
 
 def verificar_login(matricula, password):
-    """Verifica as credenciais do usuário com migração suave para bcrypt."""
+    """Verifica as credenciais do usuário com suporte a leitura em bases somente leitura."""
     import hashlib
     import bcrypt
     
-    conn = get_connection_config()
+    conn = get_connection_config_read()
     try:
         cursor = conn.cursor()
         # COLLATE NOCASE para permitir c012345 ou C012345
@@ -637,10 +637,15 @@ def verificar_login(matricula, password):
         if len(stored_hash) == 64 and not stored_hash.startswith('$'):
             senha_hash_sha256 = hashlib.sha256(password.encode()).hexdigest()
             if stored_hash == senha_hash_sha256:
-                # Migração suave para bcrypt
-                novo_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                conn.execute("UPDATE usuarios SET password_hash = ? WHERE matricula = ? COLLATE NOCASE", (novo_hash, matricula))
-                conn.commit()
+                # Migração suave para bcrypt (apenas tenta se o banco for gravável)
+                try:
+                    conn_w = get_connection_config()
+                    novo_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                    conn_w.execute("UPDATE usuarios SET password_hash = ? WHERE matricula = ? COLLATE NOCASE", (novo_hash, matricula))
+                    conn_w.commit()
+                    conn_w.close()
+                except Exception:
+                    pass
                 return user_row[:4]
             return None
         else:
@@ -1021,6 +1026,10 @@ def deduplicar_historico_eventos():
     Remove duplicatas verdadeiras na tabela eventos_diarios, mantendo apenas 
     a ocorrência mais antiga para o mesmo evento no mesmo dia (solicitacao, tipo_evento, date(data_evento)).
     """
+    path = get_app_db_path()
+    if not is_server_mode() and path and _is_network_path(path):
+        return 0
+
     conn = get_connection_config()
     try:
         cursor = conn.cursor()
@@ -1049,6 +1058,10 @@ def sanitizar_eventos_tratadas_ativas():
     ativas e presentes em 'demanda_atual'. Isso desbloqueia as solicitações
     para que os técnicos recebam o devido crédito quando forem efetivamente finalizadas.
     """
+    path = get_app_db_path()
+    if not is_server_mode() and path and _is_network_path(path):
+        return 0
+
     conn_app = get_connection_config()
     conn_data = get_connection_read()
     try:
@@ -1087,6 +1100,12 @@ def sanitizar_eventos_tratadas_ativas():
 
 def init_database():
     """Inicializa o banco de dados do zero se não existir (Auto-Healing)."""
+    path = get_app_db_path()
+    # Em modo cliente conectado à rede, a base já é mantida e gerenciada pelo servidor.
+    # Evita tentativas de criação/limpeza em pastas somente leitura da rede.
+    if not is_server_mode() and path and _is_network_path(path):
+        return
+
     conn = get_connection_config()
     try:
         # 1. Tabela de Usuários
@@ -1225,60 +1244,130 @@ def init_database():
     finally:
         conn.close()
 
+def get_session_connection():
+    """
+    Retorna conexão para persistência local de sessões/tokens.
+    Salva no banco local 'ccp_local.db' para garantir escrita mesmo quando a base de rede for somente leitura.
+    """
+    local_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ccp_local.db")
+    conn = sqlite3.connect(local_db, timeout=10)
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS sessoes_persistentes (
+            token TEXT PRIMARY KEY,
+            matricula TEXT NOT NULL,
+            data_expiracao TIMESTAMP NOT NULL
+        )
+    ''')
+    return conn
+
 def gerar_token_sessao(matricula):
-    """Gera um novo token de sessão com validade de 30 dias."""
+    """Gera um novo token de sessão com validade de 30 dias com persistência local resiliente."""
     import secrets
     import datetime
     
     token = secrets.token_urlsafe(32)
-    expiracao = get_agora_br() + datetime.timedelta(days=30)
+    expiracao = (get_agora_br() + datetime.timedelta(days=30)).isoformat()
     
-    conn = get_connection_config()
+    # 1. Prioriza persistência local segura (ccp_local.db - sempre gravável na estação do usuário)
     try:
+        conn_local = get_session_connection()
+        conn_local.execute('''
+            INSERT OR REPLACE INTO sessoes_persistentes (token, matricula, data_expiracao)
+            VALUES (?, ?, ?)
+        ''', (token, matricula, expiracao))
+        conn_local.commit()
+        conn_local.close()
+        return token
+    except Exception as e_loc:
+        print(f"[AUTH AVISO] Falha ao gravar sessão no banco local: {e_loc}")
+
+    # 2. Fallback: tenta banco corporativo caso seja gravável (modo servidor/ADM)
+    try:
+        conn = get_connection_config()
         conn.execute('''
             INSERT INTO sessoes_persistentes (token, matricula, data_expiracao)
             VALUES (?, ?, ?)
         ''', (token, matricula, expiracao))
         conn.commit()
+        conn.close()
         return token
     except Exception:
-        return None
-    finally:
-        conn.close()
+        pass
+        
+    return token
 
 def validar_token_sessao(token):
     """Verifica se um token é válido e retorna os dados do usuário."""
-    import datetime
+    if not token:
+        return None
+        
+    matricula = None
+    agora_iso = get_agora_br().isoformat()
     
-    conn = get_connection_config()
+    # 1. Verifica primeiro no banco local de sessões
     try:
-        cursor = conn.cursor()
+        conn_local = get_session_connection()
+        cursor = conn_local.cursor()
         cursor.execute('''
             SELECT matricula FROM sessoes_persistentes 
             WHERE token = ? AND data_expiracao > ?
-        ''', (token, get_agora_br()))
+        ''', (token, agora_iso))
         result = cursor.fetchone()
-        
+        conn_local.close()
         if result:
             matricula = result[0]
-            # Busca dados completos do usuário
+    except Exception:
+        pass
+
+    # 2. Fallback: verifica no banco da rede se não achou no local
+    if not matricula:
+        try:
+            conn = get_connection_config_read()
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT matricula FROM sessoes_persistentes 
+                WHERE token = ? AND data_expiracao > ?
+            ''', (token, agora_iso))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                matricula = result[0]
+        except Exception:
+            pass
+        
+    if matricula:
+        # Busca dados atualizados do usuário na base corporativa oficial em modo leitura
+        try:
+            conn_user = get_connection_config_read()
+            cursor = conn_user.cursor()
             cursor.execute("SELECT matricula, nome, nivel, senha_provisoria FROM usuarios WHERE matricula = ? COLLATE NOCASE", (matricula,))
-            return cursor.fetchone()
-        return None
-    finally:
-        conn.close()
+            user_data = cursor.fetchone()
+            conn_user.close()
+            return user_data
+        except Exception as e:
+            print(f"[AUTH] Erro ao buscar dados de usuário do token: {e}")
+            
+    return None
 
 def remover_sessao(token):
-    """Remove um token de sessão (logout)."""
-    conn = get_connection_config()
+    """Remove um token de sessão (logout) nos bancos local e de rede."""
+    if not token:
+        return True
     try:
+        conn_local = get_session_connection()
+        conn_local.execute("DELETE FROM sessoes_persistentes WHERE token = ?", (token,))
+        conn_local.commit()
+        conn_local.close()
+    except Exception:
+        pass
+    try:
+        conn = get_connection_config()
         conn.execute("DELETE FROM sessoes_persistentes WHERE token = ?", (token,))
         conn.commit()
-        return True
-    except Exception:
-        return False
-    finally:
         conn.close()
+    except Exception:
+        pass
+    return True
 
 def salvar_kpi_diario(kpis):
     """

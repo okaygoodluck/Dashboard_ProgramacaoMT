@@ -77,5 +77,21 @@ class TestDemandAnalysisFixes(unittest.TestCase):
         self.assertIn("is_server", status)
         self.assertIsInstance(status["is_network"], bool)
 
+    def test_session_persistence_local(self):
+        """Verifica se gerar_token_sessao e validar_token_sessao gravam e leem localmente com sucesso."""
+        token = db_manager.gerar_token_sessao('c057573')
+        self.assertIsNotNone(token)
+        self.assertIsInstance(token, str)
+        self.assertTrue(len(token) > 10)
+        
+        user_info = db_manager.validar_token_sessao(token)
+        self.assertIsNotNone(user_info)
+        self.assertEqual(user_info[0].lower(), 'c057573')
+        
+        # Testa remoção de sessão
+        db_manager.remover_sessao(token)
+        user_info_apos = db_manager.validar_token_sessao(token)
+        self.assertIsNone(user_info_apos)
+
 if __name__ == '__main__':
     unittest.main()
