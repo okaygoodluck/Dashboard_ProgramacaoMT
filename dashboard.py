@@ -1624,20 +1624,30 @@ if df is not None:
 
 
 else:
-    st.warning("⚠️ Nenhum arquivo de dados encontrado. Execute o `agendador.py` primeiro para gerar o relatório.")
-    st.info("Aguardando geração do primeiro relatório...")
+    st.error("⚠️ **Não foi possível conectar ao banco de dados na rede corporativa.**")
+    st.info("""
+    **Orientações para acesso em Home Office:**
+    1. Certifique-se de que o seu computador está conectado à **VPN da Cemig**.
+    2. Caso tenha acabado de conectar à VPN, aguarde alguns segundos para o Windows reconhecer o servidor.
+    3. Clique no botão abaixo para restabelecer a conexão com a base de dados oficial.
+    """)
     
-    # Botão para tentar forçar execução (opcional, avançado)
-    if st.button("Tentar executar extrator agora"):
-        import subprocess
-        import sys
-        try:
-            with st.spinner('Executando extrator... (Isso pode levar alguns minutos)'):
-                subprocess.run([sys.executable, "extrator_demanda.py"], check=True)
-            st.success("Execução finalizada! Recarregue a página.")
+    col_rec1, col_rec2, _ = st.columns([1.6, 1.6, 3])
+    with col_rec1:
+        if st.button("🔄 Tentar Reconectar Agora", type="primary", use_container_width=True):
             st.rerun()
-        except Exception as e:
-            st.error(f"Erro ao executar: {e}")
+    with col_rec2:
+        if os.path.exists("extrator_demanda.py") and db_manager.is_server_mode():
+            if st.button("Executar Extrator Servidor", use_container_width=True):
+                import subprocess
+                import sys
+                try:
+                    with st.spinner('Executando extrator no servidor...'):
+                        subprocess.run([sys.executable, "extrator_demanda.py"], check=True)
+                    st.success("Extração finalizada com sucesso!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao executar extrator: {e}")
 
 # --- AUTO REFRESH SILENCIOSO (Sincronização Periódica de Dados) ---
 # Aumentado para 10 minutos para evitar que a aba do usuário seja resetada constantemente

@@ -45,7 +45,24 @@ def build_package():
         try:
             shutil.rmtree(dist_dir)
         except Exception as e:
-            print(f" [!] Aviso na limpeza: {e}. Tentando prosseguir...")
+            print(f" [!] Aviso na limpeza total: {e}. Executando limpeza seletiva...")
+            # Limpar resíduos de builds anteriores se rmtree falhar (ex: arquivos bloqueados no python)
+            for item in os.listdir(dist_dir):
+                item_path = os.path.join(dist_dir, item)
+                if item == "python":
+                    continue  # Mantém o runtime python se estiver em uso
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path, ignore_errors=True)
+                else:
+                    try: os.remove(item_path)
+                    except: pass
+
+    # Garantir que nenhum banco de dados ou script legado sobreviveu
+    for root, dirs, files in os.walk(dist_dir):
+        for f in files:
+            if f.endswith('.db') or f in ('extrator_demanda.py', 'agendador.py', 'requirements.txt'):
+                try: os.remove(os.path.join(root, f))
+                except: pass
     
     if os.path.exists(zip_path):
         print(f"[*] Removendo ZIP antigo...")
@@ -56,47 +73,25 @@ def build_package():
         
     os.makedirs(dist_dir, exist_ok=True)
 
-    # 2. Whitelist de arquivos essenciais
+    # 2. Whitelist de arquivos essenciais do Cliente Portátil (Thin Client)
+    # NÃO incluir bancos de dados (.db): a versão portátil conecta 100% na base oficial da rede
     essential_files = [
         '.env',
         'dashboard.py',
-        'extrator_demanda.py',
         'db_manager.py',
-        'ccp_ui.py',
-        'requirements.txt',
-        'ccp_app.db',
-        'demanda.db'
+        'ccp_ui.py'
     ]
 
-    print("[*] Copiando arquivos essenciais...")
+    print("[*] Copiando arquivos essenciais da interface...")
     for f in essential_files:
         src = os.path.join(root_dir, f)
-        
-        # Se não achar local, tenta buscar na rede (para bancos de dados)
-        if not os.path.exists(src) and f.endswith('.db'):
-            network_src = os.path.join(REDE_BASE, f)
-            if os.path.exists(network_src):
-                print(f" [REDE] Buscando {f} na rede...")
-                shutil.copy2(network_src, dist_dir)
-                print(f" [OK] {f} (via rede)")
-                continue
-            else:
-                # Caso especial para ccp_data.db -> demanda.db
-                if f == "demanda.db":
-                    alt_network = os.path.join(REDE_BASE, "ccp_data.db")
-                    if os.path.exists(alt_network):
-                        print(f" [REDE] Buscando dados em ccp_data.db...")
-                        shutil.copy2(alt_network, os.path.join(dist_dir, "demanda.db"))
-                        print(f" [OK] demanda.db (via ccp_data.db)")
-                        continue
-
         if os.path.exists(src):
             shutil.copy2(src, dist_dir)
             print(f" [OK] {f}")
         else:
             print(f" [!] AVISO: {f} não encontrado.")
 
-    # 3. Copiar pastas modulares (apenas as necessárias para rodar)
+    # 3. Copiar pastas modulares da interface
     essential_folders = ['components', 'views', '.streamlit']
     for folder in essential_folders:
         src = os.path.join(root_dir, folder)
@@ -104,15 +99,13 @@ def build_package():
             shutil.copytree(src, os.path.join(dist_dir, folder), dirs_exist_ok=True)
             print(f" [OK] Pasta {folder}/")
 
-    # 3.1. Copiar apenas os scripts essenciais (excluir scripts de build e github)
+    # 3.1. Copiar apenas os scripts auxiliares do cliente (sincronização de e-mails)
     essential_scripts = [
-        'agendador.py',
-        'iniciar_agendador.bat',
-        'configurar_credenciais.py',
-        'configurar_credenciais.bat',
         'sync_emails.ps1'
     ]
     scripts_dest = os.path.join(dist_dir, 'scripts')
+    if os.path.exists(scripts_dest):
+        shutil.rmtree(scripts_dest, ignore_errors=True)
     os.makedirs(scripts_dest, exist_ok=True)
     print("[*] Copiando scripts essenciais...")
     for script in essential_scripts:
@@ -130,9 +123,9 @@ def build_package():
         shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
         
         # PRÉ-INSTALAR DEPENDÊNCIAS
-        print(" [*] Pré-instalando dependências no ambiente portátil...")
+        print(" [*] Verificando dependências no ambiente portátil...")
         py_exe = os.path.join(python_dest, 'python.exe')
-        req_path = os.path.join(dist_dir, 'requirements.txt')
+        req_path = os.path.join(root_dir, 'requirements.txt')
         
         import glob
         pth_files = glob.glob(os.path.join(python_dest, "python*._pth"))
@@ -156,13 +149,21 @@ def build_package():
                 shutil.copy2(os.path.join(dlls_dir, f), python_dest)
             shutil.rmtree(dlls_dir, ignore_errors=True)
 
+        # Remover pastas desnecessárias para economizar espaço
+        share_dir = os.path.join(python_dest, 'share')
+        if os.path.exists(share_dir):
+            shutil.rmtree(share_dir, ignore_errors=True)
+        include_dir = os.path.join(python_dest, 'include')
+        if os.path.exists(include_dir):
+            shutil.rmtree(include_dir, ignore_errors=True)
+
         # CRIAR o arquivo de isolação correto (.pth)
-        # Como as DLLs estao na raiz, basta incluir a raiz e a Lib
-        pth_content = ".\nLib\nLib/site-packages\npython314.zip\n"
+        # Inclui o diretório raiz (.), pasta do app pai (..), Lib e site-packages
+        pth_content = ".\n..\nLib\nLib/site-packages\npython314.zip\nimport site\n"
         with open(os.path.join(python_dest, "python314._pth"), "w") as f:
             f.write(pth_content)
         
-        print(" [OK] Runtime Python configurado com isolamento total.")
+        print(" [OK] Runtime Python configurado com isolamento total e vínculo ao app.")
     else:
         print("[!] ERRO CRITICO: Pasta 'python' nao encontrada na raiz!")
         return
@@ -194,8 +195,13 @@ if errorlevel 1 (
     print(f"[*] Criando pacote final {zip_name}...")
     try:
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for root, _, files in os.walk(dist_dir):
+            for root, dirs, files in os.walk(dist_dir):
+                # Excluir pastas desnecessárias do arquivo compactado
+                dirs[:] = [d for d in dirs if d != '__pycache__' and not d.startswith('.')]
                 for file in files:
+                    # Garantir que nenhum banco de dados ou bytecode (.pyc) entre no ZIP
+                    if file.endswith('.db') or file.endswith('.pyc'):
+                        continue
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, dist_dir)
                     zipf.write(file_path, arcname)
