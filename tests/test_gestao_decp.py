@@ -211,7 +211,7 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(df_chi_critico['Solicitação'].tolist(), ['1', '2', '5'])
 
     def test_verificar_status_atraso_urgencia_e_aprovada(self):
-        """Verifica a regra de negócio de Urgência / Fora do Prazo para solicitações Aprovadas."""
+        """Verifica a regra de negócio de Urgência, Atrasadas e Alertas para solicitações Aprovadas e Em Elaboração."""
         from dashboard import verificar_status_atraso
 
         # Caso 1: Aprovada com Urgência e DU >= 8 (deve ser Urgência para constar no card Foras do Prazo)
@@ -226,7 +226,7 @@ class TestGestaoDECP(unittest.TestCase):
         row_normal_10 = {'Situação': 'APROVADA', 'Urgência': 'Não', 'Dias_Uteis_Restantes': 10}
         self.assertEqual(verificar_status_atraso(row_normal_10), 'No Prazo')
 
-        # Caso 4: Aprovada sem Urgência e DU == 8 (Alerta de Prazo)
+        # Caso 4: Aprovada sem Urgência e DU == 8 (Alerta de Prazo para envio de aviso)
         row_alerta = {'Situação': 'APROVADA', 'Urgência': 'Não', 'Dias_Uteis_Restantes': 8}
         self.assertEqual(verificar_status_atraso(row_alerta), 'Alerta de Prazo')
 
@@ -238,9 +238,21 @@ class TestGestaoDECP(unittest.TestCase):
         row_passada = {'Situação': 'APROVADA', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': -1}
         self.assertEqual(verificar_status_atraso(row_passada), 'Atrasada')
 
-        # Caso 7: Em Elaboração com Urgência -> Concluída/Outros (Card exclusivo para APROVADAS)
-        row_elab = {'Situação': 'EM ELABORACAO', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': 5}
-        self.assertEqual(verificar_status_atraso(row_elab), 'Concluída/Outros')
+        # Caso 7: Em Elaboração com Urgência -> Urgência (consta no card Foras do Prazo)
+        row_elab_urg = {'Situação': 'EM ELABORACAO', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': 5}
+        self.assertEqual(verificar_status_atraso(row_elab_urg), 'Urgência')
+
+        # Caso 8: Em Elaboração com DU < 8 e sem urgência -> Atrasada (consta no card Solicitações Atrasadas)
+        row_elab_atras = {'Situação': 'EM ELABORACAO', 'Urgência': 'Não', 'Dias_Uteis_Restantes': 5}
+        self.assertEqual(verificar_status_atraso(row_elab_atras), 'Atrasada')
+
+        # Caso 9: Em Elaboração com DU == 8 -> No Prazo (Aviso de 8 dias é exclusivo para Aprovadas)
+        row_elab_8d = {'Situação': 'EM ELABORACAO', 'Urgência': 'Não', 'Dias_Uteis_Restantes': 8}
+        self.assertEqual(verificar_status_atraso(row_elab_8d), 'No Prazo')
+
+        # Caso 10: Solicitação Cancelada/Concluída -> Concluída/Outros
+        row_canc = {'Situação': 'CANCELADA', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': 5}
+        self.assertEqual(verificar_status_atraso(row_canc), 'Concluída/Outros')
 
     def test_conjuntos_restritos_logic_and_highlight(self):
         """Verifica se a lógica de Alimentador -> Conjunto Restrito para CHI >= 500 funciona corretamente."""

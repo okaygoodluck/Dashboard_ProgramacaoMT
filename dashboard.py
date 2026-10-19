@@ -205,11 +205,12 @@ def calcular_dias_uteis_restantes(data_inicio):
 # Função para calcular status de atraso
 def verificar_status_atraso(row):
     # Situações que indicam conclusão ou cancelamento (ignora atraso)
-    # ATUALIZAÇÃO: O usuário pediu para considerar atraso APENAS se estiver "APROVADA"
     situacao = str(row.get('Situação', '')).upper()
+    is_aprovada = "APROVADA" in situacao or "APROVADO" in situacao
+    is_elaboracao = "ELABORAÇÃO" in situacao or "ELABORACAO" in situacao
     
-    # Se NÃO contiver "APROVADA", consideramos neutro/concluído para fins de KPI de atraso
-    if "APROVADA" not in situacao:
+    # Apenas solicitações ativas da programação (Aprovadas ou Em Elaboração) participam da esteira de prazos
+    if not is_aprovada and not is_elaboracao:
         return "Concluída/Outros"
     
     dias_restantes = row.get('Dias_Uteis_Restantes')
@@ -227,7 +228,7 @@ def verificar_status_atraso(row):
     limite_prazo = 8
 
     # REGRA 1: URGÊNCIA / FORA DO PRAZO DA CAIXA (Prioridade Alta)
-    # Qualquer solicitação aprovada cadastrada como Urgente/Fora do Prazo deve constar no Card "Foras do Prazo (Caixa)"
+    # Contempla tanto solicitações Aprovadas quanto Em Elaboração para o Card "Foras do Prazo (Caixa)"
     if 'SIM' in urgencia or urgencia.strip() in ['S', 'TRUE', '1']:
         return "Urgência"
 
@@ -236,11 +237,11 @@ def verificar_status_atraso(row):
     if dias_restantes > limite_prazo:
         return "No Prazo"
     
-    # Se dias == limite: Alerta de Prazo (Limite mínimo)
+    # Se dias == limite: Alerta de Prazo (Apenas Aprovadas entram no card de aviso de 8 dias)
     if dias_restantes == limite_prazo:
-        return "Alerta de Prazo"
+        return "Alerta de Prazo" if is_aprovada else "No Prazo"
 
-    # Se dias < limite: Atrasada (Não cumpriu antecedência mínima)
+    # Se dias < limite: Atrasada (Não cumpriu antecedência mínima, contemplando Aprovadas e Em Elaboração)
     return "Atrasada"
 
 
@@ -837,9 +838,10 @@ if df is not None:
     qtd_aprovadas = len(df_filtered[df_filtered['Is_Aprovada'] == True]) if 'Is_Aprovada' in df_filtered.columns else 0
     qtd_elaboracao = len(df_filtered[df_filtered['Is_Elaboracao'] == True]) if 'Is_Elaboracao' in df_filtered.columns else 0
 
+    mask_ativas = (df_filtered['Is_Aprovada'] | df_filtered['Is_Elaboracao']) if ('Is_Aprovada' in df_filtered.columns and 'Is_Elaboracao' in df_filtered.columns) else pd.Series(True, index=df_filtered.index)
     col_chi_calc = next((c for c in df_filtered.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), None)
     if col_chi_calc:
-        df_chi_critico = df_filtered[pd.to_numeric(df_filtered[col_chi_calc], errors='coerce').fillna(0) >= 1500]
+        df_chi_critico = df_filtered[mask_ativas & (pd.to_numeric(df_filtered[col_chi_calc], errors='coerce').fillna(0) >= 1500)]
         qtd_chi_critico = len(df_chi_critico)
     else:
         df_chi_critico = df_filtered.iloc[0:0]
@@ -855,7 +857,7 @@ if df is not None:
             alim_clean = str(row.get(col_alim_calc, '')).replace(' ', '').strip().upper()
             sigla = map_alim_sigla.get(alim_clean)
             return bool(sigla and sigla in set_conj_restr)
-        df_conjunto_restrito = df_filtered[df_filtered.apply(_is_restr_item, axis=1)]
+        df_conjunto_restrito = df_filtered[mask_ativas & df_filtered.apply(_is_restr_item, axis=1)]
         qtd_conjunto_restrito = len(df_conjunto_restrito)
     else:
         df_conjunto_restrito = df_filtered.iloc[0:0]
