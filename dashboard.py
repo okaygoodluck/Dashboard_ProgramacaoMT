@@ -602,11 +602,18 @@ if df is not None:
         st.toast("Dados recarregados da rede com sucesso!", icon="🔄")
 
     # 1. CARD DE PERFIL DO USUÁRIO NO TOPO DO SIDEBAR
-    user_nome = getattr(st.session_state, "user_nome", "Usuário")
-    user_nivel = getattr(st.session_state, "user_nivel", "Usuario")
+    user_nome = getattr(st.session_state, "user_nome", "")
+    if not user_nome or not str(user_nome).strip():
+        user_nome = "Usuário"
+    user_nivel = getattr(st.session_state, "user_nivel", "")
+    if not user_nivel or not str(user_nivel).strip():
+        user_nivel = "Usuario"
     
     partes_nome = user_nome.split()
-    iniciais = (partes_nome[0][0] + (partes_nome[-1][0] if len(partes_nome) > 1 else "")).upper()
+    if partes_nome:
+        iniciais = (partes_nome[0][0] + (partes_nome[-1][0] if len(partes_nome) > 1 else "")).upper()
+    else:
+        iniciais = "US"
     
     if user_nivel == "ADM":
         badge_style = "background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;"
@@ -806,9 +813,20 @@ if df is not None:
     st.sidebar.button("🔄 Resetar Todos os Filtros", key="btn_global_reset", use_container_width=True, on_click=trigger_reset_all, help="Restaura datas, responsáveis e regiões ao estado padrão")
 
     if st.sidebar.button("🚪 Sair do Sistema", key="btn_logout_sidebar", use_container_width=True, help="Encerrar sessão de usuário"):
-        st.session_state.authenticated = False
-        st.session_state.user_nome = ""
-        st.session_state.user_nivel = ""
+        token_atual = cookie_manager.get("control_token") or st.query_params.get("ctoken")
+        if token_atual:
+            db_manager.remover_sessao(token_atual)
+        try:
+            cookie_manager.delete("control_token")
+        except Exception:
+            pass
+        st.query_params.clear()
+        st.session_state['logged_in'] = False
+        st.session_state['force_logout'] = True
+        st.session_state['user_matricula'] = ""
+        st.session_state['user_nome'] = ""
+        st.session_state['user_nivel'] = ""
+        st.session_state.pop('senha_provisoria', None)
         st.rerun()
 
     # Aplica filtros finais para gerar o df_filtered
