@@ -226,13 +226,10 @@ def verificar_status_atraso(row):
     # REGRA: PRAZO PADRÃO (8 DIAS ÚTEIS DE ANTECEDÊNCIA - CONFORME CALENDÁRIO "AVISOS")
     limite_prazo = 8
 
-    # REGRA 1: URGÊNCIA (Prioridade Alta)
-    # Se for Urgente e tiver menos de X dias (ou seja, recente/sem antecedência), já entra como "Urgência"
-    if 'SIM' in urgencia:
-         if dias_restantes < limite_prazo:
-             return "Urgência"
-         else:
-             return "No Prazo"
+    # REGRA 1: URGÊNCIA / FORA DO PRAZO DA CAIXA (Prioridade Alta)
+    # Qualquer solicitação aprovada cadastrada como Urgente/Fora do Prazo deve constar no Card "Foras do Prazo (Caixa)"
+    if 'SIM' in urgencia or urgencia.strip() in ['S', 'TRUE', '1']:
+        return "Urgência"
 
     # REGRA 2: PRAZO NORMAL (X DIAS DE ANTECEDÊNCIA)
     # Se dias > limite: No Prazo (Tem antecedência suficiente)
@@ -573,14 +570,16 @@ if df is not None:
         db_manager.registrar_snapshot_pendentes(df)
 
     # --- DEFINIÇÃO DE ESCOPO DE KPIs (Regra de Acesso) ---
-    if st.session_state.user_nivel == "Usuario":
+    escopo_nivel = getattr(st.session_state, "user_nivel", "ADM")
+    escopo_nome = getattr(st.session_state, "user_nome", "")
+    if escopo_nivel == "Usuario":
         # Usuário comum vê apenas seus próprios dados no topo
-        df_top = df[df['Responsavel'] == st.session_state.user_nome]
+        df_top = df[df['Responsavel'] == escopo_nome] if 'Responsavel' in df.columns else df
         prefix_kpi = "Minha "
     else:
         # Gerencial e ADM veem o panorama geral
         df_top = df
-        prefix_kpi = "Geral: " if st.session_state.user_nivel in ["Gerencial", "ADM"] else ""
+        prefix_kpi = "Geral: " if escopo_nivel in ["Gerencial", "ADM"] else ""
 
     # 1. KPIs GERAIS (Recálculo Dinâmico ocorrerá após os filtros)
     # Definimos variáveis iniciais caso o processamento falhe
@@ -596,6 +595,10 @@ if df is not None:
 
     def set_date_preset(start_d, end_d):
         st.session_state["date_period_preset"] = (start_d, end_d)
+
+    if st.session_state.get("dados_recarregados_toast"):
+        st.session_state.pop("dados_recarregados_toast")
+        st.toast("Dados recarregados da rede com sucesso!", icon="🔄")
 
     # 1. CARD DE PERFIL DO USUÁRIO NO TOPO DO SIDEBAR
     user_nome = getattr(st.session_state, "user_nome", "Usuário")
@@ -766,11 +769,11 @@ if df is not None:
     st.sidebar.markdown("<div style='font-size:0.75rem; font-weight:800; color:#38bdf8; letter-spacing:0.5px; margin-bottom:6px;'>🎯 FOCO OPERACIONAL</div>", unsafe_allow_html=True)
     
     lista_responsaveis = safe_sorted_unique(df_top['Responsavel'])
-    if st.session_state.user_nivel == "Usuario":
-        if st.session_state.user_nome in lista_responsaveis:
-            filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável (Travado)", options=lista_responsaveis, default=[st.session_state.user_nome], key="v_filter_resp", disabled=True)
+    if user_nivel == "Usuario":
+        if user_nome in lista_responsaveis:
+            filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável (Travado)", options=lista_responsaveis, default=[user_nome], key="v_filter_resp", disabled=True)
         else:
-            st.sidebar.error(f"Seu nome ({st.session_state.user_nome}) não foi encontrado como responsável.")
+            st.sidebar.error(f"Seu nome ({user_nome}) não foi encontrado como responsável.")
             filtro_responsavel = st.sidebar.multiselect("👩‍💻 Responsável", options=lista_responsaveis, default=lista_responsaveis, key="v_filter_resp")
     else:
         filtro_responsaveis_all = safe_sorted_unique(df['Responsavel'])
@@ -785,11 +788,19 @@ if df is not None:
     # Malha padrão (sem filtro no sidebar)
     filtro_malha = safe_sorted_unique(df_top[col_malha])
 
-    # 4. BOTÃO DE RESET GLOBAL E SAIR
+    # 4. BOTÃO DE ATUALIZAÇÃO, RESET GLOBAL E SAIR
+    def trigger_refresh_data():
+        st.cache_data.clear()
+        st.session_state["dados_recarregados_toast"] = True
+        st.rerun()
+
     def trigger_reset_all():
         st.session_state["reset_all_signal"] = True
 
     st.sidebar.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
+    if st.sidebar.button("🔄 Atualizar Dados Agora", key="btn_refresh_data", use_container_width=True, help="Limpa o cache e recarrega imediatamente os dados mais recentes da rede"):
+        trigger_refresh_data()
+
     st.sidebar.button("🔄 Resetar Todos os Filtros", key="btn_global_reset", use_container_width=True, on_click=trigger_reset_all, help="Restaura datas, responsáveis e regiões ao estado padrão")
 
     if st.sidebar.button("🚪 Sair do Sistema", key="btn_logout_sidebar", use_container_width=True, help="Encerrar sessão de usuário"):
@@ -938,13 +949,13 @@ if df is not None:
     tratar_snapshot_diario(total_solicitacoes, qtd_atrasadas, qtd_alerta, qtd_urgencia, (total_solicitacoes - qtd_atrasadas))
 
     # 3. ABAS DE VISUALIZAÇÃO (Symmetry Mode - Responsivo)
-    if st.session_state.user_nivel in ["Gerencial", "ADM"]:
+    if getattr(st.session_state, "user_nivel", "ADM") in ["Gerencial", "ADM"]:
         abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados", "📊 Relatórios"]
     else:
         abas = ["📅 Calendário", "🗺️ Visão por Região", "📋 Dados Detalhados"]
     
     # Nível ADM vê Configurações
-    if st.session_state.user_nivel == "ADM":
+    if getattr(st.session_state, "user_nivel", "ADM") == "ADM":
         abas.append("⚙️ Configurações")
         
     # Recupera a aba ativa ou usa a primeira

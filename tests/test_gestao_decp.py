@@ -210,5 +210,37 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(len(df_chi_critico), 3) # 1500, 2500.5, 1600
         self.assertEqual(df_chi_critico['Solicitação'].tolist(), ['1', '2', '5'])
 
+    def test_verificar_status_atraso_urgencia_e_aprovada(self):
+        """Verifica a regra de negócio de Urgência / Fora do Prazo para solicitações Aprovadas."""
+        from dashboard import verificar_status_atraso
+
+        # Caso 1: Aprovada com Urgência e DU >= 8 (deve ser Urgência para constar no card Foras do Prazo)
+        row_urg_10 = {'Situação': 'APROVADA', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': 10}
+        self.assertEqual(verificar_status_atraso(row_urg_10), 'Urgência')
+
+        # Caso 2: Aprovada com Urgência e DU < 8
+        row_urg_3 = {'Situação': 'APROVADA', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': 3}
+        self.assertEqual(verificar_status_atraso(row_urg_3), 'Urgência')
+
+        # Caso 3: Aprovada sem Urgência e DU > 8 (No Prazo)
+        row_normal_10 = {'Situação': 'APROVADA', 'Urgência': 'Não', 'Dias_Uteis_Restantes': 10}
+        self.assertEqual(verificar_status_atraso(row_normal_10), 'No Prazo')
+
+        # Caso 4: Aprovada sem Urgência e DU == 8 (Alerta de Prazo)
+        row_alerta = {'Situação': 'APROVADA', 'Urgência': 'Não', 'Dias_Uteis_Restantes': 8}
+        self.assertEqual(verificar_status_atraso(row_alerta), 'Alerta de Prazo')
+
+        # Caso 5: Aprovada sem Urgência e DU < 8 (Atrasada)
+        row_atrasada = {'Situação': 'APROVADA', 'Urgência': 'Não', 'Dias_Uteis_Restantes': 5}
+        self.assertEqual(verificar_status_atraso(row_atrasada), 'Atrasada')
+
+        # Caso 6: Data já passou (negativo) -> Atrasada
+        row_passada = {'Situação': 'APROVADA', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': -1}
+        self.assertEqual(verificar_status_atraso(row_passada), 'Atrasada')
+
+        # Caso 7: Em Elaboração com Urgência -> Concluída/Outros (Card exclusivo para APROVADAS)
+        row_elab = {'Situação': 'EM ELABORACAO', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': 5}
+        self.assertEqual(verificar_status_atraso(row_elab), 'Concluída/Outros')
+
 if __name__ == '__main__':
     unittest.main()
