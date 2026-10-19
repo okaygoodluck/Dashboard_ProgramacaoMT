@@ -744,8 +744,9 @@ if df is not None:
         </div>
     """, unsafe_allow_html=True)
     
+    data_max_str = max_date.strftime('%d/%m/%Y') if max_date else 'Fim'
     r1_c1, r1_c2 = st.sidebar.columns(2)
-    r1_c1.button("8-11D", key="btn_sb_8_11", use_container_width=True, on_click=set_date_preset, args=(date_du8, date_du11), help="Do 8º ao 11º Dia Útil")
+    r1_c1.button("H➔Fim", key="btn_sb_h_max", use_container_width=True, on_click=set_date_preset, args=(hoje_date, max_date), help=f"Hoje até a última data de solicitação ({data_max_str})")
     r1_c2.button("Reset", key="btn_sb_reset", use_container_width=True, on_click=set_date_preset, args=(hoje_date, default_max), help="Resetar Período Padrão")
 
     r2_c1, r2_c2 = st.sidebar.columns(2)
