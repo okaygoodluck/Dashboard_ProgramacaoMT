@@ -1096,8 +1096,17 @@ if df is not None:
             # Encurtamento de nomes local para exibição
             def short_name(name):
                 if not isinstance(name, str) or not name: return name
-                parts = name.split()
-                return f"{parts[0]} {parts[1][0]}." if len(parts) >= 2 else name
+                parts = name.strip().split()
+                if len(parts) >= 2:
+                    first = parts[0].upper()
+                    second = parts[1].upper()
+                    if first == 'GABRIEL':
+                        if 'LEANDRO' in second:
+                            return "Gabriel Leandro"
+                        elif 'LEONARDO' in second:
+                            return "Gabriel Leonardo"
+                    return f"{parts[0]} {parts[1][0]}."
+                return name
     
             df_equipe_agg['Responsavel'] = df_equipe_agg['Responsavel'].apply(short_name)
             df_equipe_agg = df_equipe_agg.groupby('Responsavel').agg(
@@ -1253,9 +1262,18 @@ if df is not None:
                         df_user_grouped = df_usr_filtered.groupby(['data', 'nome_responsavel']).size().to_frame(name='Tratadas').reset_index()
                         df_user_grouped['data_exibicao'] = pd.to_datetime(df_user_grouped['data']).dt.strftime('%d/%m/%Y')
                         
-                        df_user_grouped['primeiro_nome'] = df_user_grouped['nome_responsavel'].apply(
-                            lambda x: str(x).split()[0] if str(x).split() else ""
-                        )
+                        def rotulo_grafico_responsavel(nome):
+                            if not isinstance(nome, str) or not nome: return ""
+                            parts = str(nome).strip().split()
+                            if not parts: return ""
+                            if len(parts) >= 2 and parts[0].upper() == 'GABRIEL':
+                                if 'LEANDRO' in parts[1].upper():
+                                    return "G. Leandro"
+                                elif 'LEONARDO' in parts[1].upper():
+                                    return "G. Leonardo"
+                            return parts[0]
+
+                        df_user_grouped['primeiro_nome'] = df_user_grouped['nome_responsavel'].apply(rotulo_grafico_responsavel)
                         
                         ordem_usuarios = df_user_grouped.groupby('nome_responsavel')['Tratadas'].sum().sort_values(ascending=False).index.tolist()
                         

@@ -25,8 +25,8 @@ class TestEscalaRegioes(unittest.TestCase):
         self.assertEqual(map_nomes['c001'], 'POLIANE')
         self.assertEqual(map_nomes['c002'], 'AMANDA A*')
         self.assertEqual(map_nomes['c003'], 'AMANDA P*')
-        self.assertEqual(map_nomes['c004'], 'GABRIEL L*')
-        self.assertEqual(map_nomes['c005'], 'GABRIEL L*')
+        self.assertEqual(map_nomes['c004'], 'GABRIEL LEO*')
+        self.assertEqual(map_nomes['c005'], 'GABRIEL LEA*')
         self.assertEqual(map_nomes['c006'], 'LAURA')
 
     def test_todas_regioes_disponiveis(self):

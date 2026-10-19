@@ -16,7 +16,7 @@ def mudar_nivel_dialog(matricula, nome, nivel_atual):
             st.error("Erro ao alterar nível.")
 
 def formatar_nome_exibicao(df_usuarios):
-    """Gera nomes resumidos e elegantes, diferenciando homônimos (ex: GABRIEL R*, AMANDA P*)."""
+    """Gera nomes resumidos e elegantes, diferenciando homônimos (ex: GABRIEL LEA*, GABRIEL LEO*, AMANDA P*)."""
     contagem_primeiro = {}
     for _, r in df_usuarios.iterrows():
         partes = str(r['nome']).strip().split()
@@ -24,6 +24,16 @@ def formatar_nome_exibicao(df_usuarios):
             pri = partes[0].upper()
             contagem_primeiro[pri] = contagem_primeiro.get(pri, 0) + 1
             
+    # Contagem de colisão da inicial do segundo nome entre homônimos
+    contagem_pri_seg_ini = {}
+    for _, r in df_usuarios.iterrows():
+        partes = str(r['nome']).strip().split()
+        if partes:
+            pri = partes[0].upper()
+            if contagem_primeiro.get(pri, 0) > 1 and len(partes) > 1:
+                chave_ini = (pri, partes[1][0].upper())
+                contagem_pri_seg_ini[chave_ini] = contagem_pri_seg_ini.get(chave_ini, 0) + 1
+
     nomes = {}
     for _, r in df_usuarios.iterrows():
         mat = str(r['matricula']).strip()
@@ -34,7 +44,13 @@ def formatar_nome_exibicao(df_usuarios):
         pri = partes[0].upper()
         if contagem_primeiro.get(pri, 0) > 1 and len(partes) > 1:
             segunda_inicial = partes[1][0].upper()
-            nomes[mat] = f"{pri} {segunda_inicial}*"
+            chave_ini = (pri, segunda_inicial)
+            # Se houver colisão de inicial no segundo nome (ex: GABRIEL LEANDRO e GABRIEL LEONARDO)
+            if contagem_pri_seg_ini.get(chave_ini, 0) > 1:
+                prefixo_segundo = partes[1][:3].upper()
+                nomes[mat] = f"{pri} {prefixo_segundo}*"
+            else:
+                nomes[mat] = f"{pri} {segunda_inicial}*"
         else:
             nomes[mat] = pri
     return nomes

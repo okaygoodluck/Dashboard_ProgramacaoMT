@@ -125,8 +125,15 @@ def render_tab_detalhes(df_filtered, col_situacao):
     # Função para encurtar nomes
     def short_name(name):
         if not isinstance(name, str) or not name: return name
-        parts = name.split()
+        parts = name.strip().split()
         if len(parts) >= 2:
+            first = parts[0].upper()
+            second = parts[1].upper()
+            if first == 'GABRIEL':
+                if 'LEANDRO' in second:
+                    return "Gabriel Leandro"
+                elif 'LEONARDO' in second:
+                    return "Gabriel Leonardo"
             return f"{parts[0]} {parts[1][0]}."
         return name
 
