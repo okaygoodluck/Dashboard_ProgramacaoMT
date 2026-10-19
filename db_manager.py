@@ -570,6 +570,73 @@ def carregar_dados_recentes():
     finally:
         conn.close()
 
+@st.cache_data(ttl=600)
+def carregar_conjuntos_restritos():
+    """
+    Carrega as planilhas 'Alimentadores do Conjuntos.xlsx' e 'Conjuntos Restritos.xlsx'
+    a partir de REDE_BASE ou caminhos candidatos corporativos.
+    Retorna: (map_alim_to_sigla, set_conj_restritos, map_sigla_to_nome)
+    """
+    candidatos_dir = [
+        REDE_BASE,
+        _UNC_FQDN_ACC,
+        _UNC_FQDN_NORM,
+        _UNC_REDE_ACC,
+        _UNC_REDE_NORM,
+        _REDE_ACC,
+        _REDE_NORM,
+    ]
+    dir_valido = None
+    for d in candidatos_dir:
+        if d and os.path.exists(d):
+            dir_valido = d
+            break
+            
+    if not dir_valido:
+        return {}, set(), {}
+
+    f_alim = os.path.join(dir_valido, "Alimentadores do Conjuntos.xlsx")
+    f_restr = os.path.join(dir_valido, "Conjuntos Restritos.xlsx")
+
+    if not os.path.exists(f_alim) or not os.path.exists(f_restr):
+        return {}, set(), {}
+
+    try:
+        df_alim = pd.read_excel(f_alim)
+        df_restr = pd.read_excel(f_restr)
+
+        col_alim = next((c for c in df_alim.columns if 'alimentador' in c.lower()), df_alim.columns[1] if len(df_alim.columns) > 1 else None)
+        col_sigla_alim = next((c for c in df_alim.columns if 'sigla' in c.lower() or 'conj' in c.lower()), df_alim.columns[0])
+
+        df_alim['alim_clean'] = df_alim[col_alim].astype(str).str.replace(' ', '').str.upper().str.strip()
+        df_alim['sigla_clean'] = df_alim[col_sigla_alim].astype(str).str.upper().str.strip()
+
+        map_alim_to_sigla = dict(zip(df_alim['alim_clean'], df_alim['sigla_clean']))
+
+        col_sigla_restr = next((c for c in df_restr.columns if 'sigla' in c.lower()), None)
+        col_nome_restr = next((c for c in df_restr.columns if 'conjunto' in c.lower()), None)
+        col_restri_restr = next((c for c in df_restr.columns if 'restri' in c.lower()), None)
+
+        if col_sigla_restr:
+            df_restr['sigla_clean'] = df_restr[col_sigla_restr].astype(str).str.upper().str.strip()
+        else:
+            df_restr['sigla_clean'] = df_restr.iloc[:, 3].astype(str).str.upper().str.strip()
+
+        if col_restri_restr:
+            df_sub = df_restr[df_restr[col_restri_restr].astype(str).str.upper().str.contains('RESTRIT')]
+            if df_sub.empty:
+                df_sub = df_restr
+        else:
+            df_sub = df_restr
+
+        set_conj_restritos = set(df_sub['sigla_clean'].dropna().unique())
+        map_sigla_to_nome = dict(zip(df_restr['sigla_clean'], df_restr[col_nome_restr])) if col_nome_restr else {}
+
+        return map_alim_to_sigla, set_conj_restritos, map_sigla_to_nome
+    except Exception as e:
+        print(f"[CONJUNTOS RESTRITOS] Erro ao carregar planilhas: {e}")
+        return {}, set(), {}
+
 def atualizar_email_decp_bd(map_email):
     """Atualiza a coluna Tem_Email_DECP na tabela demanda_atual para as solicitações mapeadas."""
     if not map_email:

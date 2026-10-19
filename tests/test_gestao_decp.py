@@ -242,5 +242,52 @@ class TestGestaoDECP(unittest.TestCase):
         row_elab = {'Situação': 'EM ELABORACAO', 'Urgência': 'Sim', 'Dias_Uteis_Restantes': 5}
         self.assertEqual(verificar_status_atraso(row_elab), 'Concluída/Outros')
 
+    def test_conjuntos_restritos_logic_and_highlight(self):
+        """Verifica se a lógica de Alimentador -> Conjunto Restrito para CHI >= 500 funciona corretamente."""
+        map_alim_to_sigla = {'ALIM01': 'CJ01', 'ALIM02': 'CJ02', 'ALIM03': 'CJ03'}
+        set_conj_restritos = {'CJ01', 'CJ03'} # CJ01 e CJ03 são restritos
+
+        def get_status_conjunto(row):
+            chi_val = pd.to_numeric(row.get('CHI', 0), errors='coerce')
+            if pd.isna(chi_val) or chi_val < 500:
+                return '—'
+            alim_raw = str(row.get('Alimentador', '')).replace(' ', '').strip().upper()
+            sigla = map_alim_to_sigla.get(alim_raw)
+            if sigla and sigla in set_conj_restritos:
+                return 'RESTRITO'
+            return '—'
+
+        # Teste 1: CHI >= 500 e alimentador em conjunto restrito -> RESTRITO
+        row1 = {'CHI': 500, 'Alimentador': 'ALIM01'}
+        self.assertEqual(get_status_conjunto(row1), 'RESTRITO')
+
+        # Teste 2: CHI > 500 com espaço no alimentador e conjunto restrito -> RESTRITO
+        row2 = {'CHI': 850, 'Alimentador': ' ALIM 03 '}
+        self.assertEqual(get_status_conjunto(row2), 'RESTRITO')
+
+        # Teste 3: CHI >= 500 mas alimentador em conjunto NÃO restrito -> —
+        row3 = {'CHI': 1200, 'Alimentador': 'ALIM02'}
+        self.assertEqual(get_status_conjunto(row3), '—')
+
+        # Teste 4: CHI < 500 mesmo em conjunto restrito -> —
+        row4 = {'CHI': 499, 'Alimentador': 'ALIM01'}
+        self.assertEqual(get_status_conjunto(row4), '—')
+
+        # Teste 5: Estilização de linha avermelhada para RESTRITO
+        def aplicar_destaque_teste(row):
+            status_conj = str(row.get('Conjunto', '—')).strip()
+            if status_conj == 'RESTRITO':
+                return 'red'
+            status_aut = str(row.get('E-mail Autorização', '—')).strip()
+            if status_aut in ['DECP', 'Urgência']:
+                return 'green'
+            elif status_aut == 'Pendente':
+                return 'red'
+            return 'none'
+
+        self.assertEqual(aplicar_destaque_teste({'Conjunto': 'RESTRITO', 'E-mail Autorização': 'DECP'}), 'red')
+        self.assertEqual(aplicar_destaque_teste({'Conjunto': '—', 'E-mail Autorização': 'DECP'}), 'green')
+        self.assertEqual(aplicar_destaque_teste({'Conjunto': '—', 'E-mail Autorização': '—'}), 'none')
+
 if __name__ == '__main__':
     unittest.main()

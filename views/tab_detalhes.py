@@ -103,19 +103,19 @@ def render_tab_detalhes(df_filtered, col_situacao):
                 else:
                     st.warning("Falha ao comunicar com o Outlook. Verifique se o aplicativo está aberto e com acesso às caixas.")
 
-    # Legenda visual para as solicitações CHI >= 1500 e Urgência
+    # Legenda visual para as solicitações CHI >= 1500, Urgência e Conjunto Restrito
     st.markdown("""
     <div style="display: flex; gap: 20px; align-items: center; margin: 4px 0 10px 0; font-size: 0.8rem; flex-wrap: wrap;">
         <span style="display: flex; align-items: center; gap: 6px;">
             <span style="display: inline-block; width: 14px; height: 14px; background: rgba(239, 68, 68, 0.25); border: 1px solid rgba(239, 68, 68, 0.6); border-radius: 3px;"></span>
-            <span><strong>CHI ≥ 1500 ou Urgência (Aguardando E-mail)</strong></span>
+            <span><strong>CHI ≥ 1500, Urgência (Aguardando E-mail) ou Conjunto Restrito (CHI ≥ 500)</strong></span>
         </span>
         <span style="display: flex; align-items: center; gap: 6px;">
             <span style="display: inline-block; width: 14px; height: 14px; background: rgba(16, 185, 129, 0.22); border: 1px solid rgba(16, 185, 129, 0.6); border-radius: 3px;"></span>
             <span><strong>CHI ≥ 1500 ou Urgência (E-mail Confirmado)</strong></span>
         </span>
         <span style="color: #64748b; font-size: 0.75rem;">
-            *(Consulte a coluna <strong>E-mail Autorização</strong> para verificar qual e-mail foi recebido)*
+            *(Consulte as colunas <strong>E-mail Autorização</strong> e <strong>Conjunto</strong>)*
         </span>
     </div>
     """, unsafe_allow_html=True)
@@ -182,6 +182,10 @@ def render_tab_detalhes(df_filtered, col_situacao):
     col_solic = next((c for c in df_detalhe_view.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
     col_urg_view = next((c for c in df_detalhe_view.columns if 'urg' in c.lower()), None)
     col_chi_view = next((c for c in df_detalhe_view.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), 'CHI')
+    col_alim_view = next((c for c in df_detalhe_view.columns if 'alim' in c.lower()), None)
+
+    # Carrega mapeamento de conjuntos restritos via db_manager
+    map_alim_to_sigla, set_conj_restritos, _ = db_manager.carregar_conjuntos_restritos()
 
     email_decp_map = {}
     email_urg_map = {}
@@ -244,17 +248,38 @@ def render_tab_detalhes(df_filtered, col_situacao):
 
     df_detalhe_view['E-mail Autorização'] = df_detalhe_view.apply(get_email_autorizacao, axis=1)
 
-    # Inserção de E-mail Autorização nas colunas visíveis logo após CHI ou Situação
+    # Identificação de Conjuntos Restritos para CHI >= 500
+    def get_status_conjunto(row):
+        chi_val = pd.to_numeric(row.get(col_chi_view, 0), errors='coerce')
+        if pd.isna(chi_val) or chi_val < 500:
+            return "—"
+        if not col_alim_view:
+            return "—"
+        alim_raw = str(row.get(col_alim_view, '')).replace(' ', '').strip().upper()
+        sigla = map_alim_to_sigla.get(alim_raw)
+        if sigla and sigla in set_conj_restritos:
+            return "RESTRITO"
+        return "—"
+
+    df_detalhe_view['Conjunto'] = df_detalhe_view.apply(get_status_conjunto, axis=1)
+
+    # Inserção de E-mail Autorização e Conjunto nas colunas visíveis logo após CHI ou Situação
     if 'E-mail Autorização' in cols:
         cols.remove('E-mail Autorização')
+    if 'Conjunto' in cols:
+        cols.remove('Conjunto')
+
     if 'CHI' in cols:
-        cols.insert(cols.index('CHI') + 1, 'E-mail Autorização')
+        idx_base = cols.index('CHI') + 1
     elif col_situacao in cols:
-        cols.insert(cols.index(col_situacao) + 1, 'E-mail Autorização')
+        idx_base = cols.index(col_situacao) + 1
     elif 'Situação' in cols:
-        cols.insert(cols.index('Situação') + 1, 'E-mail Autorização')
+        idx_base = cols.index('Situação') + 1
     else:
-        cols.append('E-mail Autorização')
+        idx_base = len(cols)
+
+    cols.insert(idx_base, 'E-mail Autorização')
+    cols.insert(idx_base + 1, 'Conjunto')
 
     # Remover colunas solicitadas pelo usuário (Limpeza Visual + Is_Aprovada)
     cols_to_hide = [
@@ -270,6 +295,11 @@ def render_tab_detalhes(df_filtered, col_situacao):
         "E-mail Autorização",
         help="Identificação do e-mail recebido (DECP, Urgência, DECP + Urgência) ou Pendente",
         width="medium"
+    )
+    col_config['Conjunto'] = st.column_config.TextColumn(
+        "Conjunto",
+        help="Indica RESTRITO caso o alimentador pertença a um conjunto com restrição de DEC para CHI ≥ 500",
+        width="small"
     )
     for c in df_detalhe_view.columns:
         if any(palavra in c.lower() for palavra in ['data', 'início', 'inicio', 'término', 'termino']):
@@ -316,8 +346,13 @@ def render_tab_detalhes(df_filtered, col_situacao):
         if col_int in df_detalhe_view.columns:
             format_styler[col_int] = '{:.0f}'
 
-    # Função de estilização para destacar a linha inteira quando CHI >= 1500 ou Urgência == 'SIM'
+    # Função de estilização para destacar a linha inteira quando CHI >= 1500, Urgência == 'SIM' ou Conjunto == 'RESTRITO'
     def aplicar_destaque_autorizacao(row):
+        status_conj = str(row.get('Conjunto', '—')).strip()
+        if status_conj == 'RESTRITO':
+            # Fundo avermelhado/alerta para solicitação em conjunto restrito com CHI >= 500
+            return ['background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'] * len(row)
+
         status_aut = str(row.get('E-mail Autorização', '—')).strip()
         if status_aut in ['DECP', 'Urgência', 'DECP + Urgência']:
             # Fundo verde para solicitação com e-mail confirmado (ao menos um recebido) com texto branco contrastante
