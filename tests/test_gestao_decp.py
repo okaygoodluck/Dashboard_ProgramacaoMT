@@ -69,9 +69,9 @@ class TestGestaoDECP(unittest.TestCase):
         raw_map = {'001001': False, '1002': True}
         normalized_map = {}
         for k, v in raw_map.items():
-            k_s = str(k).strip()
-            normalized_map[k_s] = bool(v)
-            normalized_map[k_s.lstrip('0')] = bool(v)
+            k_s = k.strip()
+            normalized_map[k_s] = v
+            normalized_map[k_s.lstrip('0')] = v
         
         # Função de lookup resiliente como em tab_detalhes.py
         def check_email(solic_str):
@@ -102,7 +102,7 @@ class TestGestaoDECP(unittest.TestCase):
                 return '0'
             try:
                 val_float = float(v)
-                return str(int(round(val_float)))
+                return str(round(val_float))
             except (ValueError, TypeError):
                 return str(v).strip()
         df['Peso'] = df['Peso'].apply(limpar_peso_inteiro)
