@@ -331,6 +331,67 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(qtd_conjunto_restrito, 2)
         self.assertEqual(df_conjunto_restrito['Solicitacao'].tolist(), ['1', '2'])
 
+    def test_preparar_dataframe_detalhes_para_kpi_e_tabela(self):
+        """Verifica se preparar_dataframe_detalhes padroniza colunas, oculta colunas tecnicas e aplica regras de cores e nomes."""
+        from views.tab_detalhes import preparar_dataframe_detalhes
+
+        df_mock = pd.DataFrame([
+            {
+                'Solicitação': '1001',
+                'Responsavel': 'GABRIEL LEANDRO FERREIRA',
+                'Situação': 'APROVADA',
+                'CHI': 1600.0,
+                'Clientes': 25.0,
+                'Peso': '1.0',
+                'Urgência': 'Sim',
+                'Conjunto': 'RESTRITO',
+                'Tem_Email_DECP': True,
+                'Is_Aprovada': True,
+                'Status_Prazo': 'Urgência'
+            },
+            {
+                'Solicitação': '1002',
+                'Responsavel': 'GABRIEL LEONARDO RODRIGUES DA SILVA',
+                'Situação': 'APROVADA',
+                'CHI': 400.0,
+                'Clientes': 10.0,
+                'Peso': 'PLE',
+                'Urgência': 'Não',
+                'Conjunto': '—',
+                'Tem_Email_DECP': False,
+                'Is_Aprovada': True,
+                'Status_Prazo': 'No Prazo'
+            }
+        ])
+
+        df_view, col_config, format_styler, func_destaque = preparar_dataframe_detalhes(df_mock, col_situacao='Situação')
+
+        # 1. Colunas obrigatórias presentes
+        self.assertIn('E-mail Autorização', df_view.columns)
+        self.assertIn('Conjunto', df_view.columns)
+
+        # 2. Colunas técnicas ocultadas
+        for c_oculta in ['Is_Aprovada', 'Status_Prazo', 'Tem_Email_DECP']:
+            self.assertNotIn(c_oculta, df_view.columns)
+
+        # 3. Diferenciação de nomes dos Gabriels
+        self.assertEqual(df_view.loc[0, 'Responsavel'], 'Gabriel Leandro')
+        self.assertEqual(df_view.loc[1, 'Responsavel'], 'Gabriel Leonardo')
+
+        # 4. Formatação de tipos
+        self.assertEqual(df_view.loc[0, 'CHI'], 1600)
+        self.assertEqual(df_view.loc[0, 'Peso'], '1')
+        self.assertEqual(df_view.loc[1, 'Peso'], 'PLE')
+
+        # 5. Regras de cores no destaque
+        # Linha 0 tem Conjunto == RESTRITO -> Fundo avermelhado
+        estilos_row0 = func_destaque(df_view.iloc[0])
+        self.assertTrue(any('rgba(220, 38, 38' in e for e in estilos_row0))
+
+        # Linha 1 não tem urgência/CHI/restrito -> Sem estilo especial
+        estilos_row1 = func_destaque(df_view.iloc[1])
+        self.assertTrue(all(e == '' for e in estilos_row1))
+
 if __name__ == '__main__':
     unittest.main()
 

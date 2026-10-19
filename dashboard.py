@@ -46,7 +46,7 @@ from components.vanguard_charts import (
     render_delays_by_mesh,
     render_qty_x_weight_chart
 )
-from views.tab_detalhes import render_tab_detalhes
+from views.tab_detalhes import render_tab_detalhes, renderizar_tabela_detalhada_estilizada
 from views.tab_config import render_tab_config
 from views.tab_calendario import render_tab_calendario
 
@@ -921,11 +921,19 @@ if df is not None:
             if "Conjunto Restrito" in kpi_name and 'Conjunto' not in df_kpi.columns:
                 df_kpi = df_kpi.copy()
                 df_kpi['Conjunto'] = 'RESTRITO'
-            # Exibir colunas mais relevantes primeiro
-            cols_prioridade = [col_sol, 'Responsavel', col_regiao, col_malha, col_alim_calc, 'Conjunto', 'Status_Prazo', col_chi_calc, 'Dias_Uteis_Restantes']
-            cols_exibicao = [c for c in cols_prioridade if c and c in df_kpi.columns]
-            cols_restantes = [c for c in df_kpi.columns if c not in cols_exibicao]
-            st.dataframe(df_kpi[cols_exibicao + cols_restantes], use_container_width=True, hide_index=True)
+            st.markdown("""
+            <div style="display: flex; gap: 14px; margin-bottom: 8px; font-size: 0.78rem; align-items: center; background: rgba(30, 41, 59, 0.4); padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08);">
+                <span style="display: flex; align-items: center; gap: 6px;">
+                    <span style="width: 10px; height: 10px; background: rgba(220, 38, 38, 0.75); border-radius: 2px;"></span>
+                    <span><strong>Pendente / Conjunto Restrito</strong></span>
+                </span>
+                <span style="display: flex; align-items: center; gap: 6px;">
+                    <span style="width: 10px; height: 10px; background: rgba(16, 185, 129, 0.75); border-radius: 2px;"></span>
+                    <span><strong>E-mail Confirmado</strong></span>
+                </span>
+            </div>
+            """, unsafe_allow_html=True)
+            renderizar_tabela_detalhada_estilizada(df_kpi, col_situacao=col_situacao, height=480)
 
     # Âncora única para o CSS targeting
     st.markdown('<div id="kpi-columns-anchor"></div>', unsafe_allow_html=True)
