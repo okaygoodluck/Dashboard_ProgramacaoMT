@@ -844,6 +844,22 @@ if df is not None:
     else:
         df_chi_critico = df_filtered.iloc[0:0]
         qtd_chi_critico = 0
+
+    col_alim_calc = next((c for c in df_filtered.columns if 'alim' in c.lower()), None)
+    map_alim_sigla, set_conj_restr, _ = db_manager.carregar_conjuntos_restritos()
+    if col_chi_calc and col_alim_calc and set_conj_restr:
+        def _is_restr_item(row):
+            chi_val = pd.to_numeric(row.get(col_chi_calc, 0), errors='coerce')
+            if pd.isna(chi_val) or chi_val < 500:
+                return False
+            alim_clean = str(row.get(col_alim_calc, '')).replace(' ', '').strip().upper()
+            sigla = map_alim_sigla.get(alim_clean)
+            return bool(sigla and sigla in set_conj_restr)
+        df_conjunto_restrito = df_filtered[df_filtered.apply(_is_restr_item, axis=1)]
+        qtd_conjunto_restrito = len(df_conjunto_restrito)
+    else:
+        df_conjunto_restrito = df_filtered.iloc[0:0]
+        qtd_conjunto_restrito = 0
     
     # --- CABEÇALHO DE CONTROLE ---
     st.markdown(f"""
@@ -882,9 +898,12 @@ if df is not None:
         if df_kpi.empty:
             st.info("Nenhuma solicitação encontrada para este filtro.")
         else:
+            if "Conjunto Restrito" in kpi_name and 'Conjunto' not in df_kpi.columns:
+                df_kpi = df_kpi.copy()
+                df_kpi['Conjunto'] = 'RESTRITO'
             # Exibir colunas mais relevantes primeiro
-            cols_prioridade = [col_sol, 'Responsavel', col_regiao, col_malha, 'Status_Prazo', 'CHI', 'Dias_Uteis_Restantes']
-            cols_exibicao = [c for c in cols_prioridade if c in df_kpi.columns]
+            cols_prioridade = [col_sol, 'Responsavel', col_regiao, col_malha, col_alim_calc, 'Conjunto', 'Status_Prazo', col_chi_calc, 'Dias_Uteis_Restantes']
+            cols_exibicao = [c for c in cols_prioridade if c and c in df_kpi.columns]
             cols_restantes = [c for c in df_kpi.columns if c not in cols_exibicao]
             st.dataframe(df_kpi[cols_exibicao + cols_restantes], use_container_width=True, hide_index=True)
 
@@ -909,7 +928,7 @@ if df is not None:
     </style>
     """, unsafe_allow_html=True)
 
-    kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5, kpi_col6, kpi_col7 = st.columns(7)
+    kpi_col1, kpi_col2, kpi_col3, kpi_col4, kpi_col5, kpi_col6, kpi_col7, kpi_col8 = st.columns(8)
     
     with kpi_col1:
         premium_metric_card("Total Geral", total_solicitacoes, icon_name="people", color="#3b82f6", is_vanguard=True)
@@ -930,18 +949,23 @@ if df is not None:
         premium_metric_card("Limite do DEC", qtd_chi_critico, icon_name="danger", color="#f97316")
         if st.button("Limite do DEC", key="kpi_btn_chi", use_container_width=True):
             show_kpi_dialog("Solicitações no Limite do DEC (CHI ≥ 1500)", df_chi_critico)
-        
+
     with kpi_col5:
+        premium_metric_card("Conjunto Restrito", qtd_conjunto_restrito, icon_name="danger", color="#e11d48")
+        if st.button("Conj. Restrito", key="kpi_btn_conj_restr", use_container_width=True):
+            show_kpi_dialog("Solicitações em Conjunto Restrito (CHI ≥ 500)", df_conjunto_restrito)
+        
+    with kpi_col6:
         premium_metric_card("8 Dias - Prazo p/ Aviso", qtd_alerta, icon_name="info", color="#818cf8")
         if st.button("Aviso (8 dias)", key="kpi_btn_alertas", use_container_width=True):
             show_kpi_dialog("8 dias - Prazo p/ Enviar Aviso", df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
         
-    with kpi_col6:
+    with kpi_col7:
         premium_metric_card("Total Em elaboração", qtd_elaboracao, icon_name="edit", color="#38bdf8")
         if st.button("Em elaboração", key="kpi_btn_elaboracao", use_container_width=True):
             show_kpi_dialog("Total Em elaboração", df_filtered[df_filtered['Is_Elaboracao'] == True])
         
-    with kpi_col7:
+    with kpi_col8:
         premium_metric_card("Total de Aprovadas", qtd_aprovadas, icon_name="tick", color="#34d399")
         if st.button("Aprovadas", key="kpi_btn_aprovadas", use_container_width=True):
             show_kpi_dialog("Total de Aprovadas", df_filtered[df_filtered['Is_Aprovada'] == True])

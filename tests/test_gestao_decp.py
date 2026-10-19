@@ -289,5 +289,36 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(aplicar_destaque_teste({'Conjunto': '—', 'E-mail Autorização': 'DECP'}), 'green')
         self.assertEqual(aplicar_destaque_teste({'Conjunto': '—', 'E-mail Autorização': '—'}), 'none')
 
+    def test_conjunto_restrito_kpi_calculation(self):
+        """Verifica a lógica de filtragem e contagem do KPI 'Conjunto Restrito' (CHI >= 500 e alimentador em conjunto restrito)."""
+        map_alim_sigla = {'ALIM01': 'CJ01', 'ALIM02': 'CJ02', 'ALIM03': 'CJ03'}
+        set_conj_restr = {'CJ01', 'CJ03'}
+
+        df_mock = pd.DataFrame([
+            {'Solicitacao': '1', 'CHI': 600, 'Alimentador': 'ALIM01'},       # Válido: CHI >= 500 e CJ01 restrito
+            {'Solicitacao': '2', 'CHI': 500, 'Alimentador': ' ALIM 03 '},    # Válido: CHI >= 500 e CJ03 restrito
+            {'Solicitacao': '3', 'CHI': 499, 'Alimentador': 'ALIM01'},       # Inválido: CHI < 500
+            {'Solicitacao': '4', 'CHI': 1200, 'Alimentador': 'ALIM02'},      # Inválido: CJ02 não é restrito
+            {'Solicitacao': '5', 'CHI': None, 'Alimentador': 'ALIM01'},      # Inválido: CHI nulo
+        ])
+
+        col_chi_calc = 'CHI'
+        col_alim_calc = 'Alimentador'
+
+        def _is_restr_item(row):
+            chi_val = pd.to_numeric(row.get(col_chi_calc, 0), errors='coerce')
+            if pd.isna(chi_val) or chi_val < 500:
+                return False
+            alim_clean = str(row.get(col_alim_calc, '')).replace(' ', '').strip().upper()
+            sigla = map_alim_sigla.get(alim_clean)
+            return bool(sigla and sigla in set_conj_restr)
+
+        df_conjunto_restrito = df_mock[df_mock.apply(_is_restr_item, axis=1)]
+        qtd_conjunto_restrito = len(df_conjunto_restrito)
+
+        self.assertEqual(qtd_conjunto_restrito, 2)
+        self.assertEqual(df_conjunto_restrito['Solicitacao'].tolist(), ['1', '2'])
+
 if __name__ == '__main__':
     unittest.main()
+
