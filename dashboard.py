@@ -1272,7 +1272,7 @@ if df is not None:
                         
                         def rotulo_grafico_responsavel(nome):
                             if not isinstance(nome, str) or not nome: return ""
-                            parts = str(nome).strip().split()
+                            parts = nome.strip().split()
                             if not parts: return ""
                             if len(parts) >= 2 and parts[0].upper() == 'GABRIEL':
                                 if 'LEANDRO' in parts[1].upper():

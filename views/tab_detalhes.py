@@ -356,7 +356,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
                 return '0'
             try:
                 val_float = float(v)
-                return str(int(round(val_float)))
+                return str(round(val_float))
             except (ValueError, TypeError):
                 return str(v).strip()
         df_view['Peso'] = df_view['Peso'].apply(limpar_peso_inteiro)
