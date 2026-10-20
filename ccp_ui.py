@@ -316,6 +316,75 @@ def inject_ui_assets():
 
 
 
+@st.dialog("🔑 Recuperação de Senha", width="small")
+def forgot_password_dialog():
+    import db_manager
+    import time
+    st.markdown("<p style='font-size: 0.85rem; color: #94a3b8; margin-bottom: 12px;'>Informe sua matrícula corporativa para receber o código de 6 dígitos no seu e-mail Cemig via Outlook.</p>", unsafe_allow_html=True)
+    
+    if 'fp_step' not in st.session_state:
+        st.session_state.fp_step = 1
+        st.session_state.fp_mat = ""
+        st.session_state.fp_email_mask = ""
+
+    if st.session_state.fp_step == 1:
+        mat_default = st.session_state.get('fp_mat', '') or st.session_state.get('login_user', '')
+        mat_rec = st.text_input("Matrícula", value=mat_default, placeholder="Ex: c057573", key="fp_mat_input").strip()
+        
+        if st.button("ENVIAR CÓDIGO POR E-MAIL", key="btn_fp_send", use_container_width=True):
+            if not mat_rec:
+                st.warning("Por favor, digite sua matrícula.")
+            else:
+                with st.spinner("Localizando cadastro e enviando e-mail pelo Outlook..."):
+                    ok, msg, email_mask = db_manager.solicitar_codigo_recuperacao(mat_rec)
+                    if ok:
+                        st.session_state.fp_mat = mat_rec
+                        st.session_state.fp_email_mask = email_mask
+                        st.session_state.fp_step = 2
+                        st.rerun(scope="fragment")
+                    else:
+                        st.error(msg)
+    else:
+        st.success(f"Código enviado para: **{st.session_state.fp_email_mask}**")
+        st.markdown("<p style='font-size: 0.8rem; color: #94a3b8; margin-bottom: 15px;'>Verifique sua caixa de entrada no Outlook (inclusive Outros/Lixo). O código expira em 10 minutos.<br><strong style='color: #38bdf8;'>Importante:</strong> Digite o código de 6 dígitos abaixo e crie sua nova senha definitiva.</p>", unsafe_allow_html=True)
+        
+        cod_default = st.session_state.get('fp_cod_prefill', '')
+        cod_rec = st.text_input("Código de 6 dígitos", value=cod_default, placeholder="Ex: 849201", max_chars=6, key="fp_cod_input").strip()
+        nova_senha = st.text_input("Nova Senha", type="password", placeholder="Mínimo 4 caracteres", key="fp_nova_senha")
+        conf_senha = st.text_input("Confirme a Nova Senha", type="password", placeholder="Repita a nova senha", key="fp_conf_senha")
+        
+        col_b1, col_b2 = st.columns([1.2, 0.8])
+        with col_b1:
+            if st.button("SALVAR NOVA SENHA", key="btn_fp_save", use_container_width=True):
+                if not cod_rec or not nova_senha:
+                    st.warning("Preencha o código e a nova senha.")
+                elif len(nova_senha) < 4:
+                    st.error("A senha deve ter pelo menos 4 caracteres.")
+                elif nova_senha != conf_senha:
+                    st.error("As senhas não coincidem.")
+                else:
+                    with st.spinner("Validando código e salvando nova senha..."):
+                        ok, msg = db_manager.validar_e_redefinir_senha_recuperacao(
+                            st.session_state.fp_mat,
+                            cod_rec,
+                            nova_senha
+                        )
+                        if ok:
+                            st.success("✅ Senha atualizada com sucesso! Você já pode fazer login com a nova senha.")
+                            st.session_state.pop('fp_step', None)
+                            st.session_state.pop('fp_mat', None)
+                            st.session_state.pop('fp_email_mask', None)
+                            st.session_state.pop('fp_cod_prefill', None)
+                            time.sleep(1.8)
+                            st.rerun()
+                        else:
+                            st.error(msg)
+        with col_b2:
+            if st.button("Voltar / Reenviar", key="btn_fp_back", use_container_width=True):
+                st.session_state.fp_step = 1
+                st.session_state.pop('fp_cod_prefill', None)
+                st.rerun(scope="fragment")
+
 def login_screen(cookie_manager=None):
     """Renderiza a interface de login premium."""
     import db_manager
@@ -385,71 +454,6 @@ def login_screen(cookie_manager=None):
         </style>
     """, unsafe_allow_html=True)
     
-    @st.dialog("🔑 Recuperação de Senha", width="small")
-    def forgot_password_dialog():
-        import time
-        st.markdown("<p style='font-size: 0.85rem; color: #94a3b8; margin-bottom: 12px;'>Informe sua matrícula corporativa para receber o código de 6 dígitos no seu e-mail Cemig via Outlook.</p>", unsafe_allow_html=True)
-        
-        if 'fp_step' not in st.session_state:
-            st.session_state.fp_step = 1
-            st.session_state.fp_mat = ""
-            st.session_state.fp_email_mask = ""
-
-        if st.session_state.fp_step == 1:
-            mat_default = st.session_state.get('login_user', '')
-            mat_rec = st.text_input("Matrícula", value=mat_default, placeholder="Ex: c057573", key="fp_mat_input").strip()
-            
-            if st.button("ENVIAR CÓDIGO POR E-MAIL", key="btn_fp_send", use_container_width=True):
-                if not mat_rec:
-                    st.warning("Por favor, digite sua matrícula.")
-                else:
-                    with st.spinner("Localizando cadastro e enviando e-mail pelo Outlook..."):
-                        ok, msg, email_mask = db_manager.solicitar_codigo_recuperacao(mat_rec)
-                        if ok:
-                            st.session_state.fp_mat = mat_rec
-                            st.session_state.fp_email_mask = email_mask
-                            st.session_state.fp_step = 2
-                            st.rerun()
-                        else:
-                            st.error(msg)
-        else:
-            st.success(f"Código enviado para: **{st.session_state.fp_email_mask}**")
-            st.markdown("<p style='font-size: 0.8rem; color: #94a3b8; margin-bottom: 15px;'>Verifique sua caixa de entrada no Outlook (inclusive Outros/Lixo). O código expira em 10 minutos.</p>", unsafe_allow_html=True)
-            
-            cod_rec = st.text_input("Código de 6 dígitos", placeholder="Ex: 849201", max_chars=6, key="fp_cod_input").strip()
-            nova_senha = st.text_input("Nova Senha", type="password", placeholder="Mínimo 4 caracteres", key="fp_nova_senha")
-            conf_senha = st.text_input("Confirme a Nova Senha", type="password", placeholder="Repita a nova senha", key="fp_conf_senha")
-            
-            col_b1, col_b2 = st.columns([1.2, 0.8])
-            with col_b1:
-                if st.button("SALVAR NOVA SENHA", key="btn_fp_save", use_container_width=True):
-                    if not cod_rec or not nova_senha:
-                        st.warning("Preencha o código e a nova senha.")
-                    elif len(nova_senha) < 4:
-                        st.error("A senha deve ter pelo menos 4 caracteres.")
-                    elif nova_senha != conf_senha:
-                        st.error("As senhas não coincidem.")
-                    else:
-                        with st.spinner("Validando código e salvando nova senha..."):
-                            ok, msg = db_manager.validar_e_redefinir_senha_recuperacao(
-                                st.session_state.fp_mat,
-                                cod_rec,
-                                nova_senha
-                            )
-                            if ok:
-                                st.success("✅ Senha atualizada com sucesso! Você já pode fazer login com a nova senha.")
-                                st.session_state.pop('fp_step', None)
-                                st.session_state.pop('fp_mat', None)
-                                st.session_state.pop('fp_email_mask', None)
-                                time.sleep(1.8)
-                                st.rerun()
-                            else:
-                                st.error(msg)
-            with col_b2:
-                if st.button("Voltar / Reenviar", key="btn_fp_back", use_container_width=True):
-                    st.session_state.fp_step = 1
-                    st.rerun()
-
     # Grid de Centralização (O container da coluna 2 será o nosso CARD)
     _, center_col, _ = st.columns([1.1, 1, 1.1])
     
@@ -485,11 +489,18 @@ def login_screen(cookie_manager=None):
                         
                     st.rerun()
                 else:
-                    st.error("Credenciais inválidas.")
+                    if db_manager.verificar_se_codigo_recuperacao(user, pwd):
+                        st.warning("⚠️ O código de 6 dígitos recebido por e-mail é um código de validação, não sua senha de login. Clique em 'Esqueci minha senha' abaixo para cadastrar sua nova senha definitiva.")
+                    else:
+                        st.error("Credenciais inválidas.")
         
         # Link para Recuperação de Senha
         st.markdown('<div class="forgot-pwd-wrap">', unsafe_allow_html=True)
         if st.button("Esqueci minha senha", key="btn_forgot_pwd"):
+            if pwd and len(str(pwd).strip()) == 6 and str(pwd).strip().isdigit() and user:
+                st.session_state.fp_step = 2
+                st.session_state.fp_mat = user
+                st.session_state.fp_cod_prefill = str(pwd).strip()
             forgot_password_dialog()
         st.markdown('</div>', unsafe_allow_html=True)
         

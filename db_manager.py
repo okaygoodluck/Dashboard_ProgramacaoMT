@@ -814,17 +814,21 @@ def enviar_email_codigo_recuperacao(destinatario, codigo, nome):
     import json
     import os
     
+    import html
+    
     path_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "send_reset_email.ps1")
     if not os.path.exists(path_script):
         return False, "Script de envio send_reset_email.ps1 não encontrado."
         
+    nome_escaped = "".join(f"&#{ord(c)};" if ord(c) > 127 else html.escape(c) for c in str(nome))
+    
     cmd = [
         "powershell.exe",
         "-ExecutionPolicy", "Bypass",
         "-File", path_script,
         destinatario,
         str(codigo),
-        nome
+        nome_escaped
     ]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', timeout=20)
@@ -975,6 +979,38 @@ def validar_e_redefinir_senha_recuperacao(matricula, codigo, nova_senha):
             return False, "Erro ao gravar a nova senha no banco de dados."
     except Exception as e:
         return False, f"Erro interno ao redefinir senha: {e}"
+    finally:
+        conn.close()
+
+def verificar_se_codigo_recuperacao(matricula, codigo_digitado):
+    """Verifica se o valor digitado corresponde a um código de recuperação ativo e válido."""
+    if not matricula or not codigo_digitado:
+        return False
+    cod_str = str(codigo_digitado).strip()
+    if len(cod_str) != 6 or not cod_str.isdigit():
+        return False
+    from datetime import datetime
+    conn = get_connection_config_read()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, expira_em, tentativas, usado 
+            FROM recuperacao_senhas 
+            WHERE matricula = ? COLLATE NOCASE AND codigo = ? AND usado = 0
+            ORDER BY id DESC LIMIT 1
+        """, (str(matricula).strip(), cod_str))
+        row = cursor.fetchone()
+        if not row:
+            return False
+        _, expira_em_str, tentativas, usado = row
+        if usado or tentativas >= 3:
+            return False
+        expira_dt = datetime.strptime(str(expira_em_str)[:19], '%Y-%m-%d %H:%M:%S')
+        if datetime.now() > expira_dt:
+            return False
+        return True
+    except Exception:
+        return False
     finally:
         conn.close()
 

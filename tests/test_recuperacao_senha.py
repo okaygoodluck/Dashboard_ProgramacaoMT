@@ -115,6 +115,26 @@ class TestRecuperacaoSenha(unittest.TestCase):
         user_row = df_users[df_users['matricula'] == 'c999999']
         self.assertFalse(user_row.empty)
         self.assertEqual(user_row.iloc[0]['email'], 'novo.email@cemig.com.br')
+    def test_verificar_se_codigo_recuperacao(self):
+        """Verifica se identifica corretamente quando o código de 6 dígitos é ativo e rejeita quando expirado/inválido."""
+        conn = db_manager.get_connection_config()
+        expira_futuro = datetime.now() + timedelta(minutes=10)
+        conn.execute("""
+            INSERT INTO recuperacao_senhas (matricula, codigo, expira_em, tentativas, usado)
+            VALUES ('c999999', '112233', ?, 0, 0)
+        """, (expira_futuro.strftime('%Y-%m-%d %H:%M:%S'),))
+        conn.commit()
+        conn.close()
+
+        # Código correto e ativo
+        self.assertTrue(db_manager.verificar_se_codigo_recuperacao('c999999', '112233'))
+        # Código errado
+        self.assertFalse(db_manager.verificar_se_codigo_recuperacao('c999999', '999999'))
+        # Matrícula errada
+        self.assertFalse(db_manager.verificar_se_codigo_recuperacao('c000000', '112233'))
+        # Não numérico ou tamanho diferente
+        self.assertFalse(db_manager.verificar_se_codigo_recuperacao('c999999', 'abc'))
 
 if __name__ == '__main__':
     unittest.main()
+
