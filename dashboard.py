@@ -70,13 +70,26 @@ st.set_page_config(
 # 0. Instancia o Gerenciador de Cookies Nativos
 cookie_manager = stx.CookieManager()
 
+def safe_delete_cookie(cm, cookie_name):
+    """Deleta o cookie defensivamente, evitando KeyError quando já foi removido pelo componente."""
+    if not cm:
+        return
+    try:
+        if hasattr(cm, 'cookies') and isinstance(cm.cookies, dict):
+            if cookie_name in cm.cookies:
+                cm.delete(cookie_name)
+        else:
+            cm.delete(cookie_name)
+    except (KeyError, Exception):
+        pass
+
 # --- SISTEMA DE AUTENTICAÇÃO E PERSISTÊNCIA CCP ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
 if st.session_state.get('force_logout'):
-    cookie_manager.delete("control_token")
-    st.session_state.pop('force_logout')
+    safe_delete_cookie(cookie_manager, "control_token")
+    st.session_state.pop('force_logout', None)
 
 # Limpeza de URL segura após renderização do cookie
 if st.session_state.get('clear_token_soon'):
@@ -107,7 +120,7 @@ if not st.session_state.logged_in:
                     st.session_state.pop('login_token_ready')
         else:
             # Token inválido: limpa rastros
-            cookie_manager.delete("control_token")
+            safe_delete_cookie(cookie_manager, "control_token")
             if st.query_params.get("ctoken"):
                 st.query_params.clear()
             if 'login_token_ready' in st.session_state:
@@ -816,10 +829,7 @@ if df is not None:
         token_atual = cookie_manager.get("control_token") or st.query_params.get("ctoken")
         if token_atual:
             db_manager.remover_sessao(token_atual)
-        try:
-            cookie_manager.delete("control_token")
-        except Exception:
-            pass
+        safe_delete_cookie(cookie_manager, "control_token")
         st.query_params.clear()
         st.session_state['logged_in'] = False
         st.session_state['force_logout'] = True
