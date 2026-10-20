@@ -591,9 +591,9 @@ if df is not None:
         df_top = df[df['Responsavel'] == escopo_nome] if 'Responsavel' in df.columns else df
         prefix_kpi = "Minha "
     else:
-        # Gerencial e ADM veem o panorama geral
+        # Gerencial, SubGerencial e ADM veem o panorama geral
         df_top = df
-        prefix_kpi = "Geral: " if escopo_nivel in ["Gerencial", "ADM"] else ""
+        prefix_kpi = "Geral: " if escopo_nivel in ["SubGerencial", "Gerencial", "ADM"] else ""
 
     # 1. KPIs GERAIS (Recálculo Dinâmico ocorrerá após os filtros)
     # Definimos variáveis iniciais caso o processamento falhe
@@ -634,6 +634,9 @@ if df is not None:
     elif user_nivel == "Gerencial":
         badge_style = "background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff;"
         badge_label = "📊 GERENCIAL"
+    elif user_nivel == "SubGerencial":
+        badge_style = "background: linear-gradient(135deg, #0284c7, #0369a1); color: #fff;"
+        badge_label = "⚡ SUBGERENCIAL"
     else:
         badge_style = "background: linear-gradient(135deg, #10b981, #047857); color: #fff;"
         badge_label = "👤 OPERACIONAL"
@@ -1012,13 +1015,16 @@ if df is not None:
     tratar_snapshot_diario(total_solicitacoes, qtd_atrasadas, qtd_alerta, qtd_urgencia, (total_solicitacoes - qtd_atrasadas))
 
     # 3. ABAS DE VISUALIZAÇÃO (Symmetry Mode - Responsivo)
-    if getattr(st.session_state, "user_nivel", "ADM") in ["Gerencial", "ADM"]:
+    user_role = getattr(st.session_state, "user_nivel", "ADM")
+    if user_role in ["Gerencial", "ADM"]:
         abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados", "📊 Relatórios"]
+    elif user_role == "SubGerencial":
+        abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados"]
     else:
         abas = ["📅 Calendário", "🗺️ Visão por Região", "📋 Dados Detalhados"]
     
     # Nível ADM vê Configurações
-    if getattr(st.session_state, "user_nivel", "ADM") == "ADM":
+    if user_role == "ADM":
         abas.append("⚙️ Configurações")
         
     # Recupera a aba ativa ou usa a primeira

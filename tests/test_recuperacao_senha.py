@@ -134,6 +134,24 @@ class TestRecuperacaoSenha(unittest.TestCase):
         self.assertFalse(db_manager.verificar_se_codigo_recuperacao('c000000', '112233'))
         # Não numérico ou tamanho diferente
         self.assertFalse(db_manager.verificar_se_codigo_recuperacao('c999999', 'abc'))
+    def test_nivel_subgerencial(self):
+        """Verifica se o perfil SubGerencial é gravado e alterado corretamente no banco."""
+        ok_alt = db_manager.alterar_nivel_usuario('c999999', 'SubGerencial')
+        self.assertTrue(ok_alt)
+
+        df_users = db_manager.listar_usuarios()
+        row = df_users[df_users['matricula'] == 'c999999']
+        self.assertFalse(row.empty)
+        self.assertEqual(row.iloc[0]['nivel'], 'SubGerencial')
+
+        # Testar login retornando o nível SubGerencial
+        user_data = db_manager.verificar_login('c999999', '12345') # dummy_hash no setup não bate com 12345, mas validar_token_sessao sim
+        tok = db_manager.gerar_token_sessao('c999999')
+        if tok:
+            sess_data = db_manager.validar_token_sessao(tok)
+            self.assertIsNotNone(sess_data)
+            self.assertEqual(sess_data[2], 'SubGerencial')
+            db_manager.remover_sessao(tok)
 
 if __name__ == '__main__':
     unittest.main()

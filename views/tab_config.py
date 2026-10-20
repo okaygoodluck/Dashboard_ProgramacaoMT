@@ -6,8 +6,8 @@ import time
 @st.dialog("Editar Acesso e E-mail")
 def editar_usuario_dialog(matricula, nome, nivel_atual, email_atual=""):
     st.write(f"Usuário: **{nome}** (`{matricula}`)")
-    idx_niv = ["Usuario", "Gerencial", "ADM"].index(nivel_atual) if nivel_atual in ["Usuario", "Gerencial", "ADM"] else 0
-    novo_nivel = st.selectbox("Nível de Acesso", options=["Usuario", "Gerencial", "ADM"], index=idx_niv)
+    idx_niv = ["Usuario", "SubGerencial", "Gerencial", "ADM"].index(nivel_atual) if nivel_atual in ["Usuario", "SubGerencial", "Gerencial", "ADM"] else 0
+    novo_nivel = st.selectbox("Nível de Acesso", options=["Usuario", "SubGerencial", "Gerencial", "ADM"], index=idx_niv)
     novo_email = st.text_input("E-mail Corporativo Cemig", value=str(email_atual or '').strip()).strip().lower()
     
     if st.button("Salvar Alterações", use_container_width=True):
@@ -229,7 +229,7 @@ def render_tab_config():
                                         st.caption(f"ID: {row['matricula']}")
                                 
                                 with col_u2:
-                                    nivel_color = "#22d3ee" if row['nivel'] == "ADM" else "#f59e0b" if row['nivel'] == "Gerencial" else "#94a3b8"
+                                    nivel_color = "#22d3ee" if row['nivel'] == "ADM" else "#f59e0b" if row['nivel'] == "Gerencial" else "#0284c7" if row['nivel'] == "SubGerencial" else "#94a3b8"
                                     st.markdown(f'<div style="background:{nivel_color}15; color:{nivel_color}; border: 1px solid {nivel_color}40; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; text-align: center;">{row["nivel"]}</div>', unsafe_allow_html=True)
                                 
                                 with col_u3:
@@ -263,7 +263,7 @@ def render_tab_config():
                     fn_mat = st.text_input("Matrícula (ex: c000000)").strip()
                     fn_nom = st.text_input("Nome Completo").strip()
                     fn_mail = st.text_input("E-mail Corporativo (ex: nome.sobrenome@cemig.com.br)").strip()
-                    fn_niv = st.selectbox("Nível de Acesso", options=["Usuario", "Gerencial", "ADM"])
+                    fn_niv = st.selectbox("Nível de Acesso", options=["Usuario", "SubGerencial", "Gerencial", "ADM"])
                     
                     if st.form_submit_button("✨ Criar Usuário Vanguard"):
                         if fn_mat and fn_nom:
