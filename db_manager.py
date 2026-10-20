@@ -750,13 +750,13 @@ def listar_usuarios():
     """Retorna lista de todos os usuários."""
     conn = get_connection_config()
     try:
-        return pd.read_sql("SELECT matricula, nome, nivel FROM usuarios ORDER BY nome", conn)
+        return pd.read_sql("SELECT matricula, nome, nivel, email FROM usuarios ORDER BY nome", conn)
     except Exception:
         return pd.DataFrame()
     finally:
         conn.close()
 
-def criar_usuario(matricula, nome, nivel):
+def criar_usuario(matricula, nome, nivel, email=""):
     """Cria um novo usuário com senha padrão '12345'."""
     import bcrypt
     senha_padrao = "12345"
@@ -765,13 +765,216 @@ def criar_usuario(matricula, nome, nivel):
     conn = get_connection_config()
     try:
         conn.execute("""
-            INSERT INTO usuarios (matricula, nome, password_hash, nivel, senha_provisoria)
-            VALUES (?, ?, ?, ?, 1)
-        """, (matricula.strip(), nome.strip(), senha_hash, nivel))
+            INSERT INTO usuarios (matricula, nome, password_hash, nivel, senha_provisoria, email)
+            VALUES (?, ?, ?, ?, 1, ?)
+        """, (matricula.strip(), nome.strip(), senha_hash, nivel, email.strip().lower() if email else ""))
         conn.commit()
         return True
     except Exception:
         return False
+    finally:
+        conn.close()
+
+def atualizar_email_usuario(matricula, novo_email):
+    """Atualiza o e-mail de um usuário existente."""
+    conn = get_connection_config()
+    try:
+        conn.execute("UPDATE usuarios SET email = ? WHERE matricula = ? COLLATE NOCASE", (novo_email.strip().lower(), matricula))
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+def init_tabela_recuperacao():
+    """Garante a existência da tabela recuperacao_senhas."""
+    conn = get_connection_config()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS recuperacao_senhas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                matricula TEXT NOT NULL,
+                codigo TEXT NOT NULL,
+                expira_em DATETIME NOT NULL,
+                tentativas INTEGER DEFAULT 0,
+                usado BOOLEAN DEFAULT 0,
+                criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+    except Exception as e:
+        print(f"[DB] Erro ao criar tabela recuperacao_senhas: {e}")
+    finally:
+        conn.close()
+
+def enviar_email_codigo_recuperacao(destinatario, codigo, nome):
+    """Dispara e-mail com o código de 6 dígitos via PowerShell e Outlook local."""
+    import subprocess
+    import json
+    import os
+    
+    path_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts", "send_reset_email.ps1")
+    if not os.path.exists(path_script):
+        return False, "Script de envio send_reset_email.ps1 não encontrado."
+        
+    cmd = [
+        "powershell.exe",
+        "-ExecutionPolicy", "Bypass",
+        "-File", path_script,
+        destinatario,
+        str(codigo),
+        nome
+    ]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8', timeout=20)
+        output = res.stdout.strip()
+        if output:
+            try:
+                dados = json.loads(output)
+                if dados.get("sucesso"):
+                    return True, "E-mail enviado com sucesso."
+                else:
+                    return False, dados.get("erro", "Erro desconhecido retornado pelo Outlook.")
+            except Exception:
+                pass
+        if res.returncode == 0:
+            return True, "E-mail enviado."
+        return False, res.stderr.strip() or "Falha no processo de envio do Outlook."
+    except subprocess.TimeoutExpired:
+        return False, "Tempo limite esgotado ao tentar comunicar com o Outlook. Verifique se o aplicativo está aberto."
+    except Exception as e:
+        return False, f"Erro ao disparar e-mail: {e}"
+
+def solicitar_codigo_recuperacao(matricula):
+    """
+    Localiza o usuário pela matrícula, gera código de 6 dígitos e dispara e-mail corporativo.
+    Retorna: (sucesso: bool, mensagem: str, email_mascarado: str)
+    """
+    import random
+    from datetime import datetime, timedelta
+    
+    init_tabela_recuperacao()
+    mat_clean = str(matricula).strip()
+    
+    conn = get_connection_config_read()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT matricula, nome, email FROM usuarios WHERE matricula = ? COLLATE NOCASE", (mat_clean,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            return False, "Matrícula não encontrada no sistema.", None
+            
+        mat_db, nome_db, email_db = user_row
+        if not email_db or not str(email_db).strip() or str(email_db).strip().upper() == 'DESLIGADO' or '@' not in str(email_db):
+            return False, "Este usuário não possui e-mail cadastrado ou está inativo. Contate o Administrador.", None
+            
+        email_clean = str(email_db).strip().lower()
+        
+        # Gera PIN aleatório seguro de 6 dígitos
+        codigo = f"{random.SystemRandom().randint(100000, 999999)}"
+        expira_em = datetime.now() + timedelta(minutes=10)
+        
+        # Salva o código na tabela
+        conn_w = get_connection_config()
+        try:
+            # Invalida códigos anteriores não usados para esta matrícula
+            conn_w.execute("UPDATE recuperacao_senhas SET usado = 1 WHERE matricula = ? AND usado = 0", (mat_db,))
+            conn_w.execute("""
+                INSERT INTO recuperacao_senhas (matricula, codigo, expira_em, tentativas, usado)
+                VALUES (?, ?, ?, 0, 0)
+            """, (mat_db, codigo, expira_em.strftime('%Y-%m-%d %H:%M:%S')))
+            conn_w.commit()
+        finally:
+            conn_w.close()
+            
+        # Dispara o e-mail via Outlook
+        ok, msg_envio = enviar_email_codigo_recuperacao(email_clean, codigo, nome_db)
+        if not ok:
+            return False, f"Não foi possível enviar o e-mail pelo Outlook: {msg_envio}. Verifique se o Outlook está aberto na sua máquina.", None
+            
+        # Mascara o e-mail para privacidade (ex: an****@cemig.com.br)
+        partes_email = email_clean.split('@')
+        nome_user = partes_email[0]
+        dominio = partes_email[1] if len(partes_email) > 1 else 'cemig.com.br'
+        if len(nome_user) <= 3:
+            mask_user = nome_user[0] + "***"
+        else:
+            mask_user = nome_user[:2] + "****" + nome_user[-1]
+        email_mascarado = f"{mask_user}@{dominio}"
+        
+        return True, "Código enviado com sucesso!", email_mascarado
+    except Exception as e:
+        return False, f"Erro interno ao solicitar recuperação: {e}", None
+    finally:
+        conn.close()
+
+def validar_e_redefinir_senha_recuperacao(matricula, codigo, nova_senha):
+    """
+    Valida o código de 6 dígitos e, se correto, atualiza a senha do usuário.
+    Retorna: (sucesso: bool, mensagem: str)
+    """
+    from datetime import datetime
+    
+    if len(str(nova_senha).strip()) < 4:
+        return False, "A nova senha deve possuir pelo menos 4 caracteres."
+        
+    mat_clean = str(matricula).strip()
+    cod_clean = str(codigo).strip()
+    
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, codigo, expira_em, tentativas 
+            FROM recuperacao_senhas 
+            WHERE matricula = ? AND usado = 0 
+            ORDER BY id DESC LIMIT 1
+        """, (mat_clean,))
+        reg = cursor.fetchone()
+        
+        if not reg:
+            return False, "Nenhuma solicitação de recuperação ativa para esta matrícula. Solicite um novo código."
+            
+        reg_id, cod_db, expira_str, tentativas = reg
+        
+        # Verifica expiração
+        try:
+            expira_dt = datetime.strptime(str(expira_str)[:19], '%Y-%m-%d %H:%M:%S')
+            if datetime.now() > expira_dt:
+                conn.execute("UPDATE recuperacao_senhas SET usado = 1 WHERE id = ?", (reg_id,))
+                conn.commit()
+                return False, "O código de verificação expirou (validade de 10 min). Solicite um novo código."
+        except Exception:
+            pass
+            
+        # Verifica limite de tentativas
+        if tentativas >= 3:
+            conn.execute("UPDATE recuperacao_senhas SET usado = 1 WHERE id = ?", (reg_id,))
+            conn.commit()
+            return False, "Limite de 3 tentativas excedido por segurança. Solicite um novo código."
+            
+        # Verifica se o código confere
+        if cod_clean != str(cod_db).strip():
+            conn.execute("UPDATE recuperacao_senhas SET tentativas = tentativas + 1 WHERE id = ?", (reg_id,))
+            conn.commit()
+            restantes = 2 - tentativas
+            if restantes > 0:
+                return False, f"Código incorreto. Você ainda tem {restantes} tentativa(s)."
+            else:
+                return False, "Código incorreto. Limite de tentativas excedido. Solicite um novo código."
+                
+        # Código válido! Marca como usado e atualiza a senha
+        conn.execute("UPDATE recuperacao_senhas SET usado = 1 WHERE id = ?", (reg_id,))
+        conn.commit()
+        
+        ok_senha = atualizar_senha(mat_clean, nova_senha)
+        if ok_senha:
+            return True, "Senha redefinida com sucesso! Você já pode acessar o sistema."
+        else:
+            return False, "Erro ao gravar a nova senha no banco de dados."
+    except Exception as e:
+        return False, f"Erro interno ao redefinir senha: {e}"
     finally:
         conn.close()
 
@@ -1182,7 +1385,31 @@ def init_database():
                 nome TEXT NOT NULL,
                 password_hash TEXT NOT NULL,
                 nivel TEXT NOT NULL,
-                senha_provisoria INTEGER DEFAULT 1
+                senha_provisoria INTEGER DEFAULT 1,
+                email TEXT
+            )
+        ''')
+        
+        # Migração defensiva: garante a coluna email se tabela já existia sem ela
+        try:
+            cur_chk = conn.cursor()
+            cur_chk.execute("PRAGMA table_info(usuarios)")
+            cols_chk = [c[1] for c in cur_chk.fetchall()]
+            if 'email' not in cols_chk:
+                conn.execute("ALTER TABLE usuarios ADD COLUMN email TEXT")
+        except Exception:
+            pass
+
+        # Tabela de Recuperação de Senhas
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS recuperacao_senhas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                matricula TEXT NOT NULL,
+                codigo TEXT NOT NULL,
+                expira_em DATETIME NOT NULL,
+                tentativas INTEGER DEFAULT 0,
+                usado BOOLEAN DEFAULT 0,
+                criado_em DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
         

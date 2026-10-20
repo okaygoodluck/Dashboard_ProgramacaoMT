@@ -349,7 +349,7 @@ def login_screen(cookie_manager=None):
             letter-spacing: -0.5px !important;
         }
 
-        /* Estilização de Inputs e Botão */
+        /* Estilização de Inputs e Botão Principal */
         .stButton>button {
             width: 100% !important;
             background: linear-gradient(135deg, #22d3ee, #0ea5e9) !important;
@@ -362,9 +362,94 @@ def login_screen(cookie_manager=None):
             text-transform: uppercase;
             letter-spacing: 1.5px;
         }
+
+        /* Estilização do link Esqueci minha senha */
+        div.forgot-pwd-wrap div[data-testid="stButton"] button {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            color: #38bdf8 !important;
+            font-size: 0.8rem !important;
+            font-weight: 600 !important;
+            padding: 2px 4px !important;
+            margin-top: 10px !important;
+            text-transform: none !important;
+            letter-spacing: 0px !important;
+            text-decoration: underline !important;
+            cursor: pointer !important;
+        }
+        div.forgot-pwd-wrap div[data-testid="stButton"] button:hover {
+            color: #7dd3fc !important;
+            background: transparent !important;
+        }
         </style>
     """, unsafe_allow_html=True)
     
+    @st.dialog("🔑 Recuperação de Senha", width="small")
+    def forgot_password_dialog():
+        import time
+        st.markdown("<p style='font-size: 0.85rem; color: #94a3b8; margin-bottom: 12px;'>Informe sua matrícula corporativa para receber o código de 6 dígitos no seu e-mail Cemig via Outlook.</p>", unsafe_allow_html=True)
+        
+        if 'fp_step' not in st.session_state:
+            st.session_state.fp_step = 1
+            st.session_state.fp_mat = ""
+            st.session_state.fp_email_mask = ""
+
+        if st.session_state.fp_step == 1:
+            mat_default = st.session_state.get('login_user', '')
+            mat_rec = st.text_input("Matrícula", value=mat_default, placeholder="Ex: c057573", key="fp_mat_input").strip()
+            
+            if st.button("ENVIAR CÓDIGO POR E-MAIL", key="btn_fp_send", use_container_width=True):
+                if not mat_rec:
+                    st.warning("Por favor, digite sua matrícula.")
+                else:
+                    with st.spinner("Localizando cadastro e enviando e-mail pelo Outlook..."):
+                        ok, msg, email_mask = db_manager.solicitar_codigo_recuperacao(mat_rec)
+                        if ok:
+                            st.session_state.fp_mat = mat_rec
+                            st.session_state.fp_email_mask = email_mask
+                            st.session_state.fp_step = 2
+                            st.rerun()
+                        else:
+                            st.error(msg)
+        else:
+            st.success(f"Código enviado para: **{st.session_state.fp_email_mask}**")
+            st.markdown("<p style='font-size: 0.8rem; color: #94a3b8; margin-bottom: 15px;'>Verifique sua caixa de entrada no Outlook (inclusive Outros/Lixo). O código expira em 10 minutos.</p>", unsafe_allow_html=True)
+            
+            cod_rec = st.text_input("Código de 6 dígitos", placeholder="Ex: 849201", max_chars=6, key="fp_cod_input").strip()
+            nova_senha = st.text_input("Nova Senha", type="password", placeholder="Mínimo 4 caracteres", key="fp_nova_senha")
+            conf_senha = st.text_input("Confirme a Nova Senha", type="password", placeholder="Repita a nova senha", key="fp_conf_senha")
+            
+            col_b1, col_b2 = st.columns([1.2, 0.8])
+            with col_b1:
+                if st.button("SALVAR NOVA SENHA", key="btn_fp_save", use_container_width=True):
+                    if not cod_rec or not nova_senha:
+                        st.warning("Preencha o código e a nova senha.")
+                    elif len(nova_senha) < 4:
+                        st.error("A senha deve ter pelo menos 4 caracteres.")
+                    elif nova_senha != conf_senha:
+                        st.error("As senhas não coincidem.")
+                    else:
+                        with st.spinner("Validando código e salvando nova senha..."):
+                            ok, msg = db_manager.validar_e_redefinir_senha_recuperacao(
+                                st.session_state.fp_mat,
+                                cod_rec,
+                                nova_senha
+                            )
+                            if ok:
+                                st.success("✅ Senha atualizada com sucesso! Você já pode fazer login com a nova senha.")
+                                st.session_state.pop('fp_step', None)
+                                st.session_state.pop('fp_mat', None)
+                                st.session_state.pop('fp_email_mask', None)
+                                time.sleep(1.8)
+                                st.rerun()
+                            else:
+                                st.error(msg)
+            with col_b2:
+                if st.button("Voltar / Reenviar", key="btn_fp_back", use_container_width=True):
+                    st.session_state.fp_step = 1
+                    st.rerun()
+
     # Grid de Centralização (O container da coluna 2 será o nosso CARD)
     _, center_col, _ = st.columns([1.1, 1, 1.1])
     
@@ -375,7 +460,7 @@ def login_screen(cookie_manager=None):
         user = st.text_input("Matrícula", placeholder="C000000", key="login_user")
         pwd = st.text_input("Senha", type="password", placeholder="••••••••", key="login_pwd")
         
-        if st.button("ACESSAR SISTEMA"):
+        if st.button("ACESSAR SISTEMA", key="btn_acessar_sistema"):
             if not user or not pwd:
                 st.warning("Preencha todos os campos.")
             else:
@@ -402,7 +487,13 @@ def login_screen(cookie_manager=None):
                 else:
                     st.error("Credenciais inválidas.")
         
-        st.markdown('<p style="font-size: 0.6rem; color: #4b5563; margin-top: 40px; letter-spacing: 4px; opacity: 0.5;">PROGRAMAÇÃO MT • v1.5</p>', unsafe_allow_html=True)
+        # Link para Recuperação de Senha
+        st.markdown('<div class="forgot-pwd-wrap">', unsafe_allow_html=True)
+        if st.button("Esqueci minha senha", key="btn_forgot_pwd"):
+            forgot_password_dialog()
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('<p style="font-size: 0.6rem; color: #4b5563; margin-top: 35px; letter-spacing: 4px; opacity: 0.5;">PROGRAMAÇÃO MT • v1.5</p>', unsafe_allow_html=True)
 
 
 

@@ -3,17 +3,22 @@ import pandas as pd
 import db_manager
 import time
 
-@st.dialog("Alterar Nível de Acesso")
-def mudar_nivel_dialog(matricula, nome, nivel_atual):
-    st.write(f"Usuário: **{nome}** ({matricula})")
-    novo_nivel = st.selectbox("Novo Nível", options=["Usuario", "Gerencial", "ADM"], index=["Usuario", "Gerencial", "ADM"].index(nivel_atual))
-    if st.button("Salvar Alteração"):
-        if db_manager.alterar_nivel_usuario(matricula, novo_nivel):
-            st.success(f"Nível de {nome} alterado para {novo_nivel}!")
+@st.dialog("Editar Acesso e E-mail")
+def editar_usuario_dialog(matricula, nome, nivel_atual, email_atual=""):
+    st.write(f"Usuário: **{nome}** (`{matricula}`)")
+    idx_niv = ["Usuario", "Gerencial", "ADM"].index(nivel_atual) if nivel_atual in ["Usuario", "Gerencial", "ADM"] else 0
+    novo_nivel = st.selectbox("Nível de Acesso", options=["Usuario", "Gerencial", "ADM"], index=idx_niv)
+    novo_email = st.text_input("E-mail Corporativo Cemig", value=str(email_atual or '').strip()).strip().lower()
+    
+    if st.button("Salvar Alterações", use_container_width=True):
+        ok_niv = db_manager.alterar_nivel_usuario(matricula, novo_nivel)
+        ok_mail = db_manager.atualizar_email_usuario(matricula, novo_email)
+        if ok_niv and ok_mail:
+            st.success(f"Dados de {nome} atualizados com sucesso!")
             time.sleep(1)
             st.rerun()
         else:
-            st.error("Erro ao alterar nível.")
+            st.error("Erro ao atualizar dados do usuário.")
 
 def formatar_nome_exibicao(df_usuarios):
     """Gera nomes resumidos e elegantes, diferenciando homônimos (ex: GABRIEL LEA*, GABRIEL LEO*, AMANDA P*)."""
@@ -217,16 +222,20 @@ def render_tab_config():
                                 
                                 with col_u1:
                                     st.markdown(f"**{row['nome']}**")
-                                    st.caption(f"ID: {row['matricula']}")
+                                    email_str = str(row.get('email', '')).strip()
+                                    if email_str and email_str.upper() != 'DESLIGADO':
+                                        st.caption(f"ID: {row['matricula']} • {email_str}")
+                                    else:
+                                        st.caption(f"ID: {row['matricula']}")
                                 
                                 with col_u2:
                                     nivel_color = "#22d3ee" if row['nivel'] == "ADM" else "#f59e0b" if row['nivel'] == "Gerencial" else "#94a3b8"
                                     st.markdown(f'<div style="background:{nivel_color}15; color:{nivel_color}; border: 1px solid {nivel_color}40; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; text-align: center;">{row["nivel"]}</div>', unsafe_allow_html=True)
                                 
                                 with col_u3:
-                                    if st.session_state.user_nivel == "ADM" and row['matricula'] != st.session_state.user_matricula:
-                                        if st.button("✏️", key=f"edit_{row['matricula']}", help="Alterar Nível"):
-                                            mudar_nivel_dialog(row['matricula'], row['nome'], row['nivel'])
+                                    if st.session_state.user_nivel == "ADM":
+                                        if st.button("✏️", key=f"edit_{row['matricula']}", help="Editar Nível e E-mail"):
+                                            editar_usuario_dialog(row['matricula'], row['nome'], row['nivel'], row.get('email', ''))
                                 
                                 with col_u4:
                                     if st.button("🔑", key=f"reset_{row['matricula']}", help="Resetar Senha para 12345"):
@@ -253,11 +262,12 @@ def render_tab_config():
                     st.markdown("#### Detalhes do Novo Acesso")
                     fn_mat = st.text_input("Matrícula (ex: c000000)").strip()
                     fn_nom = st.text_input("Nome Completo").strip()
+                    fn_mail = st.text_input("E-mail Corporativo (ex: nome.sobrenome@cemig.com.br)").strip()
                     fn_niv = st.selectbox("Nível de Acesso", options=["Usuario", "Gerencial", "ADM"])
                     
                     if st.form_submit_button("✨ Criar Usuário Vanguard"):
                         if fn_mat and fn_nom:
-                            if db_manager.criar_usuario(fn_mat, fn_nom, fn_niv):
+                            if db_manager.criar_usuario(fn_mat, fn_nom, fn_niv, fn_mail):
                                 st.success("Sucesso! Senha inicial: 12345")
                                 time.sleep(1)
                                 st.rerun()
