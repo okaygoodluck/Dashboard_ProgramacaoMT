@@ -58,7 +58,8 @@ def build_server_package():
         'iniciar_agendador.bat',
         'configurar_credenciais.py',
         'configurar_credenciais.bat',
-        'sync_emails.ps1'
+        'sync_emails.ps1',
+        'send_reset_email.ps1'
     ]
     scripts_dest = os.path.join(dist_dir, 'scripts')
     os.makedirs(scripts_dest, exist_ok=True)

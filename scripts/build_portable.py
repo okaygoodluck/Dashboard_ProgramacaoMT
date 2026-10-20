@@ -101,7 +101,8 @@ def build_package():
 
     # 3.1. Copiar apenas os scripts auxiliares do cliente (sincronização de e-mails)
     essential_scripts = [
-        'sync_emails.ps1'
+        'sync_emails.ps1',
+        'send_reset_email.ps1'
     ]
     scripts_dest = os.path.join(dist_dir, 'scripts')
     if os.path.exists(scripts_dest):
