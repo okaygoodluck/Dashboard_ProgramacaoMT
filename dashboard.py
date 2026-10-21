@@ -1153,7 +1153,26 @@ if df is not None:
                 with col_e2: render_delays_by_responsible(df_equipe_agg)
     
             st.markdown("##### Detalhamento por Equipe")
-            st.dataframe(df_equipe_agg, use_container_width=True, hide_index=True)
+            cols_map = {
+                'Responsavel': 'Responsável',
+                'Total': 'Total na Tela',
+                'Em_Elaboracao': 'Em Elaboração',
+                'Alertas': 'Aprovadas (Com 8 Dias)',
+                'Atrasadas': 'Aprovadas (< 8 Dias)',
+                'Urgencia': 'Caixa de Urgência',
+                'Total Critico': 'Demanda do Dia'
+            }
+            cols_order = [
+                'Responsável',
+                'Total na Tela',
+                'Em Elaboração',
+                'Aprovadas (Com 8 Dias)',
+                'Aprovadas (< 8 Dias)',
+                'Caixa de Urgência',
+                'Demanda do Dia'
+            ]
+            df_equipe_display = df_equipe_agg.rename(columns=cols_map)[cols_order]
+            st.dataframe(df_equipe_display, use_container_width=True, hide_index=True)
 
     # --- ABA 1: MALHAS ---
     if chosen_tab == "🏙️ Visão por Malha":
