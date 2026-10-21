@@ -1512,6 +1512,8 @@ def init_database():
                 pendentes_total INTEGER DEFAULT 0,
                 pendentes_iniciadas INTEGER DEFAULT 0,
                 pendentes_nao_iniciadas INTEGER DEFAULT 0,
+                pendentes_iniciadas_dia INTEGER DEFAULT 0,
+                pendentes_dias_anteriores INTEGER DEFAULT 0,
                 PRIMARY KEY (data, matricula)
             )
         ''')
@@ -1547,6 +1549,12 @@ def init_database():
             except Exception:
                 pass
 
+        for col_n in ['pendentes_iniciadas_dia', 'pendentes_dias_anteriores']:
+            try:
+                conn.execute(f"ALTER TABLE pendentes_snapshot ADD COLUMN {col_n} INTEGER DEFAULT 0")
+            except Exception:
+                pass
+
         # 8. Criar usuário ADM padrão se a tabela de usuários estiver vazia
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM usuarios")
@@ -1559,10 +1567,11 @@ def init_database():
                 INSERT INTO usuarios (matricula, nome, password_hash, nivel, senha_provisoria)
                 VALUES ('c057573', 'Kennedy Garito', ?, 'ADM', 1)
             """, (senha_hash,))
-        # 9. Auto-recomposição do histórico de pendentes se a tabela estiver vazia
-        cursor.execute("SELECT COUNT(*) FROM pendentes_snapshot")
+        # 9. Auto-recomposição do histórico de pendentes se pendentes_iniciadas_dia estiver zerado
+        cursor.execute("SELECT COALESCE(SUM(pendentes_iniciadas_dia), 0) FROM pendentes_snapshot")
         if cursor.fetchone()[0] == 0:
-            print("[INIT] Tabela 'pendentes_snapshot' vazia. Recompondo histórico inicial de pendentes...")
+            print("[INIT] Colunas pendentes_iniciadas_dia não preenchidas. Recompondo histórico inicial de pendentes...")
+            recompor_snapshot_historico()
         # 10. Auto-deduplicação do histórico de eventos diários
         deduplicar_historico_eventos()
         # 11. Sanitização de registros indevidos de TRATADA para solicitações que continuam ativas
@@ -1867,6 +1876,9 @@ def registrar_snapshot_pendentes(df_atual):
         # Filtra apenas demandas que contam como pendentes
         df_pendentes = df_pend[df_pend['Situacao_Clean'].isin(['APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO'])].copy()
         
+        cursor.execute("SELECT solicitacao FROM eventos_diarios WHERE tipo_evento = 'INICIADA' AND date(data_evento) = ?", (data_hoje,))
+        sols_iniciadas_hoje = set(str(r[0]).strip().lstrip('0') for r in cursor.fetchall())
+
         for matricula in todos_usuarios:
             cursor.execute("SELECT solicitacao FROM solicitacoes_travadas WHERE matricula = ?", (matricula,))
             travadas = [str(row[0]).strip().lstrip('0') for row in cursor.fetchall() if str(row[0]).strip() and str(row[0]).strip() not in ['None', 'nan', '0']]
@@ -1878,17 +1890,26 @@ def registrar_snapshot_pendentes(df_atual):
             df_user = df_pendentes[mask]
             
             total = len(df_user)
-            iniciadas = len(df_user[df_user['Situacao_Clean'].str.contains('ELABORA', na=False)])
+            df_elabora = df_user[df_user['Situacao_Clean'].str.contains('ELABORA', na=False)]
+            iniciadas = len(df_elabora)
             nao_iniciadas = len(df_user[df_user['Situacao_Clean'] == 'APROVADA'])
             
+            iniciadas_dia = len(df_elabora[df_elabora['Solicitacao_Clean'].isin(sols_iniciadas_hoje)])
+            dias_anteriores = max(0, iniciadas - iniciadas_dia)
+            
             cursor.execute("""
-                INSERT INTO pendentes_snapshot (data, matricula, pendentes_total, pendentes_iniciadas, pendentes_nao_iniciadas)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO pendentes_snapshot (
+                    data, matricula, pendentes_total, pendentes_iniciadas, pendentes_nao_iniciadas,
+                    pendentes_iniciadas_dia, pendentes_dias_anteriores
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(data, matricula) DO UPDATE SET
                     pendentes_total=excluded.pendentes_total,
                     pendentes_iniciadas=excluded.pendentes_iniciadas,
-                    pendentes_nao_iniciadas=excluded.pendentes_nao_iniciadas
-            """, (data_hoje, matricula, total, iniciadas, nao_iniciadas))
+                    pendentes_nao_iniciadas=excluded.pendentes_nao_iniciadas,
+                    pendentes_iniciadas_dia=excluded.pendentes_iniciadas_dia,
+                    pendentes_dias_anteriores=excluded.pendentes_dias_anteriores
+            """, (data_hoje, matricula, total, iniciadas, nao_iniciadas, iniciadas_dia, dias_anteriores))
             
         conn.commit()
     except Exception as e:
@@ -1899,113 +1920,81 @@ def registrar_snapshot_pendentes(df_atual):
 
 def recompor_snapshot_historico():
     """
-    Recompõe e backfila o histórico de pendentes_snapshot lendo a tabela demanda_historico
-    para todas as datas disponíveis.
+    Recompõe o histórico das colunas pendentes_iniciadas_dia e pendentes_dias_anteriores
+    cruzando diretamente a tabela pendentes_snapshot com eventos_diarios (INICIADA e TRATADA).
     """
-    conn_data = None
     conn_app = None
     try:
-        conn_data = get_connection_read()
-        cursor_data = conn_data.cursor()
-        
-        # Verifica se demanda_historico existe
-        cursor_data.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='demanda_historico';")
-        if not cursor_data.fetchone():
-            conn_data.close()
-            return
-
-        df_hist = pd.read_sql("SELECT * FROM demanda_historico", conn_data)
-        conn_data.close()
-
-        if df_hist.empty:
-            return
-
-        df_hist['Data_Ref'] = pd.to_datetime(df_hist['Data_Extracao']).dt.strftime('%Y-%m-%d')
-        datas = sorted(df_hist['Data_Ref'].unique())
-
         conn_app = get_connection_config(read_only=False)
         cursor_app = conn_app.cursor()
 
-        cursor_app.execute("SELECT DISTINCT matricula FROM usuarios WHERE matricula IS NOT NULL")
-        users_app = set(row[0] for row in cursor_app.fetchall() if row[0])
-        
-        resp_cols_all = [c for c in df_hist.columns if 'resp' in c.lower()]
-        resp_col_all = resp_cols_all[0] if resp_cols_all else df_hist.columns[2]
-        users_hist = set(df_hist[resp_col_all].dropna().astype(str).str.strip().unique())
-        
-        todos_usuarios = users_app.union(users_hist) - {'', 'None', 'nan', '-'}
+        # Verifica se as colunas existem
+        cursor_app.execute("PRAGMA table_info(pendentes_snapshot)")
+        cols = [r[1] for r in cursor_app.fetchall()]
+        if 'pendentes_iniciadas_dia' not in cols:
+            cursor_app.execute("ALTER TABLE pendentes_snapshot ADD COLUMN pendentes_iniciadas_dia INTEGER DEFAULT 0")
+        if 'pendentes_dias_anteriores' not in cols:
+            cursor_app.execute("ALTER TABLE pendentes_snapshot ADD COLUMN pendentes_dias_anteriores INTEGER DEFAULT 0")
+        conn_app.commit()
 
-        if not todos_usuarios:
-            conn_app.close()
+        # 1. Carrega todos os snapshots de pendentes existentes
+        df_snap = pd.read_sql("SELECT data, matricula, pendentes_iniciadas FROM pendentes_snapshot", conn_app)
+        if df_snap.empty:
             return
 
-        # Pre-carrega todas as travas em memória para evitar queries repetidas dentro do loop
-        cursor_app.execute("SELECT matricula, solicitacao FROM solicitacoes_travadas WHERE matricula IS NOT NULL")
-        travadas_map = {}
-        for row_mat, row_sol in cursor_app.fetchall():
-            mat_clean = str(row_mat).strip()
-            sol_clean = str(row_sol).strip().lstrip('0')
-            if sol_clean and sol_clean not in ['None', 'nan', '0']:
-                travadas_map.setdefault(mat_clean, set()).add(sol_clean)
+        # 2. Carrega eventos INICIADA e TRATADA
+        df_ev = pd.read_sql("""
+            SELECT 
+                date(data_evento) as dt,
+                matricula_responsavel as mat,
+                solicitacao,
+                tipo_evento
+            FROM eventos_diarios
+            WHERE tipo_evento IN ('INICIADA', 'TRATADA')
+        """, conn_app)
 
-        rows_to_insert = []
+        iniciadas_dia = {}
+        tratadas_dia = {}
+        if not df_ev.empty:
+            df_ini = df_ev[df_ev['tipo_evento'] == 'INICIADA']
+            iniciadas_dia = df_ini.groupby(['dt', 'mat'])['solicitacao'].apply(
+                lambda s: set(str(x).strip().lstrip('0') for x in s)
+            ).to_dict()
 
-        for d in datas:
-            df_day_all = df_hist[df_hist['Data_Ref'] == d]
-            max_dt = df_day_all['Data_Extracao'].max()
-            df_day = df_day_all[df_day_all['Data_Extracao'] == max_dt].copy()
+            df_trat = df_ev[df_ev['tipo_evento'] == 'TRATADA']
+            tratadas_dia = df_trat.groupby(['dt', 'mat'])['solicitacao'].apply(
+                lambda s: set(str(x).strip().lstrip('0') for x in s)
+            ).to_dict()
 
-            resp_cols = [c for c in df_day.columns if 'resp' in c.lower()]
-            resp_col = resp_cols[0] if resp_cols else df_day.columns[2]
-            df_day['Resp_Clean'] = df_day[resp_col].astype(str).str.strip()
+        # 3. Calcula o split para cada snapshot
+        updates = []
+        for _, row in df_snap.iterrows():
+            d = row['data']
+            m = row['matricula']
+            pend_ini = int(row['pendentes_iniciadas'] or 0)
 
-            sit_cols = [c for c in df_day.columns if 'situa' in c.lower()]
-            sit_series = pd.Series('', index=df_day.index)
-            for c in sit_cols:
-                v = df_day[c].fillna('').astype(str).str.strip().str.upper()
-                mask = (sit_series == '') & (~v.isin(['NONE', '', 'NAN']))
-                sit_series.loc[mask] = v.loc[mask]
-            df_day['Situacao_Clean'] = sit_series
+            if pend_ini <= 0:
+                updates.append((0, 0, d, m))
+                continue
 
-            sol_cols = [c for c in df_day.columns if 'solicita' in c.lower() and 'vinc' not in c.lower()]
-            sol_series = pd.Series('', index=df_day.index)
-            for c in sol_cols:
-                v = df_day[c].fillna('').astype(str).str.strip().str.lstrip('0')
-                mask = (sol_series == '') & (~v.isin(['NONE', '', 'NAN']))
-                sol_series.loc[mask] = v.loc[mask]
-            df_day['Solicitacao_Clean'] = sol_series
+            sols_ini = iniciadas_dia.get((d, m), set())
+            sols_trat = tratadas_dia.get((d, m), set())
+            sols_ini_nao_tratadas = sols_ini - sols_trat
 
-            reg_col = 'Ref_Regiao' if 'Ref_Regiao' in df_day.columns else df_day.columns[1]
-            df_day['Regiao_Sigla'] = df_day[reg_col].astype(str).str.strip().str[:2].str.upper()
+            qtd_ini_dia = len(sols_ini_nao_tratadas)
+            pend_ini_dia = min(qtd_ini_dia, pend_ini)
+            pend_ant = max(0, pend_ini - pend_ini_dia)
 
-            df_pendentes = df_day[df_day['Situacao_Clean'].isin(['APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO'])].copy()
+            updates.append((pend_ini_dia, pend_ant, d, m))
 
-            for matricula in todos_usuarios:
-                travadas = travadas_map.get(matricula, set())
-
-                mask = (df_pendentes['Resp_Clean'] == matricula)
-                if travadas:
-                    mask = mask | ((df_pendentes['Solicitacao_Clean'] != '') & (df_pendentes['Solicitacao_Clean'] != 'None') & df_pendentes['Solicitacao_Clean'].isin(travadas))
-
-                df_user = df_pendentes[mask]
-                total = len(df_user)
-                iniciadas = len(df_user[df_user['Situacao_Clean'].str.contains('ELABORA', na=False)])
-                nao_iniciadas = len(df_user[df_user['Situacao_Clean'] == 'APROVADA'])
-
-                rows_to_insert.append((d, matricula, total, iniciadas, nao_iniciadas))
-
-        if rows_to_insert:
+        if updates:
             cursor_app.executemany("""
-                INSERT INTO pendentes_snapshot (data, matricula, pendentes_total, pendentes_iniciadas, pendentes_nao_iniciadas)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(data, matricula) DO UPDATE SET
-                    pendentes_total=excluded.pendentes_total,
-                    pendentes_iniciadas=excluded.pendentes_iniciadas,
-                    pendentes_nao_iniciadas=excluded.pendentes_nao_iniciadas
-            """, rows_to_insert)
+                UPDATE pendentes_snapshot
+                SET pendentes_iniciadas_dia = ?, pendentes_dias_anteriores = ?
+                WHERE data = ? AND matricula = ?
+            """, updates)
             conn_app.commit()
-            print(f"[DB] Snapshots de pendentes recompostos com sucesso: {len(rows_to_insert)} registros de {len(datas)} datas.")
-
+            print(f"[DB] Snapshots de pendentes recompostos com sucesso: {len(updates)} registros atualizados.")
     except Exception as e:
         print(f"[DB] Erro ao recompor histórico de pendentes: {e}")
     finally:
@@ -2212,11 +2201,25 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             df_perf = df_pivot[['Data', 'Novas', 'Tratadas', 'Iniciadas']]
             
         # --- PENDENTES: Ler do snapshot persistente (ccp_app.db) ---
-        cursor.execute("SELECT data, pendentes_total, pendentes_iniciadas, pendentes_nao_iniciadas FROM pendentes_snapshot WHERE matricula = ? AND data BETWEEN ? AND ? ORDER BY data", (matricula, data_inicio, data_fim))
+        cursor.execute("""
+            SELECT 
+                data, 
+                pendentes_total, 
+                pendentes_iniciadas, 
+                pendentes_nao_iniciadas,
+                COALESCE(pendentes_iniciadas_dia, 0),
+                COALESCE(pendentes_dias_anteriores, 0)
+            FROM pendentes_snapshot 
+            WHERE matricula = ? AND data BETWEEN ? AND ? 
+            ORDER BY data
+        """, (matricula, data_inicio, data_fim))
         rows_pend = cursor.fetchall()
         
         if rows_pend:
-            df_pendentes = pd.DataFrame(rows_pend, columns=['Data', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas'])
+            df_pendentes = pd.DataFrame(rows_pend, columns=[
+                'Data', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas',
+                'Pendentes_Iniciadas_Dia', 'Pendentes_Dias_Anteriores'
+            ])
             
             if not df_perf.empty and not df_pendentes.empty:
                 df_perf = pd.merge(df_perf, df_pendentes, on='Data', how='outer').fillna(0)
@@ -2229,6 +2232,8 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             df_perf['Pendentes'] = 0
             df_perf['Pendentes_Iniciadas'] = 0
             df_perf['Pendentes_Nao_Iniciadas'] = 0
+            df_perf['Pendentes_Iniciadas_Dia'] = 0
+            df_perf['Pendentes_Dias_Anteriores'] = 0
                 
         if not df_perf.empty:
             df_perf['Novas'] = df_perf.get('Novas', 0).astype(int)
@@ -2237,6 +2242,8 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             df_perf['Pendentes'] = df_perf.get('Pendentes', 0).astype(int)
             df_perf['Pendentes_Iniciadas'] = df_perf.get('Pendentes_Iniciadas', 0).astype(int)
             df_perf['Pendentes_Nao_Iniciadas'] = df_perf.get('Pendentes_Nao_Iniciadas', 0).astype(int)
+            df_perf['Pendentes_Iniciadas_Dia'] = df_perf.get('Pendentes_Iniciadas_Dia', 0).astype(int)
+            df_perf['Pendentes_Dias_Anteriores'] = df_perf.get('Pendentes_Dias_Anteriores', 0).astype(int)
 
         # Garante linha contínua para todas as datas do período (com ffill para o estoque de Pendências/Em Elaboração no FDS)
         try:
@@ -2253,15 +2260,23 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 df_perf['Pendentes'] = 0
                 df_perf['Pendentes_Iniciadas'] = 0
                 df_perf['Pendentes_Nao_Iniciadas'] = 0
+                df_perf['Pendentes_Iniciadas_Dia'] = 0
+                df_perf['Pendentes_Dias_Anteriores'] = 0
 
+            # Preenche NaNs de eventos com 0
             df_perf['Novas'] = df_perf['Novas'].fillna(0).astype(int)
             df_perf['Tratadas'] = df_perf['Tratadas'].fillna(0).astype(int)
             df_perf['Iniciadas'] = df_perf['Iniciadas'].fillna(0).astype(int)
+
+            # Para dias sem snapshot (ex: fins de semana sem extração), propaga o estoque de pendências do dia útil anterior
+            df_perf['Pendentes_Iniciadas'] = df_perf['Pendentes_Iniciadas'].ffill().fillna(0).astype(int)
+            df_perf['Pendentes'] = df_perf['Pendentes'].ffill().fillna(0).astype(int)
+            df_perf['Pendentes_Nao_Iniciadas'] = df_perf['Pendentes_Nao_Iniciadas'].ffill().fillna(0).astype(int)
+            df_perf['Pendentes_Iniciadas_Dia'] = df_perf['Pendentes_Iniciadas_Dia'].fillna(0).astype(int)
+
+            # Saldo exato: dias anteriores = (pendentes em elaboração - iniciadas no próprio dia)
+            df_perf['Pendentes_Dias_Anteriores'] = (df_perf['Pendentes_Iniciadas'] - df_perf['Pendentes_Iniciadas_Dia']).clip(lower=0).astype(int)
             
-            # Estoque de pendências (Em Elaboração) propaga o valor do dia útil anterior (ffill) se não houver trabalho no FDS
-            df_perf['Pendentes_Iniciadas'] = df_perf['Pendentes_Iniciadas'].replace(0, np.nan).ffill().fillna(0).astype(int)
-            df_perf['Pendentes'] = df_perf['Pendentes'].replace(0, np.nan).ffill().fillna(0).astype(int)
-            df_perf['Pendentes_Nao_Iniciadas'] = df_perf['Pendentes_Nao_Iniciadas'].replace(0, np.nan).ffill().fillna(0).astype(int)
             df_perf = df_perf.sort_values('Data')
         except Exception:
             pass
@@ -2269,7 +2284,11 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
         return df_perf
     except Exception as e:
         print(f"Erro em get_performance_d1: {e}")
-        return pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Iniciadas', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas'])
+        return pd.DataFrame(columns=[
+            'Data', 'Novas', 'Tratadas', 'Iniciadas', 'Pendentes',
+            'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas',
+            'Pendentes_Iniciadas_Dia', 'Pendentes_Dias_Anteriores'
+        ])
     finally:
         if 'conn_app' in locals() and conn_app:
             try:

@@ -1397,7 +1397,18 @@ if df is not None:
                         d1_inicio, d1_fim = datas_d1
                         df_perf = db_manager.get_performance_d1(resp_d1, data_inicio=d1_inicio.strftime('%Y-%m-%d'), data_fim=d1_fim.strftime('%Y-%m-%d'))
                         
+                        # Recarrega o submódulo caso o runtime do Streamlit retenha cache antigo em memória
+                        if not df_perf.empty and 'Pendentes_Iniciadas_Dia' not in df_perf.columns:
+                            import importlib
+                            importlib.reload(db_manager)
+                            df_perf = db_manager.get_performance_d1(resp_d1, data_inicio=d1_inicio.strftime('%Y-%m-%d'), data_fim=d1_fim.strftime('%Y-%m-%d'))
+
                         if not df_perf.empty:
+                            if 'Pendentes_Iniciadas_Dia' not in df_perf.columns:
+                                df_perf['Pendentes_Iniciadas_Dia'] = 0
+                            if 'Pendentes_Dias_Anteriores' not in df_perf.columns:
+                                df_perf['Pendentes_Dias_Anteriores'] = df_perf.get('Pendentes_Iniciadas', 0)
+
                             df_perf['Data_Exibicao'] = pd.to_datetime(df_perf['Data']).dt.strftime('%d/%m/%Y')
                             
                             import plotly.graph_objects as go
@@ -1421,10 +1432,18 @@ if df is not None:
                             ))
                             fig_d1.add_trace(go.Bar(
                                 x=df_perf['Data_Exibicao'], 
-                                y=df_perf['Pendentes_Iniciadas'], 
-                                name='Pendências (Em Elaboração)',
-                                marker_color='#f59e0b',
-                                text=df_perf['Pendentes_Iniciadas'],
+                                y=df_perf['Pendentes_Iniciadas_Dia'], 
+                                name='Pendências (Iniciadas no Dia)',
+                                marker_color='#eab308',
+                                text=df_perf['Pendentes_Iniciadas_Dia'],
+                                textposition='outside'
+                            ))
+                            fig_d1.add_trace(go.Bar(
+                                x=df_perf['Data_Exibicao'], 
+                                y=df_perf['Pendentes_Dias_Anteriores'], 
+                                name='Pendências (Dias Anteriores)',
+                                marker_color='#ef4444',
+                                text=df_perf['Pendentes_Dias_Anteriores'],
                                 textposition='outside'
                             ))
                                                         
