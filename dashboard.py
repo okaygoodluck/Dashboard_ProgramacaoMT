@@ -1417,23 +1417,15 @@ if df is not None:
                             fig_d1.add_trace(go.Bar(
                                 x=df_perf['Data_Exibicao'], 
                                 y=df_perf['Novas'], 
-                                name='Novas (Entrada)',
+                                name='Aprovadas no dia',
                                 marker_color='#3b82f6',
                                 text=df_perf['Novas'],
                                 textposition='outside'
                             ))
                             fig_d1.add_trace(go.Bar(
                                 x=df_perf['Data_Exibicao'], 
-                                y=df_perf['Tratadas'], 
-                                name='Tratadas (Saída)',
-                                marker_color='#10b981',
-                                text=df_perf['Tratadas'],
-                                textposition='outside'
-                            ))
-                            fig_d1.add_trace(go.Bar(
-                                x=df_perf['Data_Exibicao'], 
                                 y=df_perf['Pendentes_Iniciadas_Dia'], 
-                                name='Pendências (Iniciadas no Dia)',
+                                name='Em elaboração (Do dia)',
                                 marker_color='#eab308',
                                 text=df_perf['Pendentes_Iniciadas_Dia'],
                                 textposition='outside'
@@ -1441,9 +1433,17 @@ if df is not None:
                             fig_d1.add_trace(go.Bar(
                                 x=df_perf['Data_Exibicao'], 
                                 y=df_perf['Pendentes_Dias_Anteriores'], 
-                                name='Pendências (Dias Anteriores)',
+                                name='Em elaboração (Dias anteriores)',
                                 marker_color='#ef4444',
                                 text=df_perf['Pendentes_Dias_Anteriores'],
+                                textposition='outside'
+                            ))
+                            fig_d1.add_trace(go.Bar(
+                                x=df_perf['Data_Exibicao'], 
+                                y=df_perf['Tratadas'], 
+                                name='Enviadas para Conferência',
+                                marker_color='#10b981',
+                                text=df_perf['Tratadas'],
                                 textposition='outside'
                             ))
                                                         
