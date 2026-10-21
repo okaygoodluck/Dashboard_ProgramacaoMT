@@ -103,50 +103,50 @@ def render_tab_detalhes(df_filtered, col_situacao):
                 else:
                     st.warning("Falha ao comunicar com o Outlook. Verifique se o aplicativo está aberto e com acesso às caixas.")
 
-    # Legenda visual para as solicitações CHI >= 1500, Urgência e Conjunto Restrito
-    st.markdown("""
-    <div style="display: flex; gap: 20px; align-items: center; margin: 4px 0 10px 0; font-size: 0.8rem; flex-wrap: wrap;">
-        <span style="display: flex; align-items: center; gap: 6px;">
-            <span style="display: inline-block; width: 14px; height: 14px; background: rgba(239, 68, 68, 0.25); border: 1px solid rgba(239, 68, 68, 0.6); border-radius: 3px;"></span>
-            <span><strong>CHI ≥ 1500, Urgência (Aguardando E-mail) ou Conjunto Restrito (CHI ≥ 500)</strong></span>
-        </span>
-        <span style="display: flex; align-items: center; gap: 6px;">
-            <span style="display: inline-block; width: 14px; height: 14px; background: rgba(16, 185, 129, 0.22); border: 1px solid rgba(16, 185, 129, 0.6); border-radius: 3px;"></span>
-            <span><strong>CHI ≥ 1500 ou Urgência (E-mail Confirmado)</strong></span>
-        </span>
-        <span style="color: #64748b; font-size: 0.75rem;">
-            *(Consulte as colunas <strong>E-mail Autorização</strong> e <strong>Conjunto</strong>)*
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
-    
     df_detalhe_view = df_filtered.copy()
 
-    # 1. Campo de busca global
-    termo_busca = st.text_input("🔍 Buscar na tabela (digite qualquer informação):", "")
-
-    # 2. Status 'Sem Data' e 'Concluída/Outros' removidos conforme solicitado
-    opcoes_status = ['No Prazo', 'Alerta de Prazo', 'Atrasada', 'Urgência', 'Em Elaboração']
-    filtro_status = st.multiselect(
-        "Filtrar por Status/Situação:",
-        options=opcoes_status,
-        default=opcoes_status
-    )
+    col_f1, col_f2, col_f3 = st.columns([1.5, 2.5, 3.0])
     
-    if filtro_status:
-        mask = pd.Series(False, index=df_detalhe_view.index)
-        if 'Em Elaboração' in filtro_status:
-            mask = mask | df_detalhe_view['Is_Elaboracao']
+    with col_f1:
+        opcoes_sit = ['Aprovada', 'Em Elaboração']
+        filtro_sit = st.multiselect(
+            "Situação:",
+            options=opcoes_sit,
+            default=opcoes_sit,
+            key="filtro_detalhes_sit"
+        )
         
-        status_normais = [s for s in filtro_status if s != 'Em Elaboração']
-        if status_normais:
-            mask = mask | df_detalhe_view['Status_Prazo'].isin(status_normais)
-            
-        df_detalhe_view = df_detalhe_view[mask]
+    with col_f2:
+        opcoes_prazo = ['No Prazo', 'Alerta de Prazo', 'Atrasada', 'Urgência']
+        filtro_prazo = st.multiselect(
+            "Status do Prazo:",
+            options=opcoes_prazo,
+            default=opcoes_prazo,
+            key="filtro_detalhes_prazo"
+        )
+        
+    with col_f3:
+        termo_busca = st.text_input("🔍 Buscar na tabela (digite qualquer informação):", "", key="busca_detalhes_txt")
 
-    # Aplica a busca global
+    # 1. Filtro por Situação (Aprovada vs Em Elaboração)
+    if filtro_sit is not None:
+        mask_sit = pd.Series(False, index=df_detalhe_view.index)
+        if 'Aprovada' in filtro_sit:
+            mask_sit = mask_sit | df_detalhe_view.get('Is_Aprovada', pd.Series(False, index=df_detalhe_view.index))
+        if 'Em Elaboração' in filtro_sit:
+            mask_sit = mask_sit | df_detalhe_view.get('Is_Elaboracao', pd.Series(False, index=df_detalhe_view.index))
+        df_detalhe_view = df_detalhe_view[mask_sit]
+
+    # 2. Filtro por Status do Prazo
+    if filtro_prazo is not None:
+        mask_prazo = df_detalhe_view['Status_Prazo'].isin(filtro_prazo)
+        df_detalhe_view = df_detalhe_view[mask_prazo]
+
+    # 3. Busca Global (segura contra caracteres especiais regex)
     if termo_busca:
-        mask_busca = df_detalhe_view.astype(str).apply(lambda x: x.str.contains(termo_busca, case=False, na=False)).any(axis=1)
+        mask_busca = df_detalhe_view.astype(str).apply(
+            lambda x: x.str.contains(termo_busca, case=False, na=False, regex=False)
+        ).any(axis=1)
         df_detalhe_view = df_detalhe_view[mask_busca]
 
     st.markdown('<div class="animate-target">', unsafe_allow_html=True)
