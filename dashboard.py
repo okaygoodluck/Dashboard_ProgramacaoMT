@@ -1233,6 +1233,16 @@ if df is not None:
 
     # --- ABA 4: RELATÓRIOS & GESTÃO ---
     if chosen_tab == "📊 Relatórios":
+        st.markdown("""
+        <style>
+            section[data-testid="stSidebar"] {
+                display: none !important;
+            }
+            [data-testid="stSidebarCollapsedControl"] {
+                display: none !important;
+            }
+        </style>
+        """, unsafe_allow_html=True)
         with st.container():
             conn_app = None
             try:
