@@ -308,13 +308,10 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
 
     df_view['E-mail'] = df_view.apply(get_email_autorizacao, axis=1)
 
-    # Identificação de Conjuntos Restritos para CHI >= 500
+    # Identificação de Conjuntos Restritos
     def get_status_conjunto(row):
         if 'Conjunto' in row and str(row['Conjunto']).strip().upper() == 'RESTRITO':
             return 'RESTRITO'
-        chi_val = pd.to_numeric(row.get(col_chi_view, 0), errors='coerce')
-        if pd.isna(chi_val) or chi_val < 500:
-            return "—"
         if not col_alim_view:
             return "—"
         alim_raw = str(row.get(col_alim_view, '')).replace(' ', '').strip().upper()

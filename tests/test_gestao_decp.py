@@ -255,14 +255,13 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(verificar_status_atraso(row_canc), 'Concluída/Outros')
 
     def test_conjuntos_restritos_logic_and_highlight(self):
-        """Verifica se a lógica de Alimentador -> Conjunto Restrito para CHI >= 500 funciona corretamente."""
+        """Verifica se a lógica de Alimentador -> Conjunto Restrito funciona corretamente (desacoplada de CHI)."""
         map_alim_to_sigla = {'ALIM01': 'CJ01', 'ALIM02': 'CJ02', 'ALIM03': 'CJ03'}
         set_conj_restritos = {'CJ01', 'CJ03'} # CJ01 e CJ03 são restritos
 
         def get_status_conjunto(row):
-            chi_val = pd.to_numeric(row.get('CHI', 0), errors='coerce')
-            if pd.isna(chi_val) or chi_val < 500:
-                return '—'
+            if 'Conjunto' in row and str(row['Conjunto']).strip().upper() == 'RESTRITO':
+                return 'RESTRITO'
             alim_raw = str(row.get('Alimentador', '')).replace(' ', '').strip().upper()
             sigla = map_alim_to_sigla.get(alim_raw)
             if sigla and sigla in set_conj_restritos:
@@ -281,9 +280,9 @@ class TestGestaoDECP(unittest.TestCase):
         row3 = {'CHI': 1200, 'Alimentador': 'ALIM02'}
         self.assertEqual(get_status_conjunto(row3), '—')
 
-        # Teste 4: CHI < 500 mesmo em conjunto restrito -> —
-        row4 = {'CHI': 499, 'Alimentador': 'ALIM01'}
-        self.assertEqual(get_status_conjunto(row4), '—')
+        # Teste 4: CHI < 500 em conjunto restrito -> RESTRITO (regra atualizada)
+        row4 = {'CHI': 148, 'Alimentador': 'ALIM01'}
+        self.assertEqual(get_status_conjunto(row4), 'RESTRITO')
 
         # Teste 5: Estilização de linha avermelhada para RESTRITO
         def aplicar_destaque_teste(row):
@@ -302,25 +301,21 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(aplicar_destaque_teste({'Conjunto': '—', 'E-mail Autorização': '—'}), 'none')
 
     def test_conjunto_restrito_kpi_calculation(self):
-        """Verifica a lógica de filtragem e contagem do KPI 'Conjunto Restrito' (CHI >= 500 e alimentador em conjunto restrito)."""
+        """Verifica a lógica de filtragem e contagem do KPI 'Conjunto Restrito' (alimentador em conjunto restrito)."""
         map_alim_sigla = {'ALIM01': 'CJ01', 'ALIM02': 'CJ02', 'ALIM03': 'CJ03'}
         set_conj_restr = {'CJ01', 'CJ03'}
 
         df_mock = pd.DataFrame([
-            {'Solicitacao': '1', 'CHI': 600, 'Alimentador': 'ALIM01'},       # Válido: CHI >= 500 e CJ01 restrito
-            {'Solicitacao': '2', 'CHI': 500, 'Alimentador': ' ALIM 03 '},    # Válido: CHI >= 500 e CJ03 restrito
-            {'Solicitacao': '3', 'CHI': 499, 'Alimentador': 'ALIM01'},       # Inválido: CHI < 500
+            {'Solicitacao': '1', 'CHI': 600, 'Alimentador': 'ALIM01'},       # Válido: CJ01 restrito
+            {'Solicitacao': '2', 'CHI': 500, 'Alimentador': ' ALIM 03 '},    # Válido: CJ03 restrito
+            {'Solicitacao': '3', 'CHI': 148, 'Alimentador': 'ALIM01'},       # Válido: CJ01 restrito mesmo com CHI < 500
             {'Solicitacao': '4', 'CHI': 1200, 'Alimentador': 'ALIM02'},      # Inválido: CJ02 não é restrito
-            {'Solicitacao': '5', 'CHI': None, 'Alimentador': 'ALIM01'},      # Inválido: CHI nulo
+            {'Solicitacao': '5', 'CHI': None, 'Alimentador': 'ALIM01'},      # Válido: CJ01 restrito
         ])
 
-        col_chi_calc = 'CHI'
         col_alim_calc = 'Alimentador'
 
         def _is_restr_item(row):
-            chi_val = pd.to_numeric(row.get(col_chi_calc, 0), errors='coerce')
-            if pd.isna(chi_val) or chi_val < 500:
-                return False
             alim_clean = str(row.get(col_alim_calc, '')).replace(' ', '').strip().upper()
             sigla = map_alim_sigla.get(alim_clean)
             return bool(sigla and sigla in set_conj_restr)
@@ -328,8 +323,8 @@ class TestGestaoDECP(unittest.TestCase):
         df_conjunto_restrito = df_mock[df_mock.apply(_is_restr_item, axis=1)]
         qtd_conjunto_restrito = len(df_conjunto_restrito)
 
-        self.assertEqual(qtd_conjunto_restrito, 2)
-        self.assertEqual(df_conjunto_restrito['Solicitacao'].tolist(), ['1', '2'])
+        self.assertEqual(qtd_conjunto_restrito, 4)
+        self.assertEqual(df_conjunto_restrito['Solicitacao'].tolist(), ['1', '2', '3', '5'])
 
     def test_preparar_dataframe_detalhes_para_kpi_e_tabela(self):
         """Verifica se preparar_dataframe_detalhes padroniza colunas, oculta colunas tecnicas e aplica regras de cores e nomes."""
@@ -367,7 +362,7 @@ class TestGestaoDECP(unittest.TestCase):
         df_view, col_config, format_styler, func_destaque = preparar_dataframe_detalhes(df_mock, col_situacao='Situação')
 
         # 1. Colunas obrigatórias presentes
-        self.assertIn('E-mail Autorização', df_view.columns)
+        self.assertIn('E-mail', df_view.columns)
         self.assertIn('Conjunto', df_view.columns)
 
         # 2. Colunas técnicas ocultadas
@@ -375,8 +370,8 @@ class TestGestaoDECP(unittest.TestCase):
             self.assertNotIn(c_oculta, df_view.columns)
 
         # 3. Diferenciação de nomes dos Gabriels
-        self.assertEqual(df_view.loc[0, 'Responsavel'], 'Gabriel Leandro')
-        self.assertEqual(df_view.loc[1, 'Responsavel'], 'Gabriel Leonardo')
+        self.assertEqual(df_view.loc[0, 'Assumiu'], 'Gabriel Leandro')
+        self.assertEqual(df_view.loc[1, 'Assumiu'], 'Gabriel Leonardo')
 
         # 4. Formatação de tipos
         self.assertEqual(df_view.loc[0, 'CHI'], 1600)

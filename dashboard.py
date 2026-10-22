@@ -880,11 +880,8 @@ if df is not None:
 
     col_alim_calc = next((c for c in df_filtered.columns if 'alim' in c.lower()), None)
     map_alim_sigla, set_conj_restr, _ = db_manager.carregar_conjuntos_restritos()
-    if col_chi_calc and col_alim_calc and set_conj_restr:
+    if col_alim_calc and set_conj_restr:
         def _is_restr_item(row):
-            chi_val = pd.to_numeric(row.get(col_chi_calc, 0), errors='coerce')
-            if pd.isna(chi_val) or chi_val < 500:
-                return False
             alim_clean = str(row.get(col_alim_calc, '')).replace(' ', '').strip().upper()
             sigla = map_alim_sigla.get(alim_clean)
             return bool(sigla and sigla in set_conj_restr)

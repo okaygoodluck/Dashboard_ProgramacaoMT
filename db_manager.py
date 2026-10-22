@@ -611,6 +611,14 @@ def carregar_conjuntos_restritos():
         df_alim['alim_clean'] = df_alim[col_alim].astype(str).str.replace(' ', '').str.upper().str.strip()
         df_alim['sigla_clean'] = df_alim[col_sigla_alim].astype(str).str.upper().str.strip()
 
+        # Priorizar correspondência onde o alimentador inicia com a sigla do conjunto
+        # (ex: MAGT312 começa com MAGT, evitando que MAGT312 seja associado a URAT ou outras siglas em duplicidade)
+        df_alim['prefix_match'] = df_alim.apply(
+            lambda r: len(r['sigla_clean']) if r['alim_clean'].startswith(r['sigla_clean']) else 0, axis=1
+        )
+        df_alim = df_alim.sort_values(by=['alim_clean', 'prefix_match'], ascending=[True, True])
+        df_alim = df_alim.drop_duplicates(subset=['alim_clean'], keep='last')
+
         map_alim_to_sigla = dict(zip(df_alim['alim_clean'], df_alim['sigla_clean']))
 
         col_sigla_restr = next((c for c in df_restr.columns if 'sigla' in c.lower()), None)
