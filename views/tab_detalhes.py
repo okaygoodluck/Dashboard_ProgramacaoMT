@@ -170,6 +170,47 @@ def encurtar_nome_responsavel(name):
     return name
 
 
+def calcular_largura_coluna(col_name, series):
+    """Calcula a largura em pixels ajustada estritamente ao tamanho real do conteúdo e do cabeçalho."""
+    c_str = str(col_name).strip()
+    if any(p in c_str.lower() for p in ['data', 'início', 'inicio', 'término', 'termino']):
+        return 145
+    len_header = len(c_str)
+    len_content = 0
+    if series is not None and not series.empty:
+        s_clean = series.dropna().astype(str)
+        if not s_clean.empty:
+            len_content = int(s_clean.str.len().quantile(0.98))
+    chars = max(len_header, len_content)
+    if c_str in ['CHI', 'Peso']:
+        return max(65, chars * 9 + 20)
+    elif c_str in ['Clientes']:
+        return max(75, chars * 9 + 20)
+    elif c_str in ['OBRA GD', 'Urgência']:
+        return 80
+    elif c_str in ['Dias uteis']:
+        return 95
+    elif c_str in ['Matrícula R.', 'Matrícula A.']:
+        return 110
+    elif c_str in ['Malha']:
+        return 85
+    elif c_str in ['Região']:
+        return max(90, chars * 8 + 25)
+    elif c_str in ['E-mail', 'Conjunto']:
+        return 120
+    elif c_str in ['Solicitação']:
+        return 110
+    elif c_str in ['Situação']:
+        return 125
+    elif c_str in ['Responsável', 'Assumiu']:
+        return max(130, chars * 8 + 25)
+    elif c_str in ['Alimentador', 'Manobra']:
+        return max(115, chars * 8 + 25)
+    elif c_str in ['Finalidade']:
+        return max(220, min(380, chars * 7 + 30))
+    return max(70, min(350, int(chars * 8.5 + 25)))
+
+
 def preparar_dataframe_detalhes(df_input, col_situacao=None):
     """
     Prepara e formata o DataFrame com exatamente as mesmas colunas, ordenações,
@@ -186,9 +227,11 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
                     df_view[base_c] = df_view[col_cand]
                     break
 
-    # Aplica encurtamento na coluna Responsavel
+    # Aplica encurtamento nas colunas de responsáveis
     if 'Responsavel' in df_view.columns:
         df_view['Responsavel'] = df_view['Responsavel'].apply(encurtar_nome_responsavel)
+    if 'Responsavel_Regiao' in df_view.columns:
+        df_view['Responsavel_Regiao'] = df_view['Responsavel_Regiao'].apply(encurtar_nome_responsavel)
 
     if not col_situacao:
         col_situacao = next((c for c in df_view.columns if 'situa' in c.lower()), 'Situação')
@@ -278,7 +321,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
         else:
             return "Pendente"
 
-    df_view['E-mail Autorização'] = df_view.apply(get_email_autorizacao, axis=1)
+    df_view['E-mail'] = df_view.apply(get_email_autorizacao, axis=1)
 
     # Identificação de Conjuntos Restritos para CHI >= 500
     def get_status_conjunto(row):
@@ -297,9 +340,9 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
 
     df_view['Conjunto'] = df_view.apply(get_status_conjunto, axis=1)
 
-    # Inserção de E-mail Autorização e Conjunto nas colunas visíveis logo após CHI ou Situação
-    if 'E-mail Autorização' in cols:
-        cols.remove('E-mail Autorização')
+    # Inserção de E-mail e Conjunto nas colunas visíveis logo após CHI ou Situação
+    if 'E-mail' in cols:
+        cols.remove('E-mail')
     if 'Conjunto' in cols:
         cols.remove('Conjunto')
 
@@ -312,7 +355,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
     else:
         idx_base = len(cols)
 
-    cols.insert(idx_base, 'E-mail Autorização')
+    cols.insert(idx_base, 'E-mail')
     cols.insert(idx_base + 1, 'Conjunto')
 
     # Remover colunas solicitadas pelo usuário (Limpeza Visual + Is_Aprovada)
@@ -322,32 +365,51 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
     ]
     cols = [c for c in cols if c not in cols_to_hide]
 
+    # Renomeação específica para exibição na visualização detalhada (Pedidos Gilberto)
+    mapa_renomear = {
+        'Ref_Malha': 'Malha',
+        'Ref_Regiao': 'Região',
+        'Dias_Uteis_Restantes': 'Dias uteis',
+        'Responsavel_Regiao': 'Responsável',
+        'Matricula_Regiao': 'Matrícula R.',
+        'Responsavel': 'Assumiu',
+        'Matricula': 'Matrícula A.',
+    }
+    cols = [mapa_renomear.get(c, c) for c in cols]
+    df_view = df_view.rename(columns=mapa_renomear)
+
     df_view = df_view[[c for c in cols if c in df_view.columns]]
     
     col_config = {}
-    col_config['E-mail Autorização'] = st.column_config.TextColumn(
-        "E-mail Autorização",
+    col_config['E-mail'] = st.column_config.TextColumn(
+        "E-mail",
         help="Identificação do e-mail recebido (DECP, Urgência, DECP + Urgência) ou Pendente",
-        width="medium"
+        width=calcular_largura_coluna('E-mail', df_view['E-mail'])
     )
     col_config['Conjunto'] = st.column_config.TextColumn(
         "Conjunto",
         help="Indica RESTRITO caso o alimentador pertença a um conjunto com restrição de DEC para CHI ≥ 500",
-        width="small"
+        width=calcular_largura_coluna('Conjunto', df_view['Conjunto'])
     )
     for c in df_view.columns:
         if any(palavra in c.lower() for palavra in ['data', 'início', 'inicio', 'término', 'termino']):
             try:
                 df_view[c] = pd.to_datetime(df_view[c], dayfirst=True)
-                col_config[c] = st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm")
+                col_config[c] = st.column_config.DatetimeColumn(format="DD/MM/YYYY HH:mm", width=calcular_largura_coluna(c, df_view[c]))
             except Exception:
                 pass
 
+    # Sanitização de matrículas para texto limpo (evita .0 ou conversão de nulos para 0)
+    for col_mat in ['Matrícula R.', 'Matrícula A.']:
+        if col_mat in df_view.columns:
+            df_view[col_mat] = df_view[col_mat].fillna('—').astype(str).str.replace(r'\.0$', '', regex=True)
+            col_config[col_mat] = st.column_config.TextColumn(col_mat, width=calcular_largura_coluna(col_mat, df_view[col_mat]))
+
     # Garante que colunas de valores numéricos sejam estritamente números inteiros (sem frações/decimais)
-    for col_int in ['CHI', 'Clientes']:
+    for col_int in ['CHI', 'Clientes', 'Dias uteis']:
         if col_int in df_view.columns:
             df_view[col_int] = pd.to_numeric(df_view[col_int], errors='coerce').fillna(0).round().astype(int)
-            col_config[col_int] = st.column_config.NumberColumn(format="%d")
+            col_config[col_int] = st.column_config.NumberColumn(col_int, format="%d", width=calcular_largura_coluna(col_int, df_view[col_int]))
 
     # Tratamento de Peso para evitar frações como '1.0', mantendo textos como 'PLE'
     if 'Peso' in df_view.columns:
@@ -360,11 +422,17 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
             except (ValueError, TypeError):
                 return str(v).strip()
         df_view['Peso'] = df_view['Peso'].apply(limpar_peso_inteiro)
+        col_config['Peso'] = st.column_config.TextColumn('Peso', width=calcular_largura_coluna('Peso', df_view['Peso']))
 
     # Converte qualquer outra coluna com tipo float remanescente para número inteiro
     for c in df_view.select_dtypes(include=['float', 'float64']).columns:
         df_view[c] = df_view[c].fillna(0).round().astype(int)
-        col_config[c] = st.column_config.NumberColumn(format="%d")
+        col_config[c] = st.column_config.NumberColumn(format="%d", width=calcular_largura_coluna(c, df_view[c]))
+
+    # Configuração de largura calculada em pixels para as demais colunas textuais
+    for c in df_view.columns:
+        if c not in col_config:
+            col_config[c] = st.column_config.TextColumn(c, width=calcular_largura_coluna(c, df_view[c]))
 
     # Ordenar por padrão pela data início em ordem crescente
     col_inicio = next((c for c in df_view.columns if 'início' in c.lower() or 'inicio' in c.lower()), None)
@@ -373,7 +441,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
 
     # Dicionário de formatação de exibição do Styler para garantir números sem decimais
     format_styler = {}
-    for col_int in ['CHI', 'Clientes']:
+    for col_int in ['CHI', 'Clientes', 'Dias uteis']:
         if col_int in df_view.columns:
             format_styler[col_int] = '{:.0f}'
 
@@ -384,7 +452,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
             # Fundo avermelhado/alerta para solicitação em conjunto restrito com CHI >= 500
             return ['background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'] * len(row)
 
-        status_aut = str(row.get('E-mail Autorização', '—')).strip()
+        status_aut = str(row.get('E-mail', '—')).strip()
         if status_aut in ['DECP', 'Urgência', 'DECP + Urgência']:
             # Fundo verde para solicitação com e-mail confirmado (ao menos um recebido) com texto branco contrastante
             return ['background-color: rgba(16, 185, 129, 0.40); font-weight: 700; color: #ffffff;'] * len(row)
