@@ -25,7 +25,10 @@ def build_server_package():
         os.remove(zip_path)
     os.makedirs(dist_dir, exist_ok=True)
 
-    # 2. Arquivos de Código e Configuração
+    # Extensões proibidas em builds (qualquer tipo de banco de dados ou journal)
+    DB_EXTENSIONS = ('.db', '.bd', '.sqlite', '.sqlite3', '.db-journal', '.db-wal', '.db-shm')
+
+    # 2. Arquivos de Código e Configuração (SEM nenhum arquivo de banco de dados)
     essential_files = [
         '.env',
         'dashboard.py',
@@ -33,8 +36,7 @@ def build_server_package():
         'db_manager.py',
         'ccp_ui.py',
         'requirements.txt',
-        'Iniciar_CCP_Servidor.bat',
-        'ccp_app.db'
+        'Iniciar_CCP_Servidor.bat'
     ]
 
     print("[*] Copiando arquivos de codigo...")
@@ -70,18 +72,31 @@ def build_server_package():
             shutil.copy2(src, scripts_dest)
             print(f" [OK] scripts/{script}")
 
-    # 4. Criar ZIP (Sem a pasta python)
+    # 3.2. Sanitização preventiva: garantir que nenhum banco de dados exista na pasta dist
+    for root, dirs, files in os.walk(dist_dir):
+        for file in files:
+            if file.lower().endswith(DB_EXTENSIONS):
+                try:
+                    os.remove(os.path.join(root, file))
+                    print(f" [REMOVIDO DB] {file}")
+                except Exception:
+                    pass
+
+    # 4. Criar ZIP (Sem a pasta python e sem nenhum arquivo de banco de dados)
     print(f"[*] Criando pacote para servidor {zip_name}...")
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(dist_dir):
+        for root, dirs, files in os.walk(dist_dir):
+            dirs[:] = [d for d in dirs if d != '__pycache__' and not d.startswith('.')]
             for file in files:
+                if file.lower().endswith(DB_EXTENSIONS) or file.endswith('.pyc'):
+                    continue
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, dist_dir)
                 zipf.write(file_path, arcname)
 
     print("\n[SUCESSO] PACOTE DE SERVIDOR PRONTO!")
     print(f" Arquivo: {zip_path}")
-    print(" (Este pacote nao contem o Python, use o do sistema no servidor)")
+    print(" (Este pacote nao contem o Python nem bancos de dados, use os da rede/sistema)")
 
 if __name__ == "__main__":
     build_server_package()

@@ -57,10 +57,13 @@ def build_package():
                     try: os.remove(item_path)
                     except: pass
 
+    # Extensões proibidas em builds (qualquer tipo de banco de dados ou journal)
+    DB_EXTENSIONS = ('.db', '.bd', '.sqlite', '.sqlite3', '.db-journal', '.db-wal', '.db-shm')
+
     # Garantir que nenhum banco de dados ou script legado sobreviveu
     for root, dirs, files in os.walk(dist_dir):
         for f in files:
-            if f.endswith('.db') or f in ('extrator_demanda.py', 'agendador.py', 'requirements.txt'):
+            if f.lower().endswith(DB_EXTENSIONS) or f in ('extrator_demanda.py', 'agendador.py', 'requirements.txt'):
                 try: os.remove(os.path.join(root, f))
                 except: pass
     
@@ -201,7 +204,7 @@ if errorlevel 1 (
                 dirs[:] = [d for d in dirs if d != '__pycache__' and not d.startswith('.')]
                 for file in files:
                     # Garantir que nenhum banco de dados ou bytecode (.pyc) entre no ZIP
-                    if file.endswith('.db') or file.endswith('.pyc'):
+                    if file.lower().endswith(DB_EXTENSIONS) or file.endswith('.pyc'):
                         continue
                     file_path = os.path.join(root, file)
                     arcname = os.path.relpath(file_path, dist_dir)

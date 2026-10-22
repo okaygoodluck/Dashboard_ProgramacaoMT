@@ -26,6 +26,11 @@ CCP_Servidor_Ready/
 python/
 *.zip
 *.db
+*.bd
+*.sqlite*
+*.db-journal
+*.db-wal
+*.db-shm
 *.bkp*
 
 # Environments
