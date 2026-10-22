@@ -236,22 +236,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
     if not col_situacao:
         col_situacao = next((c for c in df_view.columns if 'situa' in c.lower()), 'Situação')
 
-    # Reordenação de colunas (CHI, Clientes, Peso, OBRA GD posicionados após Situação)
-    cols = list(df_view.columns)
-    for col_name in ['CHI', 'Clientes', 'Peso', 'OBRA GD']:
-        matching_cols = [c for c in cols if c == col_name or c.startswith(f"{col_name}_")]
-        for c_match in matching_cols:
-            cols.remove(c_match)
-            idx = -1
-            if col_situacao in cols:
-                idx = cols.index(col_situacao) + 1
-            elif 'Situação' in cols:
-                idx = cols.index('Situação') + 1
-            
-            if idx > 0:
-                cols.insert(idx, c_match)
-            else:
-                cols.append(c_match)
+    # Ordem de colunas será definida globalmente após todas as inserções e renomeações
 
     col_solic = next((c for c in df_view.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
     col_urg_view = next((c for c in df_view.columns if 'urg' in c.lower()), None)
@@ -340,30 +325,11 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
 
     df_view['Conjunto'] = df_view.apply(get_status_conjunto, axis=1)
 
-    # Inserção de E-mail e Conjunto nas colunas visíveis logo após CHI ou Situação
-    if 'E-mail' in cols:
-        cols.remove('E-mail')
-    if 'Conjunto' in cols:
-        cols.remove('Conjunto')
-
-    if 'CHI' in cols:
-        idx_base = cols.index('CHI') + 1
-    elif col_situacao in cols:
-        idx_base = cols.index(col_situacao) + 1
-    elif 'Situação' in cols:
-        idx_base = cols.index('Situação') + 1
-    else:
-        idx_base = len(cols)
-
-    cols.insert(idx_base, 'E-mail')
-    cols.insert(idx_base + 1, 'Conjunto')
-
-    # Remover colunas solicitadas pelo usuário (Limpeza Visual + Is_Aprovada)
+    # Remover colunas ocultadas (Limpeza Visual + Flags Internas)
     cols_to_hide = [
         'Sol. Vinc.', 'Ações', 'Tem_Email', 'Tem_Email_DECP', 'Data_Extracao', 
         'Status_Prazo', 'Is_Elaboracao', 'Is_Aprovada', 'Resp. Manobra'
     ]
-    cols = [c for c in cols if c not in cols_to_hide]
 
     # Renomeação específica para exibição na visualização detalhada (Pedidos Gilberto)
     mapa_renomear = {
@@ -374,11 +340,24 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
         'Matricula_Regiao': 'Matrícula R.',
         'Responsavel': 'Assumiu',
         'Matricula': 'Matrícula A.',
+        'Data de início': 'Data de Início',
+        'Data de inicio': 'Data de Início',
+        'Data de Término': 'Data de Fim',
+        'Data de Termino': 'Data de Fim',
+        'Data de término': 'Data de Fim',
+        'Data de termino': 'Data de Fim',
     }
-    cols = [mapa_renomear.get(c, c) for c in cols]
     df_view = df_view.rename(columns=mapa_renomear)
 
-    df_view = df_view[[c for c in cols if c in df_view.columns]]
+    # Ordenação mestre de colunas solicitada pela equipe
+    ordem_prioritaria = [
+        'Solicitação', 'Situação', 'OBRA GD', 'Peso', 'Clientes', 'CHI',
+        'Dias uteis', 'Data de Início', 'Data de Fim', 'E-mail',
+        'Conjunto', 'Urgência', 'Finalidade'
+    ]
+    cols_ordenadas = [c for c in ordem_prioritaria if c in df_view.columns]
+    cols_restantes = [c for c in df_view.columns if c not in cols_ordenadas and c not in cols_to_hide]
+    df_view = df_view[cols_ordenadas + cols_restantes]
     
     col_config = {}
     col_config['E-mail'] = st.column_config.TextColumn(
