@@ -10,62 +10,102 @@ import db_manager
 class TestDemandAnalysisFixes(unittest.TestCase):
     
     def test_transition_lookup_and_registration(self):
-        """Verifica se registrar_transicao_regiao recupera o histórico e não falha silenciosamente."""
-        conn = db_manager.get_connection_config()
+        """Verifica se registrar_transicao_regiao recupera o histórico e não falha silenciosamente (Isolado em Memória)."""
+        from unittest.mock import patch
+        
+        uri = "file:test_mem_fixes?mode=memory&cache=shared"
+        conn = sqlite3.connect(uri, uri=True)
         cursor = conn.cursor()
-        
-        # Cria uma transição de teste para uma sigla fictícia 'TX'
-        cursor.execute("DELETE FROM historico_transicao_regioes WHERE sigla_regiao = 'TX'")
-        cursor.execute("DELETE FROM regioes_responsaveis WHERE sigla_regiao = 'TX'")
+        cursor.execute('''CREATE TABLE IF NOT EXISTS regioes_responsaveis (
+            sigla_regiao TEXT PRIMARY KEY,
+            matricula_responsavel TEXT
+        )''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS historico_transicao_regioes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_transicao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sigla_regiao TEXT,
+            matricula_anterior TEXT,
+            nome_anterior TEXT,
+            matricula_nova TEXT,
+            nome_novo TEXT,
+            total_pendentes INTEGER DEFAULT 0,
+            atrasadas INTEGER DEFAULT 0,
+            urgencias INTEGER DEFAULT 0,
+            alertas INTEGER DEFAULT 0,
+            em_elaboracao INTEGER DEFAULT 0,
+            aprovadas_herdadas INTEGER DEFAULT 0,
+            atrasadas_herdadas INTEGER DEFAULT 0,
+            du8_herdadas INTEGER DEFAULT 0,
+            du9_herdadas INTEGER DEFAULT 0,
+            du10_herdadas INTEGER DEFAULT 0,
+            du11_herdadas INTEGER DEFAULT 0
+        )''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+            matricula TEXT PRIMARY KEY,
+            nome TEXT
+        )''')
+        cursor.execute("INSERT OR REPLACE INTO usuarios VALUES ('c057573', 'KENNEDY VIEIRA GARITO')")
+        cursor.execute("INSERT OR REPLACE INTO usuarios VALUES ('c058106', 'LUIZ GUSTAVO CARMO DE ARAUJO')")
         conn.commit()
-        
-        # 1. Transição inicial a partir de Não Atribuído
-        db_manager.registrar_transicao_regiao('TX', 'c057573')
-        
-        cursor.execute("SELECT matricula_anterior, nome_anterior, matricula_nova, total_pendentes FROM historico_transicao_regioes WHERE sigla_regiao = 'TX' ORDER BY id DESC LIMIT 1")
-        row = cursor.fetchone()
-        self.assertIsNotNone(row, "Transição para TX não foi registrada!")
-        self.assertEqual(row[0], "SEM_RESPONSAVEL")
-        self.assertEqual(row[1], "Não Atribuído")
-        self.assertEqual(row[2], "c057573")
-        
-        # 2. Agora simula desassociação da região (ficou sem registro em regioes_responsaveis)
-        # e novo técnico assume 'TX'
-        db_manager.registrar_transicao_regiao('TX', 'c058106')
-        
-        cursor.execute("SELECT matricula_anterior, matricula_nova FROM historico_transicao_regioes WHERE sigla_regiao = 'TX' ORDER BY id DESC LIMIT 1")
-        row2 = cursor.fetchone()
-        self.assertIsNotNone(row2)
-        # Deve ter recuperado 'c057573' do histórico como responsável anterior!
-        self.assertEqual(row2[0], "c057573")
-        self.assertEqual(row2[1], "c058106")
-        
-        # Limpa dados de teste
-        cursor.execute("DELETE FROM historico_transicao_regioes WHERE sigla_regiao = 'TX'")
-        conn.commit()
-        conn.close()
+
+        def mock_get_conn(read_only=False):
+            return sqlite3.connect(uri, uri=True)
+
+        try:
+            with patch('db_manager.get_connection_config', side_effect=mock_get_conn):
+                # 1. Transição inicial a partir de Não Atribuído
+                db_manager.registrar_transicao_regiao('TX', 'c057573')
+                
+                cursor.execute("SELECT matricula_anterior, nome_anterior, matricula_nova, total_pendentes FROM historico_transicao_regioes WHERE sigla_regiao = 'TX' ORDER BY id DESC LIMIT 1")
+                row = cursor.fetchone()
+                self.assertIsNotNone(row, "Transição para TX não foi registrada!")
+                self.assertEqual(row[0], "SEM_RESPONSAVEL")
+                self.assertEqual(row[1], "Não Atribuído")
+                self.assertEqual(row[2], "c057573")
+                
+                # 2. Agora simula desassociação da região (ficou sem registro em regioes_responsaveis)
+                # e novo técnico assume 'TX'
+                db_manager.registrar_transicao_regiao('TX', 'c058106')
+                
+                cursor.execute("SELECT matricula_anterior, matricula_nova FROM historico_transicao_regioes WHERE sigla_regiao = 'TX' ORDER BY id DESC LIMIT 1")
+                row2 = cursor.fetchone()
+                self.assertIsNotNone(row2)
+                # Deve ter recuperado 'c057573' do histórico como responsável anterior!
+                self.assertEqual(row2[0], "c057573")
+                self.assertEqual(row2[1], "c058106")
+        finally:
+            conn.close()
 
     def test_sanitization_tratadas_ativas(self):
-        """Verifica se sanitizar_eventos_tratadas_ativas mantém zero falsos positivos."""
-        removidos = db_manager.sanitizar_eventos_tratadas_ativas()
-        self.assertIsInstance(removidos, int)
+        """Verifica se sanitizar_eventos_tratadas_ativas mantém zero falsos positivos (Isolado em Memória)."""
+        from unittest.mock import patch
         
-        # Verifica que nenhuma tratada restante está em demanda_atual
-        conn_app = db_manager.get_connection_config()
-        conn_data = db_manager.get_connection_read()
+        uri_app = "file:test_mem_san_app?mode=memory&cache=shared"
+        uri_data = "file:test_mem_san_data?mode=memory&cache=shared"
         
-        df_cur = pd.read_sql("SELECT * FROM demanda_atual", conn_data)
-        sol_col = next((c for c in df_cur.columns if 'solicita' in c.lower() and 'vinc' not in c.lower()), None)
-        sols_cur = set(df_cur[sol_col].astype(str).str.strip().str.lstrip('0'))
+        conn_app = sqlite3.connect(uri_app, uri=True)
+        conn_app.execute("CREATE TABLE eventos_diarios (solicitacao TEXT, tipo_evento TEXT)")
+        conn_app.execute("INSERT INTO eventos_diarios VALUES ('123456', 'TRATADA'), ('789012', 'TRATADA')")
+        conn_app.commit()
         
-        df_ev = pd.read_sql("SELECT solicitacao FROM eventos_diarios WHERE tipo_evento = 'TRATADA'", conn_app)
-        sols_ev = set(df_ev['solicitacao'].astype(str).str.strip().str.lstrip('0'))
+        conn_data = sqlite3.connect(uri_data, uri=True)
+        conn_data.execute("CREATE TABLE demanda_atual (Solicitacao TEXT)")
+        conn_data.execute("INSERT INTO demanda_atual VALUES ('123456')")
+        conn_data.commit()
         
-        conflitos = sols_cur.intersection(sols_ev)
-        self.assertEqual(len(conflitos), 0, f"Ainda existem {len(conflitos)} solicitações ativas marcadas como TRATADA!")
-        
-        conn_app.close()
-        conn_data.close()
+        try:
+            with patch('db_manager.get_connection_config', side_effect=lambda read_only=False: sqlite3.connect(uri_app, uri=True)), \
+                 patch('db_manager.get_connection_read', side_effect=lambda: sqlite3.connect(uri_data, uri=True)), \
+                 patch('db_manager.get_app_db_path', return_value="local_test.db"), \
+                 patch('db_manager._is_network_path', return_value=False):
+                removidos = db_manager.sanitizar_eventos_tratadas_ativas()
+                self.assertEqual(removidos, 1)
+                
+                df_ev = pd.read_sql("SELECT solicitacao FROM eventos_diarios WHERE tipo_evento = 'TRATADA'", conn_app)
+                self.assertEqual(df_ev['solicitacao'].tolist(), ['789012'])
+        finally:
+            conn_app.close()
+            conn_data.close()
 
     def test_db_status_diagnostics(self):
         """Verifica se get_db_status() retorna o diagnóstico completo da base de dados."""

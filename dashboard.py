@@ -1051,11 +1051,11 @@ if df is not None:
     # 3. ABAS DE VISUALIZAÇÃO (Symmetry Mode - Responsivo)
     user_role = getattr(st.session_state, "user_nivel", "ADM")
     if user_role in ["Gerencial", "ADM"]:
-        abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados", "📊 Relatórios"]
+        abas = ["📅 Calendário", "👥 Responsáveis", "📊 Relatórios", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados"]
     elif user_role == "SubGerencial":
         abas = ["📅 Calendário", "👥 Responsáveis", "🏙️ Visão por Malha", "🗺️ Visão por Região", "📋 Dados Detalhados"]
     else:
-        abas = ["📅 Calendário", "🗺️ Visão por Região", "📋 Dados Detalhados"]
+        abas = ["📅 Calendário", "📋 Dados Detalhados"]
     
     # Nível ADM vê Configurações
     if user_role == "ADM":
