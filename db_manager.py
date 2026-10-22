@@ -1974,7 +1974,20 @@ def recompor_snapshot_historico():
                 lambda s: set(str(x).strip().lstrip('0') for x in s)
             ).to_dict()
 
-        # 3. Calcula o split para cada snapshot
+        # 3. Identifica solicitações travadas e suas datas do primeiro evento INICIADA
+        df_trav = pd.read_sql("SELECT solicitacao, matricula, date(data_trava) as dt_trava FROM solicitacoes_travadas", conn_app)
+        travadas_por_user = {}
+        if not df_trav.empty:
+            travadas_por_user = df_trav.groupby('matricula')['solicitacao'].apply(
+                lambda s: set(str(x).strip().lstrip('0') for x in s)
+            ).to_dict()
+
+        primeiro_inicio = {}
+        if not df_ev.empty:
+            df_ini_all = df_ev[df_ev['tipo_evento'] == 'INICIADA']
+            primeiro_inicio = df_ini_all.groupby('solicitacao')['dt'].min().to_dict()
+
+        # 4. Calcula o split para cada snapshot
         updates = []
         for _, row in df_snap.iterrows():
             d = row['data']
@@ -1989,8 +2002,13 @@ def recompor_snapshot_historico():
             sols_trat = tratadas_dia.get((d, m), set())
             sols_ini_nao_tratadas = sols_ini - sols_trat
 
+            # Demandas travadas que comprovadamente iniciaram em data anterior a 'd'
+            sols_user_trav = travadas_por_user.get(m, set())
+            travadas_anteriores = sum(1 for s in sols_user_trav if primeiro_inicio.get(s, d) < d)
+
             qtd_ini_dia = len(sols_ini_nao_tratadas)
-            pend_ini_dia = min(qtd_ini_dia, pend_ini)
+            max_ini_dia = max(0, pend_ini - travadas_anteriores)
+            pend_ini_dia = min(qtd_ini_dia, max_ini_dia)
             pend_ant = max(0, pend_ini - pend_ini_dia)
 
             updates.append((pend_ini_dia, pend_ant, d, m))
