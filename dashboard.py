@@ -823,9 +823,6 @@ if df is not None:
         st.session_state["reset_all_signal"] = True
 
     st.sidebar.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-    if st.sidebar.button("🔄 Atualizar Dados Agora", key="btn_refresh_data", use_container_width=True, help="Limpa o cache e recarrega imediatamente os dados mais recentes da rede"):
-        trigger_refresh_data()
-
     st.sidebar.button("🔄 Resetar Todos os Filtros", key="btn_global_reset", use_container_width=True, on_click=trigger_reset_all, help="Restaura datas, responsáveis e regiões ao estado padrão")
 
     if st.sidebar.button("🚪 Sair do Sistema", key="btn_logout_sidebar", use_container_width=True, help="Encerrar sessão de usuário"):
@@ -892,31 +889,71 @@ if df is not None:
         qtd_conjunto_restrito = 0
     
     # --- CABEÇALHO DE CONTROLE ---
-    st.markdown(f"""
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-xs);" class="animate-target">
-        <div>
-            <h1 style="margin: 0; font-size: 2.2rem; color: var(--accent-color); line-height: 1.1;">CENTRO DE CONTROLE DA PROGRAMAÇÃO</h1>            
-        </div>
-        <div style="display: flex; align-items: center; gap: var(--space-md);">
-            <div style="text-align: right; border-right: 1px solid var(--border-color); padding-right: var(--space-md);">
-                <div style="color: var(--text-secondary); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px;">Última Atualização</div>
-                <div style="display: flex; align-items: center; gap: 6px; color: #34d399; font-weight: 700; font-size: 0.85rem;">
-                    <div style="width: 6px; height: 6px; background: #34d399; border-radius: 50%; box-shadow: 0 0 8px #34d399; animation: pulse 2s infinite;"></div>
-                    {data_extracao.strftime('%d/%m/%Y %H:%M') if data_extracao else 'N/A'}
+    col_hdr_left, col_hdr_right = st.columns([5.5, 4.5], vertical_alignment="center")
+
+    with col_hdr_left:
+        st.markdown("""
+            <h1 style="margin: 0; font-size: 2.2rem; color: var(--accent-color); line-height: 1.1; white-space: nowrap;">
+                CENTRO DE CONTROLE DA PROGRAMAÇÃO
+            </h1>
+        """, unsafe_allow_html=True)
+
+    with col_hdr_right:
+        st.markdown('<span id="header-refresh-anchor"></span>', unsafe_allow_html=True)
+        col_btn, col_info = st.columns([0.16, 0.84], vertical_alignment="center")
+        
+        with col_btn:
+            if st.button("🔄", key="btn_refresh_data", help="Atualizar dados agora (limpar cache e recarregar)"):
+                trigger_refresh_data()
+                
+        with col_info:
+            st.markdown(f"""
+            <div style="display: flex; align-items: center; justify-content: flex-end; gap: var(--space-md);">
+                <div style="text-align: right; border-right: 1px solid var(--border-color); padding-right: var(--space-md);">
+                    <div style="color: var(--text-secondary); font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px;">Última Atualização</div>
+                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px; color: #34d399; font-weight: 700; font-size: 0.85rem;">
+                        <div style="width: 6px; height: 6px; background: #34d399; border-radius: 50%; box-shadow: 0 0 8px #34d399; animation: pulse 2s infinite;"></div>
+                        {data_extracao.strftime('%d/%m/%Y %H:%M') if data_extracao else 'N/A'}
+                    </div>
+                </div>
+                <div style="background: var(--surface-color); padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: inset 0 0 10px rgba(0,0,0,0.2);">
+                    <span id="digital-clock" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 700; color: var(--primary-color); letter-spacing: 1px;">{datetime.now().strftime('%H:%M:%S')}</span>
                 </div>
             </div>
-            <div style="background: var(--surface-color); padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: inset 0 0 10px rgba(0,0,0,0.2);">
-                <span id="digital-clock" style="font-family: 'Space Grotesk', sans-serif; font-size: 1.1rem; font-weight: 700; color: var(--primary-color); letter-spacing: 1px;">{datetime.now().strftime('%H:%M:%S')}</span>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+
     st.markdown("""
     <style>
         @keyframes pulse {
             0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.7); }
             70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(52, 211, 153, 0); }
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+        }
+        /* Estilização compacta do botão de refresh no cabeçalho */
+        div[data-testid="element-container"]:has(#header-refresh-anchor) + div[data-testid="element-container"] div[data-testid="column"]:first-child {
+            display: flex !important;
+            justify-content: flex-end !important;
+            align-items: center !important;
+        }
+        div[data-testid="element-container"]:has(#header-refresh-anchor) + div[data-testid="element-container"] div[data-testid="column"]:first-child div[data-testid="stButton"] button {
+            height: 38px !important;
+            min-height: 38px !important;
+            width: 38px !important;
+            border-radius: 8px !important;
+            padding: 0 !important;
+            font-size: 1.15rem !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            background: var(--surface-color) !important;
+            border: 1px solid var(--border-color) !important;
+            transition: all 0.2s ease !important;
+        }
+        div[data-testid="element-container"]:has(#header-refresh-anchor) + div[data-testid="element-container"] div[data-testid="column"]:first-child div[data-testid="stButton"] button:hover {
+            border-color: #34d399 !important;
+            color: #34d399 !important;
+            box-shadow: 0 0 10px rgba(52, 211, 153, 0.3) !important;
+            transform: rotate(45deg);
         }
     </style>
     """, unsafe_allow_html=True)
