@@ -2158,13 +2158,26 @@ def registrar_eventos_diarios(df_antigo, df_novo):
         
         eventos_para_inserir = []
         
+        # Blindagem de Segurança: Se a base antiga estiver vazia ou com volume anômalo (>80 novas em um ciclo de 15min),
+        # aborta a inserção de 'NOVA' para prevenir poluição histórica com o estoque legado.
+        ignorar_novas_em_massa = False
+        if not antigas_dict:
+            print("[EVENTOS ALERTA] Base comparativa antiga vazia. Ignorando geração de eventos NOVA para não poluir o histórico com o estoque legado.")
+            ignorar_novas_em_massa = True
+        else:
+            candidatas_novas_count = sum(1 for s in novas_dict.keys() if s not in antigas_dict)
+            if candidatas_novas_count > 80:
+                print(f"[EVENTOS ALERTA] Volume anômalo de solicitações novas ({candidatas_novas_count}). Abortando registro de NOVA por segurança.")
+                ignorar_novas_em_massa = True
+
         # 1. Novas e Iniciadas
         for sol_id, row_nova in novas_dict.items():
             if sol_id not in antigas_dict:
-                regiao = row_nova.get('Ref_Regiao', '')
-                sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
-                matricula = get_responsavel(sol_id, regiao, row_nova)
-                eventos_para_inserir.append((sol_id, 'NOVA', sigla, matricula, data_evento_aplicar))
+                if not ignorar_novas_em_massa:
+                    regiao = row_nova.get('Ref_Regiao', '')
+                    sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
+                    matricula = get_responsavel(sol_id, regiao, row_nova)
+                    eventos_para_inserir.append((sol_id, 'NOVA', sigla, matricula, data_evento_aplicar))
             else:
                 row_antiga = antigas_dict[sol_id]
                 sit_antiga = str(row_antiga.get('Situacao_Norm', '')).upper()
@@ -2522,5 +2535,112 @@ def limpar_cache_dados():
             print("[DB] Cache de dados limpo com sucesso.")
     except Exception as e:
         print(f"[DB] Erro ao limpar cache: {e}")
+
+def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
+    """
+    Retorna DataFrame com as solicitações e regiões para o drill-down do gráfico de performance:
+    Colunas: ['Solicitação', 'Região', 'Situação', 'Data de Início']
+    """
+    conn_app = get_connection_config()
+    conn_data = get_connection_read()
+    try:
+        cursor = conn_app.cursor()
+        cursor.execute("SELECT matricula FROM usuarios WHERE nome = ? OR matricula = ?", (resp_nome, resp_nome))
+        res = cursor.fetchone()
+        if not res:
+            return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início'])
+        mat = res[0]
+        
+        dt_iso = pd.to_datetime(data_str, dayfirst=True).strftime('%Y-%m-%d')
+        serie_lower = str(nome_serie).lower()
+        df_ev = pd.DataFrame()
+        
+        if 'aprovadas' in serie_lower or 'nova' in serie_lower:
+            df_ev = pd.read_sql("""
+                SELECT solicitacao, regiao, data_evento as data_ref
+                FROM eventos_diarios
+                WHERE matricula_responsavel = ? AND tipo_evento = 'NOVA' AND date(data_evento) = ?
+            """, conn_app, params=[mat, dt_iso])
+            
+        elif 'tratadas' in serie_lower or 'reprovadas' in serie_lower:
+            df_ev = pd.read_sql("""
+                SELECT solicitacao, regiao, data_evento as data_ref
+                FROM eventos_diarios
+                WHERE matricula_responsavel = ? AND tipo_evento = 'TRATADA' AND date(data_evento) = ?
+            """, conn_app, params=[mat, dt_iso])
+            
+        elif 'hoje e ontem' in serie_lower or 'iniciadas' in serie_lower or 'do dia' in serie_lower:
+            dt_ontem_util = obter_dia_util_anterior(dt_iso)
+            df_ev = pd.read_sql("""
+                SELECT solicitacao, regiao, data_evento as data_ref
+                FROM eventos_diarios
+                WHERE matricula_responsavel = ? AND tipo_evento = 'INICIADA' 
+                AND date(data_evento) BETWEEN ? AND ?
+            """, conn_app, params=[mat, dt_ontem_util, dt_iso])
+            
+        elif '+2' in serie_lower or 'anteriores' in serie_lower:
+            dt_ontem_util = obter_dia_util_anterior(dt_iso)
+            df_trav = pd.read_sql("""
+                SELECT st.solicitacao, ed.regiao, min(ed.data_evento) as data_ref
+                FROM solicitacoes_travadas st
+                LEFT JOIN eventos_diarios ed ON st.solicitacao = ed.solicitacao
+                WHERE st.matricula = ?
+                GROUP BY st.solicitacao
+                HAVING date(data_ref) < ?
+            """, conn_app, params=[mat, dt_ontem_util])
+            df_ev = df_trav
+            
+        if df_ev.empty:
+            return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início'])
+            
+        sols = df_ev['solicitacao'].dropna().astype(str).str.strip().tolist()
+        df_dem = pd.DataFrame()
+        if sols:
+            try:
+                placeholders = ','.join(['?'] * len(sols))
+                cursor_d = conn_data.cursor()
+                cursor_d.execute("PRAGMA table_info(demanda_atual)")
+                cols = [r[1] for r in cursor_d.fetchall()]
+                c_sol = next((c for c in cols if 'solicit' in c.lower() and 'vinc' not in c.lower()), None)
+                c_data = next((c for c in cols if 'início' in c.lower() or 'inicio' in c.lower()), None)
+                c_sit = next((c for c in cols if 'situa' in c.lower()), None)
+                c_reg = next((c for c in cols if 'regi' in c.lower()), None)
+                
+                if c_sol:
+                    cols_select = [f'"{c_sol}" as solicitacao']
+                    if c_data: cols_select.append(f'"{c_data}" as dt_inicio')
+                    if c_sit: cols_select.append(f'"{c_sit}" as situacao')
+                    if c_reg: cols_select.append(f'"{c_reg}" as regiao_dem')
+                    
+                    q = f"SELECT {', '.join(cols_select)} FROM demanda_atual WHERE \"{c_sol}\" IN ({placeholders})"
+                    df_dem = pd.read_sql(q, conn_data, params=sols)
+            except Exception:
+                pass
+                
+        if not df_dem.empty:
+            df_ev['solicitacao_str'] = df_ev['solicitacao'].astype(str).str.strip()
+            df_dem['solicitacao_str'] = df_dem['solicitacao'].astype(str).str.strip()
+            df_res = pd.merge(df_ev, df_dem, on='solicitacao_str', how='left')
+            df_res['Região'] = df_res['regiao'].combine_first(df_res.get('regiao_dem')).fillna('ND')
+            df_res['Situação'] = df_res.get('situacao', 'EM ELABORAÇÃO')
+            df_res['Data de Início'] = df_res.get('dt_inicio', '-')
+            df_res['Solicitação'] = df_res['solicitacao_x']
+        else:
+            df_res = df_ev.copy()
+            df_res['Solicitação'] = df_res['solicitacao']
+            df_res['Região'] = df_res['regiao'].fillna('ND')
+            df_res['Situação'] = 'TRATADA' if 'tratada' in serie_lower else ('APROVADA' if 'aprovadas' in serie_lower else 'EM ELABORAÇÃO')
+            df_res['Data de Início'] = '-'
+            
+        return df_res[['Solicitação', 'Região', 'Situação', 'Data de Início']].drop_duplicates()
+    except Exception as e:
+        print(f"[DB] Erro em get_detalhe_drilldown_performance: {e}")
+        return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início'])
+    finally:
+        if 'conn_app' in locals() and conn_app:
+            conn_app.close()
+        if 'conn_data' in locals() and conn_data:
+            conn_data.close()
+
 
 
