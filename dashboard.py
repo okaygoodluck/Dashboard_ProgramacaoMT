@@ -1542,7 +1542,8 @@ if df is not None:
                                 if not df_drill.empty:
                                     col_q, _ = st.columns([1.5, 3.5])
                                     with col_q:
-                                        df_reg_resumo = df_drill.groupby('Região', as_index=False).size().rename(columns={'size': 'Quantidade'}).sort_values('Quantidade', ascending=False)
+                                        s_cont = df_drill['Região'].value_counts()
+                                        df_reg_resumo = pd.DataFrame({'Região': s_cont.index, 'Quantidade': s_cont.values})
                                         st.dataframe(df_reg_resumo, hide_index=True, use_container_width=True)
                                 else:
                                     st.info("Nenhuma solicitação encontrada para este ponto.")
