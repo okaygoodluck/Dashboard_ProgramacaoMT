@@ -1536,75 +1536,16 @@ if df is not None:
                                 nomes_series = ['Aprovadas no dia', 'Em elaboração (Hoje e Ontem)', 'Em elaboração (+2 dias)', 'Tratadas/Reprovadas']
                                 nome_serie = nomes_series[curve_num] if curve_num < len(nomes_series) else 'Aprovadas no dia'
                                 
-                                st.markdown(f"#### 🔍 Detalhamento por Região: **{nome_serie}** em **{data_clicada}** ({resp_d1})")
+                                st.markdown(f"#### 🔍 {nome_serie} [{data_clicada}] [{resp_d1}]")
                                 df_drill = db_manager.get_detalhe_drilldown_performance(resp_d1, data_clicada, nome_serie)
                                 
                                 if not df_drill.empty:
-                                    col_tb1, col_tb2 = st.columns([1, 2.5])
-                                    with col_tb1:
-                                        st.markdown("**Quantitativo por Região:**")
+                                    col_q, _ = st.columns([1.5, 3.5])
+                                    with col_q:
                                         df_reg_resumo = df_drill.groupby('Região').size().reset_index(name='Quantidade').sort_values('Quantidade', ascending=False)
                                         st.dataframe(df_reg_resumo, hide_index=True, use_container_width=True)
-                                    with col_tb2:
-                                        st.markdown(f"**Lista de Solicitações ({len(df_drill)} itens):**")
-                                        st.dataframe(df_drill, hide_index=True, use_container_width=True)
                                 else:
-                                    st.info("Nenhuma solicitação detalhada encontrada para este ponto.")
-
-                            # --- Curva de Demanda Futura (Backlog da Carteira do Técnico) ---
-                            st.markdown("---")
-                            st.markdown(f"#### 📅 Curva de Demanda Futura por Data de Início: **{resp_d1}**")
-
-                            if df is not None and not df.empty and col_regiao and col_data:
-                                if 'Responsavel' in df.columns:
-                                    df_tec = df[df['Responsavel'] == resp_d1].copy()
-                                else:
-                                    df_map = db_manager.get_mapeamento_regioes()
-                                    df_carteira = df.copy()
-                                    df_carteira['temp_sigla'] = df_carteira[col_regiao].astype(str).str.strip().str[:2].str.upper()
-                                    df_carteira = df_carteira.merge(df_map[['sigla_regiao', 'responsavel']], left_on='temp_sigla', right_on='sigla_regiao', how='left')
-                                    df_carteira['Responsavel_Atribuido'] = df_carteira['responsavel'].fillna('Não Atribuído')
-                                    df_tec = df_carteira[df_carteira['Responsavel_Atribuido'] == resp_d1].copy()
-
-                                if not df_tec.empty:
-                                    df_tec['dt_inicio_clean'] = pd.to_datetime(df_tec[col_data], dayfirst=True, errors='coerce')
-                                    df_tec = df_tec.dropna(subset=['dt_inicio_clean']).sort_values('dt_inicio_clean')
-                                    
-                                    hoje_dt = pd.to_datetime(date.today())
-                                    df_tec_fut = df_tec[df_tec['dt_inicio_clean'] >= hoje_dt].copy()
-                                    if df_tec_fut.empty:
-                                        df_tec_fut = df_tec.copy()
-                                        
-                                    df_tec_fut = df_tec_fut.sort_values('dt_inicio_clean')
-                                    df_tec_fut['Data_Inicio_Fmt'] = df_tec_fut['dt_inicio_clean'].dt.strftime('%d/%m/%Y')
-                                    df_tec_fut['Regiao_Sigla'] = df_tec_fut[col_regiao].astype(str).str.strip().str[:2].str.upper()
-                                    
-                                    datas_ordem = df_tec_fut.drop_duplicates(subset=['dt_inicio_clean'])['Data_Inicio_Fmt'].tolist()
-                                    df_curva = df_tec_fut.groupby(['Data_Inicio_Fmt', 'Regiao_Sigla'], as_index=False).size()
-                                    df_curva.rename(columns={'size': 'Quantidade'}, inplace=True)
-                                    
-                                    fig_curva = px.bar(
-                                        df_curva,
-                                        x='Data_Inicio_Fmt',
-                                        y='Quantidade',
-                                        color='Regiao_Sigla',
-                                        title=f"Distribuição do Backlog por Data de Início Programada ({len(df_tec_fut)} solicitações ativas)",
-                                        category_orders={"Data_Inicio_Fmt": datas_ordem},
-                                        barmode='group',
-                                        text='Quantidade'
-                                    )
-                                    fig_curva.update_traces(textposition='outside')
-                                    fig_curva.update_layout(
-                                        xaxis_title="Data de Início Prevista",
-                                        yaxis_title="Qtd Solicitações",
-                                        yaxis_tickformat="d",
-                                        margin=dict(l=10, r=10, t=40, b=10),
-                                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                                    )
-                                    fig_curva.update_xaxes(type='category')
-                                    st.plotly_chart(fig_curva, use_container_width=True)
-                                else:
-                                    st.info(f"Nenhuma demanda ativa atribuída na carteira atual de {resp_d1}.")
+                                    st.info("Nenhuma solicitação encontrada para este ponto.")
                         else:
                             st.warning(f"Não há dados consolidados para {resp_d1} no período selecionado.")
                         
