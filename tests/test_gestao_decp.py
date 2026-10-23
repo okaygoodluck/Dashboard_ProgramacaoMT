@@ -447,16 +447,16 @@ class TestGestaoDECP(unittest.TestCase):
         def resolver_responsavel(row, travadas_dict=None):
             travadas = travadas_dict or {}
             sol_str = str(row['Solicitação']).strip()
-            # 1. Trava prévia
-            if sol_str in travadas:
-                mat = travadas[sol_str]
-                return mat, mapa_mat_nome.get(mat.lower(), mat)
-            # 2. Resp. Manobra (GDIS-PM)
+            # 1. Resp. Manobra (GDIS-PM) tem precedência absoluta quando assumida por técnico válido
             resp_manobra = str(row.get('Resp. Manobra', '')).strip().lower()
             if resp_manobra and resp_manobra != '-' and resp_manobra not in matriculas_aviso:
                 nome = mapa_mat_nome.get(resp_manobra)
                 if nome:
                     return resp_manobra, nome
+            # 2. Trava prévia
+            if sol_str in travadas:
+                mat = travadas[sol_str]
+                return mat, mapa_mat_nome.get(mat.lower(), mat)
             # 3. Dono da região
             mat_reg = str(row.get('Matricula_Regiao', '')).strip().lower()
             return mat_reg, mapa_mat_nome.get(mat_reg, str(row.get('Responsavel_Regiao', '')))
@@ -494,6 +494,20 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(filtro_alexandre['Solicitação'].tolist(), ['1701411'])
         self.assertNotIn('1701411', filtro_luiz['Solicitação'].tolist())
         self.assertEqual(filtro_luiz['Solicitação'].tolist(), ['1702280'])
+
+        # Cenário 4: Demanda travada previamente para Amanda Andrade (e258504), mas assumida por Amanda Pires (e269994)
+        mapa_mat_nome['e258504'] = 'AMANDA ANDRADE ABREU'
+        mapa_mat_nome['e269994'] = 'AMANDA PIRES PARDINHO'
+        row_amanda = {
+            'Solicitação': '1718141',
+            'Resp. Manobra': 'e269994',
+            'Matricula_Regiao': 'e258504',
+            'Responsavel_Regiao': 'AMANDA ANDRADE ABREU'
+        }
+        travadas_amanda = {'1718141': 'e258504'}
+        mat_amanda, resp_amanda = resolver_responsavel(row_amanda, travadas_dict=travadas_amanda)
+        self.assertEqual(mat_amanda, 'e269994')
+        self.assertEqual(resp_amanda, 'AMANDA PIRES PARDINHO')
 
 if __name__ == '__main__':
     unittest.main()

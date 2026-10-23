@@ -572,15 +572,15 @@ if df is not None:
         df['Matricula_Manobra'] = None
         df['Responsavel_Manobra'] = None
 
-    # 3. Verifica se há travas no banco para solicitações em elaboração (Prioridade 1: trava prévia)
+    # 3. Verifica se há travas no banco para solicitações em elaboração (Prioridade 1: Resp. Manobra do GDIS-PM, 2: Trava prévia, 3: Responsavel_Regiao)
     df_travadas = db_manager.get_solicitacoes_travadas()
     if not df_travadas.empty:
         df['Solicitacao_str'] = df[col_sol].astype(str).str.strip()
         df = df.merge(df_travadas, left_on='Solicitacao_str', right_on='solicitacao', how='left')
         
-        # Hierarquia: 1) Trava prévia no banco, 2) Resp. Manobra (GDIS-PM), 3) Responsavel_Regiao
-        df['Responsavel'] = df['responsavel_travado'].combine_first(df['Responsavel_Manobra']).fillna(df['Responsavel_Regiao'])
-        df['Matricula'] = df['matricula_travada'].combine_first(df['Matricula_Manobra']).fillna(df['Matricula_Regiao'])
+        # Hierarquia: 1) Resp. Manobra (GDIS-PM) tem precedência absoluta, 2) Trava prévia no banco, 3) Responsavel_Regiao
+        df['Responsavel'] = df['Responsavel_Manobra'].combine_first(df['responsavel_travado']).fillna(df['Responsavel_Regiao'])
+        df['Matricula'] = df['Matricula_Manobra'].combine_first(df['matricula_travada']).fillna(df['Matricula_Regiao'])
         
         df = df.drop(columns=['Solicitacao_str', 'solicitacao', 'responsavel_travado', 'matricula_travada'])
     else:
@@ -589,13 +589,13 @@ if df is not None:
 
     df.drop(columns=['Matricula_Manobra', 'Responsavel_Manobra'], inplace=True, errors='ignore')
 
-    # 4. Grava novas travas e snapshots apenas se estiver em modo servidor (evita escrita em rede readonly no cliente)
+    # 4. Grava novas travas ou atualiza travas quando assumidas por novo técnico em modo servidor
     if db_manager.is_server_mode():
         solicitacoes_ja_travadas = df_travadas['solicitacao'].tolist() if not df_travadas.empty else []
-        novas_para_travar = df[(df['Is_Elaboracao'] == True) & (df['Matricula'].notna()) & (~df[col_sol].astype(str).str.strip().isin(solicitacoes_ja_travadas))]
+        para_travar = df[(df['Is_Elaboracao'] == True) & (df['Matricula'].notna())]
         
-        if not novas_para_travar.empty:
-            db_manager.travar_solicitacoes(novas_para_travar[[col_sol, 'Matricula']].rename(columns={col_sol: 'Solicitação'}))
+        if not para_travar.empty:
+            db_manager.travar_solicitacoes(para_travar[[col_sol, 'Matricula']].rename(columns={col_sol: 'Solicitação'}))
 
         # 4.5 Remove travas antigas de solicitações que já não estão mais "Em elaboração"
         solicitacoes_hoje_em_elaboracao = df[df['Is_Elaboracao'] == True][col_sol].astype(str).str.strip().tolist()

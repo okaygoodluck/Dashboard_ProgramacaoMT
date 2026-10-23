@@ -1821,7 +1821,7 @@ def travar_solicitacoes(df_novas):
             cursor.execute('''
                 INSERT INTO solicitacoes_travadas (solicitacao, matricula)
                 VALUES (?, ?)
-                ON CONFLICT(solicitacao) DO NOTHING
+                ON CONFLICT(solicitacao) DO UPDATE SET matricula=excluded.matricula
             ''', (solicitacao, matricula))
         conn.commit()
         return True
