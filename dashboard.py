@@ -1499,7 +1499,7 @@ if df is not None:
                             fig_d1.add_trace(go.Bar(
                                 x=df_perf['Data_Exibicao'], 
                                 y=df_perf['Tratadas'], 
-                                name='Enviadas para Conferência',
+                                name='Tratadas/Reprovadas',
                                 marker_color='#10b981',
                                 text=df_perf['Tratadas'],
                                 textposition='outside'
