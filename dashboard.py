@@ -550,20 +550,44 @@ if df is not None:
 
     col_sol = next((c for c in df.columns if 'Solicit' in c and 'Status' not in c), df.columns[0])
 
-    # 2. Verifica se há travas no banco para solicitações em elaboração
+    # 2. Mapeamento de Resp. Manobra do GDIS-PM (Técnico que assumiu no sistema Cemig)
+    col_resp_manobra = next((c for c in df.columns if 'resp' in c.lower() and 'manobra' in c.lower()), None)
+    mapa_mat_nome = db_manager.get_mapa_matricula_nome()
+    
+    def extrair_manobra_info(val):
+        if pd.isna(val):
+            return None, None
+        v_clean = db_manager.normalizar_matricula(str(val).strip())
+        if v_clean and v_clean != '-' and len(v_clean) >= 4 and not v_clean.upper().startswith('NÃO') and v_clean.lower() not in db_manager.MATRICULAS_AVISO:
+            nome_encontrado = mapa_mat_nome.get(v_clean.lower())
+            if nome_encontrado:
+                return v_clean, nome_encontrado
+        return None, None
+
+    if col_resp_manobra and not df.empty:
+        manobra_tuples = df[col_resp_manobra].apply(extrair_manobra_info)
+        df['Matricula_Manobra'] = [t[0] for t in manobra_tuples]
+        df['Responsavel_Manobra'] = [t[1] for t in manobra_tuples]
+    else:
+        df['Matricula_Manobra'] = None
+        df['Responsavel_Manobra'] = None
+
+    # 3. Verifica se há travas no banco para solicitações em elaboração (Prioridade 1: trava prévia)
     df_travadas = db_manager.get_solicitacoes_travadas()
     if not df_travadas.empty:
         df['Solicitacao_str'] = df[col_sol].astype(str).str.strip()
         df = df.merge(df_travadas, left_on='Solicitacao_str', right_on='solicitacao', how='left')
         
-        # 3. Define quem é o Responsável Final (Trava prevalece sobre Regiao)
-        df['Responsavel'] = df['responsavel_travado'].fillna(df['Responsavel_Regiao'])
-        df['Matricula'] = df['matricula_travada'].fillna(df['Matricula_Regiao'])
+        # Hierarquia: 1) Trava prévia no banco, 2) Resp. Manobra (GDIS-PM), 3) Responsavel_Regiao
+        df['Responsavel'] = df['responsavel_travado'].combine_first(df['Responsavel_Manobra']).fillna(df['Responsavel_Regiao'])
+        df['Matricula'] = df['matricula_travada'].combine_first(df['Matricula_Manobra']).fillna(df['Matricula_Regiao'])
         
         df = df.drop(columns=['Solicitacao_str', 'solicitacao', 'responsavel_travado', 'matricula_travada'])
     else:
-        df['Responsavel'] = df['Responsavel_Regiao']
-        df['Matricula'] = df['Matricula_Regiao']
+        df['Responsavel'] = df['Responsavel_Manobra'].fillna(df['Responsavel_Regiao'])
+        df['Matricula'] = df['Matricula_Manobra'].fillna(df['Matricula_Regiao'])
+
+    df.drop(columns=['Matricula_Manobra', 'Responsavel_Manobra'], inplace=True, errors='ignore')
 
     # 4. Grava novas travas e snapshots apenas se estiver em modo servidor (evita escrita em rede readonly no cliente)
     if db_manager.is_server_mode():

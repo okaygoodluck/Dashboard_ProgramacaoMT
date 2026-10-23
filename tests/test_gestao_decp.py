@@ -436,6 +436,65 @@ class TestGestaoDECP(unittest.TestCase):
         estilos_row1 = func_destaque(df_view.iloc[1])
         self.assertTrue(all(e == '' for e in estilos_row1))
 
+    def test_assuncao_demanda_resp_manobra(self):
+        """Valida que uma solicitação assumida por outro técnico no GDIS-PM pertence exclusivamente a quem assumiu."""
+        mapa_mat_nome = {
+            'c060795': 'ALEXANDRE TEIXEIRA SALGADO',
+            'c058107': 'LUIZ HENRIQUE BERNARDO'
+        }
+        matriculas_aviso = {'e204855', 'e263445'}
+
+        def resolver_responsavel(row, travadas_dict=None):
+            travadas = travadas_dict or {}
+            sol_str = str(row['Solicitação']).strip()
+            # 1. Trava prévia
+            if sol_str in travadas:
+                mat = travadas[sol_str]
+                return mat, mapa_mat_nome.get(mat.lower(), mat)
+            # 2. Resp. Manobra (GDIS-PM)
+            resp_manobra = str(row.get('Resp. Manobra', '')).strip().lower()
+            if resp_manobra and resp_manobra != '-' and resp_manobra not in matriculas_aviso:
+                nome = mapa_mat_nome.get(resp_manobra)
+                if nome:
+                    return resp_manobra, nome
+            # 3. Dono da região
+            mat_reg = str(row.get('Matricula_Regiao', '')).strip().lower()
+            return mat_reg, mapa_mat_nome.get(mat_reg, str(row.get('Responsavel_Regiao', '')))
+
+        # Cenário 1: Região pertence a Luiz Henrique (c058107), mas Alexandre (c060795) assumiu a manobra
+        row_cruzada = {
+            'Solicitação': '1701411',
+            'Resp. Manobra': 'c060795',
+            'Matricula_Regiao': 'c058107',
+            'Responsavel_Regiao': 'LUIZ HENRIQUE BERNARDO'
+        }
+        mat_final, resp_final = resolver_responsavel(row_cruzada)
+        self.assertEqual(mat_final, 'c060795')
+        self.assertEqual(resp_final, 'ALEXANDRE TEIXEIRA SALGADO')
+
+        # Cenário 2: Emissor de aviso (e204855) mexeu na manobra -> deve ignorar e manter com Luiz Henrique
+        row_aviso = {
+            'Solicitação': '1702280',
+            'Resp. Manobra': 'e204855',
+            'Matricula_Regiao': 'c058107',
+            'Responsavel_Regiao': 'LUIZ HENRIQUE BERNARDO'
+        }
+        mat_aviso, resp_aviso = resolver_responsavel(row_aviso)
+        self.assertEqual(mat_aviso, 'c058107')
+        self.assertEqual(resp_aviso, 'LUIZ HENRIQUE BERNARDO')
+
+        # Cenário 3: Validação de filtro - Alexandre vê a demanda 1701411, Luiz Henrique não vê
+        df_simulacao = pd.DataFrame([
+            {'Solicitação': '1701411', 'Responsavel': resp_final, 'Responsavel_Regiao': 'LUIZ HENRIQUE BERNARDO'},
+            {'Solicitação': '1702280', 'Responsavel': resp_aviso, 'Responsavel_Regiao': 'LUIZ HENRIQUE BERNARDO'},
+        ])
+        filtro_alexandre = df_simulacao[df_simulacao['Responsavel'] == 'ALEXANDRE TEIXEIRA SALGADO']
+        filtro_luiz = df_simulacao[df_simulacao['Responsavel'] == 'LUIZ HENRIQUE BERNARDO']
+
+        self.assertEqual(filtro_alexandre['Solicitação'].tolist(), ['1701411'])
+        self.assertNotIn('1701411', filtro_luiz['Solicitação'].tolist())
+        self.assertEqual(filtro_luiz['Solicitação'].tolist(), ['1702280'])
+
 if __name__ == '__main__':
     unittest.main()
 

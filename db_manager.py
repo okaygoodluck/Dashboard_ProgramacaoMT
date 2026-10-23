@@ -86,10 +86,13 @@ _CANDIDATOS_REDE = [
 ]
 
 REDE_BASE = None
-for cand in _CANDIDATOS_REDE:
-    if cand and os.path.exists(cand):
-        REDE_BASE = cand
-        break
+if os.environ.get("CCP_MODO_TESTE") == "1" or os.environ.get("CCP_FORCAR_LOCAL") == "1":
+    REDE_BASE = _ENV_REDE_BASE or "."
+else:
+    for cand in _CANDIDATOS_REDE:
+        if cand and os.path.exists(cand):
+            REDE_BASE = cand
+            break
 
 if not REDE_BASE:
     REDE_BASE = _ENV_REDE_BASE or _UNC_FQDN_ACC
@@ -577,15 +580,18 @@ def carregar_conjuntos_restritos():
     a partir de REDE_BASE ou caminhos candidatos corporativos.
     Retorna: (map_alim_to_sigla, set_conj_restritos, map_sigla_to_nome)
     """
-    candidatos_dir = [
-        REDE_BASE,
-        _UNC_FQDN_ACC,
-        _UNC_FQDN_NORM,
-        _UNC_REDE_ACC,
-        _UNC_REDE_NORM,
-        _REDE_ACC,
-        _REDE_NORM,
-    ]
+    if os.environ.get("CCP_MODO_TESTE") == "1" or os.environ.get("CCP_FORCAR_LOCAL") == "1":
+        candidatos_dir = [REDE_BASE or "."]
+    else:
+        candidatos_dir = [
+            REDE_BASE,
+            _UNC_FQDN_ACC,
+            _UNC_FQDN_NORM,
+            _UNC_REDE_ACC,
+            _UNC_REDE_NORM,
+            _REDE_ACC,
+            _REDE_NORM,
+        ]
     dir_valido = None
     for d in candidatos_dir:
         if d and os.path.exists(d):
@@ -763,6 +769,19 @@ def listar_usuarios():
         return pd.DataFrame()
     finally:
         conn.close()
+
+@st.cache_data(ttl=300)
+def get_mapa_matricula_nome():
+    """Retorna dicionário mapeando matrícula normalizada para nome completo do usuário."""
+    df_u = listar_usuarios()
+    if df_u.empty:
+        return {}
+    res = {}
+    for _, row in df_u.iterrows():
+        m = normalizar_matricula(str(row['matricula']))
+        if m:
+            res[m.lower()] = str(row['nome']).strip()
+    return res
 
 def criar_usuario(matricula, nome, nivel, email=""):
     """Cria um novo usuário com senha padrão '12345'."""
