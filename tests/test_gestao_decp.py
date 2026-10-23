@@ -326,6 +326,55 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(qtd_conjunto_restrito, 4)
         self.assertEqual(df_conjunto_restrito['Solicitacao'].tolist(), ['1', '2', '3', '5'])
 
+    def test_kpis_criticos_apenas_aprovadas(self):
+        """Valida que Atrasadas, Foras do Prazo, Limite do DEC e Conjunto Restrito ignoram Em Elaboração."""
+        map_alim_sigla = {'ALIM01': 'CJ01', 'ALIM02': 'CJ02'}
+        set_conj_restr = {'CJ01'}
+
+        df_mock = pd.DataFrame([
+            # 1. Aprovada e Atrasada -> entra em Atrasadas
+            {'Solicitação': '1', 'Is_Aprovada': True, 'Is_Elaboracao': False, 'Status_Prazo': 'Atrasada', 'CHI': 100, 'Alimentador': 'ALIM02'},
+            # 2. Em Elaboração e Atrasada -> NÃO entra em Atrasadas
+            {'Solicitação': '2', 'Is_Aprovada': False, 'Is_Elaboracao': True, 'Status_Prazo': 'Atrasada', 'CHI': 100, 'Alimentador': 'ALIM02'},
+            # 3. Aprovada com Urgência -> entra em Urgência
+            {'Solicitação': '3', 'Is_Aprovada': True, 'Is_Elaboracao': False, 'Status_Prazo': 'Urgência', 'CHI': 100, 'Alimentador': 'ALIM02'},
+            # 4. Em Elaboração com Urgência -> NÃO entra em Urgência
+            {'Solicitação': '4', 'Is_Aprovada': False, 'Is_Elaboracao': True, 'Status_Prazo': 'Urgência', 'CHI': 100, 'Alimentador': 'ALIM02'},
+            # 5. Aprovada com CHI >= 1500 -> entra em Limite do DEC
+            {'Solicitação': '5', 'Is_Aprovada': True, 'Is_Elaboracao': False, 'Status_Prazo': 'No Prazo', 'CHI': 1600, 'Alimentador': 'ALIM02'},
+            # 6. Em Elaboração com CHI >= 1500 -> NÃO entra em Limite do DEC
+            {'Solicitação': '6', 'Is_Aprovada': False, 'Is_Elaboracao': True, 'Status_Prazo': 'No Prazo', 'CHI': 1800, 'Alimentador': 'ALIM02'},
+            # 7. Aprovada em Conjunto Restrito -> entra em Conjunto Restrito
+            {'Solicitação': '7', 'Is_Aprovada': True, 'Is_Elaboracao': False, 'Status_Prazo': 'No Prazo', 'CHI': 200, 'Alimentador': 'ALIM01'},
+            # 8. Em Elaboração em Conjunto Restrito -> NÃO entra em Conjunto Restrito
+            {'Solicitação': '8', 'Is_Aprovada': False, 'Is_Elaboracao': True, 'Status_Prazo': 'No Prazo', 'CHI': 200, 'Alimentador': 'ALIM01'},
+        ])
+
+        mask_aprovada = (df_mock['Is_Aprovada'] == True)
+        qtd_atrasadas = len(df_mock[mask_aprovada & (df_mock['Status_Prazo'] == 'Atrasada')])
+        qtd_urgencia = len(df_mock[mask_aprovada & (df_mock['Status_Prazo'] == 'Urgência')])
+
+        col_chi_calc = 'CHI'
+        df_chi = df_mock[mask_aprovada & (pd.to_numeric(df_mock[col_chi_calc], errors='coerce').fillna(0) >= 1500)]
+        qtd_chi = len(df_chi)
+
+        def _is_restr_item(row):
+            alim_clean = str(row.get('Alimentador', '')).replace(' ', '').strip().upper()
+            sigla = map_alim_sigla.get(alim_clean)
+            return bool(sigla and sigla in set_conj_restr)
+
+        df_restr = df_mock[mask_aprovada & df_mock.apply(_is_restr_item, axis=1)]
+        qtd_restr = len(df_restr)
+
+        self.assertEqual(qtd_atrasadas, 1)
+        self.assertEqual(df_mock[mask_aprovada & (df_mock['Status_Prazo'] == 'Atrasada')]['Solicitação'].tolist(), ['1'])
+        self.assertEqual(qtd_urgencia, 1)
+        self.assertEqual(df_mock[mask_aprovada & (df_mock['Status_Prazo'] == 'Urgência')]['Solicitação'].tolist(), ['3'])
+        self.assertEqual(qtd_chi, 1)
+        self.assertEqual(df_chi['Solicitação'].tolist(), ['5'])
+        self.assertEqual(qtd_restr, 1)
+        self.assertEqual(df_restr['Solicitação'].tolist(), ['7'])
+
     def test_preparar_dataframe_detalhes_para_kpi_e_tabela(self):
         """Verifica se preparar_dataframe_detalhes padroniza colunas, oculta colunas tecnicas e aplica regras de cores e nomes."""
         from views.tab_detalhes import preparar_dataframe_detalhes

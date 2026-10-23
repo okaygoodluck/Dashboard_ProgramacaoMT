@@ -860,16 +860,16 @@ if df is not None:
 
     # RECALCULA VARIÁVEIS DE KPI BASEADAS NO FILTRO ATUAL
     total_solicitacoes = len(df_filtered)
-    qtd_atrasadas = len(df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
-    qtd_urgencia = len(df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
+    mask_aprovada = (df_filtered['Is_Aprovada'] == True) if 'Is_Aprovada' in df_filtered.columns else pd.Series(True, index=df_filtered.index)
+    qtd_atrasadas = len(df_filtered[mask_aprovada & (df_filtered['Status_Prazo'] == 'Atrasada')])
+    qtd_urgencia = len(df_filtered[mask_aprovada & (df_filtered['Status_Prazo'] == 'Urgência')])
     qtd_alerta = len(df_filtered[df_filtered['Status_Prazo'] == 'Alerta de Prazo'])
-    qtd_aprovadas = len(df_filtered[df_filtered['Is_Aprovada'] == True]) if 'Is_Aprovada' in df_filtered.columns else 0
+    qtd_aprovadas = len(df_filtered[mask_aprovada])
     qtd_elaboracao = len(df_filtered[df_filtered['Is_Elaboracao'] == True]) if 'Is_Elaboracao' in df_filtered.columns else 0
 
-    mask_ativas = (df_filtered['Is_Aprovada'] | df_filtered['Is_Elaboracao']) if ('Is_Aprovada' in df_filtered.columns and 'Is_Elaboracao' in df_filtered.columns) else pd.Series(True, index=df_filtered.index)
     col_chi_calc = next((c for c in df_filtered.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), None)
     if col_chi_calc:
-        df_chi_critico = df_filtered[mask_ativas & (pd.to_numeric(df_filtered[col_chi_calc], errors='coerce').fillna(0) >= 1500)]
+        df_chi_critico = df_filtered[mask_aprovada & (pd.to_numeric(df_filtered[col_chi_calc], errors='coerce').fillna(0) >= 1500)]
         qtd_chi_critico = len(df_chi_critico)
     else:
         df_chi_critico = df_filtered.iloc[0:0]
@@ -882,7 +882,7 @@ if df is not None:
             alim_clean = str(row.get(col_alim_calc, '')).replace(' ', '').strip().upper()
             sigla = map_alim_sigla.get(alim_clean)
             return bool(sigla and sigla in set_conj_restr)
-        df_conjunto_restrito = df_filtered[mask_ativas & df_filtered.apply(_is_restr_item, axis=1)]
+        df_conjunto_restrito = df_filtered[mask_aprovada & df_filtered.apply(_is_restr_item, axis=1)]
         qtd_conjunto_restrito = len(df_conjunto_restrito)
     else:
         df_conjunto_restrito = df_filtered.iloc[0:0]
@@ -1013,12 +1013,12 @@ if df is not None:
     with kpi_col2:
         premium_metric_card("Solicitações Atrasadas", qtd_atrasadas, icon_name="timer", color="#f87171")
         if st.button("Atrasadas", key="kpi_btn_atrasados", use_container_width=True):
-            show_kpi_dialog("Solicitações Atrasadas", df_filtered[df_filtered['Status_Prazo'] == 'Atrasada'])
+            show_kpi_dialog("Solicitações Atrasadas", df_filtered[mask_aprovada & (df_filtered['Status_Prazo'] == 'Atrasada')])
 
     with kpi_col3:
         premium_metric_card("Foras do Prazo (Caixa)", qtd_urgencia, icon_name="flash", color="#fbbf24")
         if st.button("Fora do Prazo", key="kpi_btn_urgentes", use_container_width=True):
-            show_kpi_dialog("Foras do Prazo (Caixa)", df_filtered[df_filtered['Status_Prazo'] == 'Urgência'])
+            show_kpi_dialog("Foras do Prazo (Caixa)", df_filtered[mask_aprovada & (df_filtered['Status_Prazo'] == 'Urgência')])
 
     with kpi_col4:
         premium_metric_card("Limite do DEC", qtd_chi_critico, icon_name="danger", color="#f97316")
@@ -1028,7 +1028,7 @@ if df is not None:
     with kpi_col5:
         premium_metric_card("Conjunto Restrito", qtd_conjunto_restrito, icon_name="danger", color="#e11d48")
         if st.button("Conj. Restrito", key="kpi_btn_conj_restr", use_container_width=True):
-            show_kpi_dialog("Solicitações em Conjunto Restrito (CHI ≥ 500)", df_conjunto_restrito)
+            show_kpi_dialog("Solicitações em Conjunto Restrito", df_conjunto_restrito)
         
     with kpi_col6:
         premium_metric_card("8 Dias - Prazo p/ Aviso", qtd_alerta, icon_name="info", color="#818cf8")
