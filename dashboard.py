@@ -913,18 +913,18 @@ if df is not None:
         qtd_conjunto_restrito = 0
     
     # --- CABEÇALHO DE CONTROLE ---
-    col_hdr_left, col_hdr_right = st.columns([5.5, 4.5], vertical_alignment="center")
+    col_hdr_left, col_hdr_right = st.columns([6.6, 3.4], vertical_alignment="center")
 
     with col_hdr_left:
         st.markdown("""
-            <h1 style="margin: 0; font-size: 2.2rem; color: var(--accent-color); line-height: 1.1; white-space: nowrap;">
+            <h1 style="margin: 0; font-size: clamp(1.25rem, 1.9vw, 2.1rem); color: var(--accent-color); line-height: 1.15; word-break: normal;">
                 CENTRO DE CONTROLE DA PROGRAMAÇÃO
             </h1>
         """, unsafe_allow_html=True)
 
     with col_hdr_right:
         st.markdown('<span id="header-refresh-anchor"></span>', unsafe_allow_html=True)
-        col_btn, col_info = st.columns([0.16, 0.84], vertical_alignment="center")
+        col_btn, col_info = st.columns([0.15, 0.85], vertical_alignment="center")
         
         with col_btn:
             if st.button("🔄", key="btn_refresh_data", help="Atualizar dados agora (limpar cache e recarregar)"):
