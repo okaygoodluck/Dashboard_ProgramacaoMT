@@ -509,6 +509,32 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(mat_amanda, 'e269994')
         self.assertEqual(resp_amanda, 'AMANDA PIRES PARDINHO')
 
+    def test_faixas_idade_elaboracao_dias_uteis(self):
+        """Valida que o cálculo de Hoje e Ontem útil não é distorcido por fins de semana e separa +2 dias."""
+        # 1. Validação de dia útil anterior
+        d_quinta = db_manager.obter_dia_util_anterior('2026-10-23')  # Sexta -> Quinta
+        self.assertEqual(d_quinta, '2026-10-22')
+
+        d_sexta = db_manager.obter_dia_util_anterior('2026-10-26')   # Segunda -> Sexta anterior
+        self.assertEqual(d_sexta, '2026-10-23')
+
+        # 2. Simulação de separação de demandas por idade
+        hoje = '2026-10-26'  # Segunda-feira
+        ontem_util = db_manager.obter_dia_util_anterior(hoje)  # 2026-10-23 (Sexta)
+
+        demandas_elaboracao = [
+            {'solicitacao': 'S1', 'dt_inicio': '2026-10-26'},  # Hoje (Segunda) -> Hoje e Ontem
+            {'solicitacao': 'S2', 'dt_inicio': '2026-10-23'},  # Ontem útil (Sexta) -> Hoje e Ontem
+            {'solicitacao': 'S3', 'dt_inicio': '2026-10-22'},  # Quinta anterior (2 dias úteis) -> +2 dias
+            {'solicitacao': 'S4', 'dt_inicio': '2026-10-20'},  # 4 dias úteis -> +2 dias
+        ]
+
+        hoje_e_ontem = [d for d in demandas_elaboracao if d['dt_inicio'] >= ontem_util]
+        mais_2_dias = [d for d in demandas_elaboracao if d['dt_inicio'] < ontem_util]
+
+        self.assertEqual([d['solicitacao'] for d in hoje_e_ontem], ['S1', 'S2'])
+        self.assertEqual([d['solicitacao'] for d in mais_2_dias], ['S3', 'S4'])
+
 if __name__ == '__main__':
     unittest.main()
 

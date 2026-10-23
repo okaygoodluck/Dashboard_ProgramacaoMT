@@ -32,6 +32,21 @@ def get_agora_br():
     """Retorna o horário atual em Brasília (UTC-3)."""
     return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(hours=3)
 
+def obter_dia_util_anterior(data_str) -> str:
+    """Retorna o dia útil imediatamente anterior (YYYY-MM-DD), desconsiderando fins de semana e feriados."""
+    try:
+        import numpy as np
+        import pandas as pd
+        feriados_np = np.array(FERIADOS_BASE, dtype='datetime64[D]')
+        dt = pd.to_datetime(data_str).date()
+        ontem_util = np.busday_offset(dt, -1, roll='backward', weekmask='1111100', holidays=feriados_np)
+        return str(ontem_util)
+    except Exception:
+        import datetime
+        dt = datetime.datetime.strptime(str(data_str)[:10], '%Y-%m-%d').date()
+        delta = 3 if dt.weekday() == 0 else 1
+        return str(dt - datetime.timedelta(days=delta))
+
 # Nomes dos arquivos de banco de dados (Oficiais: CCP - Centro de Controle da Programação)
 DB_APP_NAME = "ccp_app.db"    # Persistente (Usuários, Configs)
 DB_DATA_NAME = "ccp_data.db"  # Volátil (Dados da Demanda)
@@ -1903,8 +1918,9 @@ def registrar_snapshot_pendentes(df_atual):
         # Filtra apenas demandas que contam como pendentes
         df_pendentes = df_pend[df_pend['Situacao_Clean'].isin(['APROVADA', 'EM ELABORAÇÃO', 'EM ELABORACAO'])].copy()
         
-        cursor.execute("SELECT solicitacao FROM eventos_diarios WHERE tipo_evento = 'INICIADA' AND date(data_evento) = ?", (data_hoje,))
-        sols_iniciadas_hoje = set(str(r[0]).strip().lstrip('0') for r in cursor.fetchall())
+        data_ontem_util = obter_dia_util_anterior(data_hoje)
+        cursor.execute("SELECT solicitacao FROM eventos_diarios WHERE tipo_evento = 'INICIADA' AND date(data_evento) >= ?", (data_ontem_util,))
+        sols_iniciadas_hoje_ontem = set(str(r[0]).strip().lstrip('0') for r in cursor.fetchall())
 
         for matricula in todos_usuarios:
             cursor.execute("SELECT solicitacao FROM solicitacoes_travadas WHERE matricula = ?", (matricula,))
@@ -1921,8 +1937,10 @@ def registrar_snapshot_pendentes(df_atual):
             iniciadas = len(df_elabora)
             nao_iniciadas = len(df_user[df_user['Situacao_Clean'] == 'APROVADA'])
             
-            iniciadas_dia = len(df_elabora[df_elabora['Solicitacao_Clean'].isin(sols_iniciadas_hoje)])
-            dias_anteriores = max(0, iniciadas - iniciadas_dia)
+            # Faixa Amarela: Em elaboração (Hoje e Ontem útil)
+            iniciadas_hoje_ontem = len(df_elabora[df_elabora['Solicitacao_Clean'].isin(sols_iniciadas_hoje_ontem)])
+            # Faixa Vermelha: Em elaboração há +2 dias úteis
+            mais_2_dias = max(0, iniciadas - iniciadas_hoje_ontem)
             
             cursor.execute("""
                 INSERT INTO pendentes_snapshot (
@@ -1936,7 +1954,7 @@ def registrar_snapshot_pendentes(df_atual):
                     pendentes_nao_iniciadas=excluded.pendentes_nao_iniciadas,
                     pendentes_iniciadas_dia=excluded.pendentes_iniciadas_dia,
                     pendentes_dias_anteriores=excluded.pendentes_dias_anteriores
-            """, (data_hoje, matricula, total, iniciadas, nao_iniciadas, iniciadas_dia, dias_anteriores))
+            """, (data_hoje, matricula, total, iniciadas, nao_iniciadas, iniciadas_hoje_ontem, mais_2_dias))
             
         conn.commit()
     except Exception as e:
@@ -2017,20 +2035,27 @@ def recompor_snapshot_historico():
                 updates.append((0, 0, d, m))
                 continue
 
-            sols_ini = iniciadas_dia.get((d, m), set())
+            dt_ontem_util = obter_dia_util_anterior(d)
+
+            # Demandas iniciadas na janela de Hoje e Ontem útil [dt_ontem_util, d]
+            sols_ini_janela = set()
+            for (dt_ev, mat_ev), s_set in iniciadas_dia.items():
+                if mat_ev == m and dt_ontem_util <= dt_ev <= d:
+                    sols_ini_janela.update(s_set)
+
             sols_trat = tratadas_dia.get((d, m), set())
-            sols_ini_nao_tratadas = sols_ini - sols_trat
+            sols_ini_nao_tratadas = sols_ini_janela - sols_trat
 
-            # Demandas travadas que comprovadamente iniciaram em data anterior a 'd'
+            # Demandas travadas que comprovadamente iniciaram antes de dt_ontem_util (+2 dias úteis)
             sols_user_trav = travadas_por_user.get(m, set())
-            travadas_anteriores = sum(1 for s in sols_user_trav if primeiro_inicio.get(s, d) < d)
+            travadas_anteriores = sum(1 for s in sols_user_trav if primeiro_inicio.get(s, d) < dt_ontem_util)
 
-            qtd_ini_dia = len(sols_ini_nao_tratadas)
-            max_ini_dia = max(0, pend_ini - travadas_anteriores)
-            pend_ini_dia = min(qtd_ini_dia, max_ini_dia)
-            pend_ant = max(0, pend_ini - pend_ini_dia)
+            qtd_ini_janela = len(sols_ini_nao_tratadas)
+            max_ini_janela = max(0, pend_ini - travadas_anteriores)
+            pend_hoje_ontem = min(qtd_ini_janela, max_ini_janela)
+            pend_mais_2d = max(0, pend_ini - pend_hoje_ontem)
 
-            updates.append((pend_ini_dia, pend_ant, d, m))
+            updates.append((pend_hoje_ontem, pend_mais_2d, d, m))
 
         if updates:
             cursor_app.executemany("""
