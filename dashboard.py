@@ -1556,13 +1556,16 @@ if df is not None:
                             st.markdown(f"#### 📅 Curva de Demanda Futura por Data de Início: **{resp_d1}**")
 
                             if df is not None and not df.empty and col_regiao and col_data:
-                                df_map = db_manager.get_mapeamento_regioes()
-                                df_carteira = df.copy()
-                                df_carteira['temp_sigla'] = df_carteira[col_regiao].astype(str).str.strip().str[:2].str.upper()
-                                df_carteira = df_carteira.merge(df_map[['sigla_regiao', 'responsavel']], left_on='temp_sigla', right_on='sigla_regiao', how='left')
-                                df_carteira['Responsavel_Atribuido'] = df_carteira['responsavel'].fillna('Não Atribuído')
-                                
-                                df_tec = df_carteira[df_carteira['Responsavel_Atribuido'] == resp_d1].copy()
+                                if 'Responsavel' in df.columns:
+                                    df_tec = df[df['Responsavel'] == resp_d1].copy()
+                                else:
+                                    df_map = db_manager.get_mapeamento_regioes()
+                                    df_carteira = df.copy()
+                                    df_carteira['temp_sigla'] = df_carteira[col_regiao].astype(str).str.strip().str[:2].str.upper()
+                                    df_carteira = df_carteira.merge(df_map[['sigla_regiao', 'responsavel']], left_on='temp_sigla', right_on='sigla_regiao', how='left')
+                                    df_carteira['Responsavel_Atribuido'] = df_carteira['responsavel'].fillna('Não Atribuído')
+                                    df_tec = df_carteira[df_carteira['Responsavel_Atribuido'] == resp_d1].copy()
+
                                 if not df_tec.empty:
                                     df_tec['dt_inicio_clean'] = pd.to_datetime(df_tec[col_data], dayfirst=True, errors='coerce')
                                     df_tec = df_tec.dropna(subset=['dt_inicio_clean']).sort_values('dt_inicio_clean')
@@ -1572,6 +1575,7 @@ if df is not None:
                                     if df_tec_fut.empty:
                                         df_tec_fut = df_tec.copy()
                                         
+                                    df_tec_fut = df_tec_fut.sort_values('dt_inicio_clean')
                                     df_tec_fut['Data_Inicio_Fmt'] = df_tec_fut['dt_inicio_clean'].dt.strftime('%d/%m/%Y')
                                     df_tec_fut['Regiao_Sigla'] = df_tec_fut[col_regiao].astype(str).str.strip().str[:2].str.upper()
                                     
@@ -1586,13 +1590,14 @@ if df is not None:
                                         color='Regiao_Sigla',
                                         title=f"Distribuição do Backlog por Data de Início Programada ({len(df_tec_fut)} solicitações ativas)",
                                         category_orders={"Data_Inicio_Fmt": datas_ordem},
-                                        barmode='stack',
+                                        barmode='group',
                                         text='Quantidade'
                                     )
-                                    fig_curva.update_traces(textposition='inside')
+                                    fig_curva.update_traces(textposition='outside')
                                     fig_curva.update_layout(
                                         xaxis_title="Data de Início Prevista",
                                         yaxis_title="Qtd Solicitações",
+                                        yaxis_tickformat="d",
                                         margin=dict(l=10, r=10, t=40, b=10),
                                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                                     )
