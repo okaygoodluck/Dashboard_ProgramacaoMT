@@ -33,10 +33,12 @@ def build_server_package():
         '.env',
         'dashboard.py',
         'extrator_demanda.py',
+        'auditor_status.py',
         'db_manager.py',
         'ccp_ui.py',
         'requirements.txt',
-        'Iniciar_CCP_Servidor.bat'
+        'Iniciar_CCP_Servidor.bat',
+        'Executar_Auditor_Manual.bat'
     ]
 
     print("[*] Copiando arquivos de codigo...")

@@ -124,27 +124,11 @@ def build_package():
     
     if os.path.exists(python_src):
         print("[*] Preparando Runtime Python...")
-        shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
-        
-        # PRÉ-INSTALAR DEPENDÊNCIAS
-        print(" [*] Verificando dependências no ambiente portátil...")
-        py_exe = os.path.join(python_dest, 'python.exe')
-        req_path = os.path.join(root_dir, 'requirements.txt')
-        
-        import glob
-        pth_files = glob.glob(os.path.join(python_dest, "python*._pth"))
-        for pth in pth_files:
-            try: os.remove(pth)
-            except: pass
-
         try:
-            env = os.environ.copy()
-            env["PYTHONNOUSERSITE"] = "1"
-            subprocess.run([py_exe, "-m", "pip", "install", "-r", req_path, "--disable-pip-version-check"], env=env, check=True)
-            print(" [OK] Dependências instaladas com sucesso no pacote portátil!")
-        except Exception as e:
-            print(f" [!] Erro ao instalar dependências: {e}")
-
+            subprocess.run(["robocopy", python_src, python_dest, "/MIR", "/NP", "/NFL", "/NDL", "/NJH", "/NJS"], capture_output=True)
+        except Exception:
+            shutil.copytree(python_src, python_dest, dirs_exist_ok=True)
+        
         # MOVER DLLs para a raiz (Garante que o Windows encontre _socket, _ssl, etc.)
         dlls_dir = os.path.join(python_dest, 'DLLs')
         if os.path.exists(dlls_dir):
@@ -167,7 +151,16 @@ def build_package():
         with open(os.path.join(python_dest, "python314._pth"), "w") as f:
             f.write(pth_content)
         
-        print(" [OK] Runtime Python configurado com isolamento total e vínculo ao app.")
+        # Validação do runtime portátil
+        py_exe = os.path.join(python_dest, 'python.exe')
+        test_import = subprocess.run(
+            [py_exe, "-c", "import streamlit, pandas, openpyxl, playwright, bcrypt; print('OK')"],
+            capture_output=True, text=True
+        )
+        if "OK" in test_import.stdout:
+            print(" [OK] Runtime Python validado com sucesso e isolamento total.")
+        else:
+            print(" [!] Aviso: Nem todos os módulos puderam ser validados no runtime portátil.")
     else:
         print("[!] ERRO CRITICO: Pasta 'python' nao encontrada na raiz!")
         return
