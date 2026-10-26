@@ -1434,6 +1434,16 @@ def sanitizar_eventos_tratadas_ativas():
                 AND (solicitacao IN ({placeholders}) OR LTRIM(solicitacao, '0') IN ({placeholders}))
             """, chunk + chunk)
             removidos_total += cursor.rowcount
+
+            # Limpa também da fila_conciliacao caso tenha retornado à fila ativa sem apuração
+            try:
+                cursor.execute(f"""
+                    DELETE FROM fila_conciliacao 
+                    WHERE status_apurado IS NULL 
+                    AND (solicitacao IN ({placeholders}) OR LTRIM(solicitacao, '0') IN ({placeholders}))
+                """, chunk + chunk)
+            except Exception:
+                pass
             
         conn_app.commit()
         if removidos_total > 0:
@@ -1596,6 +1606,30 @@ def init_database():
                 conn.execute(f"ALTER TABLE pendentes_snapshot ADD COLUMN {col_n} INTEGER DEFAULT 0")
             except Exception:
                 pass
+
+        # 9. Tabela de Fila de Conciliação de Status (Auditoria Remota de Saídas)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS fila_conciliacao (
+                solicitacao TEXT PRIMARY KEY,
+                sigla_regiao TEXT,
+                matricula_responsavel TEXT,
+                data_saida TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                status_apurado TEXT,
+                data_auditoria TIMESTAMP,
+                manobra TEXT,
+                usu_elaboracao TEXT
+            )
+        ''')
+
+        # Migração defensiva: garante a coluna status_detalhado em eventos_diarios
+        try:
+            cur_chk = conn.cursor()
+            cur_chk.execute("PRAGMA table_info(eventos_diarios)")
+            cols_chk = [c[1] for c in cur_chk.fetchall()]
+            if 'status_detalhado' not in cols_chk:
+                conn.execute("ALTER TABLE eventos_diarios ADD COLUMN status_detalhado TEXT")
+        except Exception:
+            pass
 
         # 8. Criar usuário ADM padrão se a tabela de usuários estiver vazia
         cursor = conn.cursor()
@@ -2227,6 +2261,26 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                     INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel, data_evento)
                     VALUES (?, ?, ?, ?, ?)
                 ''', eventos_unicos)
+
+                # Alimentação da fila de conciliação para as demandas tratadas que precisam de auditoria de status
+                tratadas_novas = [
+                    (str(ev[0]).strip().lstrip('0'), str(ev[2]).strip(), str(ev[3]).strip(), ev[4])
+                    for ev in eventos_unicos if ev[1] == 'TRATADA'
+                ]
+                if tratadas_novas:
+                    try:
+                        cursor.executemany('''
+                            INSERT INTO fila_conciliacao (solicitacao, sigla_regiao, matricula_responsavel, data_saida)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(solicitacao) DO UPDATE SET
+                                data_saida = excluded.data_saida,
+                                sigla_regiao = excluded.sigla_regiao,
+                                matricula_responsavel = excluded.matricula_responsavel
+                            WHERE status_apurado IS NULL
+                        ''', tratadas_novas)
+                    except Exception as e_fila:
+                        print(f"[DB] Aviso ao alimentar fila_conciliacao: {e_fila}")
+
                 conn.commit()
                 print(f"[DB] {len(eventos_unicos)} eventos únicos registrados de produtividade.")
             else:
@@ -2641,6 +2695,79 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
             conn_app.close()
         if 'conn_data' in locals() and conn_data:
             conn_data.close()
+
+
+def get_solicitacoes_pendentes_conciliacao(limite=50):
+    """
+    Retorna lista de dicionários com solicitações que saíram da grade ativa
+    e ainda aguardam conciliação de status no GDIS-PM.
+    """
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT solicitacao, sigla_regiao, matricula_responsavel, data_saida
+            FROM fila_conciliacao
+            WHERE status_apurado IS NULL
+            ORDER BY data_saida ASC
+            LIMIT ?
+        """, (limite,))
+        rows = cursor.fetchall()
+        return [
+            {
+                'solicitacao': str(row[0]).strip().lstrip('0'),
+                'sigla_regiao': str(row[1]).strip() if row[1] else '',
+                'matricula_responsavel': str(row[2]).strip() if row[2] else '',
+                'data_saida': row[3]
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        print(f"[DB] Erro ao buscar pendências de conciliação: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def atualizar_status_conciliado(solicitacao, status_apurado, manobra=None, usu_elaboracao=None):
+    """
+    Atualiza o status real apurado na tela de Consulta do GDIS-PM para uma solicitação
+    na fila_conciliacao e reflete o status_detalhado em eventos_diarios.
+    """
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        sol_norm = str(solicitacao).strip().lstrip('0')
+        agora = get_agora_br().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # 1. Atualiza na fila_conciliacao
+        cursor.execute("""
+            UPDATE fila_conciliacao
+            SET status_apurado = ?,
+                data_auditoria = ?,
+                manobra = COALESCE(?, manobra),
+                usu_elaboracao = COALESCE(?, usu_elaboracao)
+            WHERE solicitacao = ? OR LTRIM(solicitacao, '0') = ?
+        """, (status_apurado, agora, manobra, usu_elaboracao, sol_norm, sol_norm))
+        
+        # 2. Reflete o status detalhado em eventos_diarios
+        cursor.execute("""
+            UPDATE eventos_diarios
+            SET status_detalhado = ?
+            WHERE (solicitacao = ? OR LTRIM(solicitacao, '0') = ?)
+              AND tipo_evento = 'TRATADA'
+        """, (status_apurado, sol_norm, sol_norm))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"[DB] Erro ao atualizar status conciliado ({solicitacao}): {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
 
 
 
