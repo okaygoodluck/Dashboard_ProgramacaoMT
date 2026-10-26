@@ -34,7 +34,7 @@ def _seconds_until_window_start(now_dt, start_t, end_t):
     return int((next_start - now_dt).total_seconds())
 
 def job():
-    print(f"\n[AGENDADOR] Iniciando execução em: {datetime.datetime.now()}")
+    print(f"\n[AGENDADOR] Iniciando extração rápida em: {datetime.datetime.now()}")
     try:
         # Modo Exe: chama a função diretamente via import
         if getattr(sys, "frozen", False):
@@ -43,25 +43,15 @@ def job():
             if not ok:
                 raise RuntimeError("Extração falhou")
         else:
-            # Define o diretório do agendador
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            
-            # Se estiver na pasta 'scripts', o diretório raiz é o pai
-            if os.path.basename(current_dir) == "scripts":
-                root_dir = os.path.dirname(current_dir)
-            else:
-                root_dir = current_dir
-                
-            # Define caminho absoluto do script extrator
+            root_dir = os.path.dirname(current_dir) if os.path.basename(current_dir) == "scripts" else current_dir
             script_path = os.path.join(root_dir, "extrator_demanda.py")
-            
-            # Executa o extrator_demanda.py como um subprocesso na raiz
             subprocess.run(
                 [sys.executable, script_path], 
                 check=True,
                 cwd=root_dir
             )
-        print("[AGENDADOR] Execução concluída com sucesso.")
+        print("[AGENDADOR] Extração rápida concluída com sucesso.")
         return True
         
     except subprocess.CalledProcessError as e:
@@ -74,21 +64,75 @@ def job():
         print(f"[AGENDADOR] Erro inesperado: {e}")
         return False
 
+
+def job_auditor():
+    """
+    Executa a conciliação remota de status no GDIS-PM de forma sequencial,
+    garantindo que o extrator de fila ativa já tenha liberado o navegador e o banco.
+    """
+    print(f"\n[AGENDADOR] Verificando demandas pendentes de auditoria em: {datetime.datetime.now()}")
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        root_dir = os.path.dirname(current_dir) if os.path.basename(current_dir) == "scripts" else current_dir
+        if root_dir not in sys.path:
+            sys.path.insert(0, root_dir)
+
+        import db_manager
+        pendentes = db_manager.get_solicitacoes_pendentes_conciliacao(limite=1)
+        if not pendentes:
+            print("[AGENDADOR] Nenhuma solicitação pendente na fila de conciliação. Ciclo dispensado.")
+            return True
+
+        print(f"[AGENDADOR] Demandas pendentes detectadas. Iniciando auditor_status.py...")
+        if getattr(sys, "frozen", False):
+            import auditor_status
+            auditor_status.executar_auditoria()
+        else:
+            script_path = os.path.join(root_dir, "auditor_status.py")
+            subprocess.run(
+                [sys.executable, script_path],
+                check=True,
+                cwd=root_dir
+            )
+        print("[AGENDADOR] Ciclo de auditoria concluído com sucesso.")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"[AGENDADOR] Aviso no auditor: Encerrou com código {e.returncode}.")
+        return False
+    except Exception as e:
+        print(f"[AGENDADOR] Erro inesperado no ciclo de auditoria: {e}")
+        return False
+
+
 def main():
-    print("=== Agendador Iniciado ===")
+    print("=== Agendador Integrado CCP Iniciado ===")
     janela_inicio = _parse_hhmm(os.environ.get("AGENDADOR_JANELA_INICIO"), "06:00")
     janela_fim = _parse_hhmm(os.environ.get("AGENDADOR_JANELA_FIM"), "20:00")
     pausa_entre_execucoes = int(os.environ.get("AGENDADOR_PAUSA_SEGUNDOS", "15"))
     pausa_fora_janela = int(os.environ.get("AGENDADOR_SLEEP_FORA_JANELA_SEGUNDOS", "30"))
-    print(f"Janela: {janela_inicio.strftime('%H:%M')} - {janela_fim.strftime('%H:%M')}")
-    print(f"Pausa entre execuções: {pausa_entre_execucoes}s")
-    print("Pressione Ctrl+C para encerrar.")
+    intervalo_auditoria_segundos = int(os.environ.get("AGENDADOR_INTERVALO_AUDITORIA_SEGUNDOS", "7200")) # 2 horas padrão
+    
+    print(f"Janela Operacional: {janela_inicio.strftime('%H:%M')} - {janela_fim.strftime('%H:%M')}")
+    print(f"Pausa entre extrações rápidas: {pausa_entre_execucoes}s")
+    print(f"Intervalo de auditoria remota: {intervalo_auditoria_segundos // 60} minutos")
+    print("Pressione Ctrl+C para encerrar.\n")
+
+    ultima_auditoria = None
 
     while True:
         try:
             agora = datetime.datetime.now()
             if _in_window(agora, janela_inicio, janela_fim):
+                # 1. Ciclo Rápido de Estoque (extrator_demanda.py)
                 job()
+                
+                # 2. Ciclo Periódico de Reconciliação (auditor_status.py sequencial)
+                deve_auditar = (ultima_auditoria is None) or ((agora - ultima_auditoria).total_seconds() >= intervalo_auditoria_segundos)
+                if deve_auditar:
+                    time.sleep(3) # Pausa de garantia para liberação completa do Chromium
+                    job_auditor()
+                    ultima_auditoria = datetime.datetime.now()
+
                 time.sleep(max(0, pausa_entre_execucoes))
             else:
                 segundos = _seconds_until_window_start(agora, janela_inicio, janela_fim)
@@ -99,5 +143,7 @@ def main():
             print("\nAgendador encerrado pelo usuário.")
             break
 
+
 if __name__ == "__main__":
     main()
+
