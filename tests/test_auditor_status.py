@@ -105,10 +105,56 @@ class TestAuditorStatus(unittest.TestCase):
             ev_row = cur.fetchone()
             self.assertEqual(ev_row['status_detalhado'], 'ELABORADA')
 
-            # Verifica que não está mais pendente
+            # Verifica que ELABORADA é intermediário e CONTINUA na fila para re-auditoria periódica
             pendentes_pos = db_manager.get_solicitacoes_pendentes_conciliacao(limite=10)
-            self.assertEqual(len(pendentes_pos), 0)
+            self.assertEqual(len(pendentes_pos), 1)
+            self.assertEqual(pendentes_pos[0]['solicitacao'], '123456')
 
+            # Agora atualiza para ENVIADA PARA O CONDIS (status terminal)
+            db_manager.atualizar_status_conciliado(
+                solicitacao='123456',
+                status_apurado='ENVIADA PARA O CONDIS'
+            )
+            # Verifica que agora que atingiu status terminal, encerra o ciclo de auditoria
+            pendentes_terminal = db_manager.get_solicitacoes_pendentes_conciliacao(limite=10)
+            self.assertEqual(len(pendentes_terminal), 0)
+
+        finally:
+            db_manager.get_connection_config = orig_conn
+
+    def test_gargalos_pos_elaboracao(self):
+        # Insere usuário
+        self.creator_conn.execute("""
+            INSERT INTO usuarios (matricula, nome, password_hash, nivel)
+            VALUES ('c099999', 'Programador Teste', 'hash123', 'USER')
+        """)
+        # Insere itens na fila_conciliacao: 1 aguardando 1ª auditoria, 1 elaborada (>24h), 1 terminal CONDIS
+        self.creator_conn.execute("""
+            INSERT INTO fila_conciliacao (solicitacao, sigla_regiao, matricula_responsavel, data_saida, status_apurado, manobra, usu_elaboracao)
+            VALUES 
+                ('SOL_INTER_1', 'PN', 'c099999', datetime('now', '-30 hours'), 'ELABORADA', 'MN-900', 'c099999'),
+                ('SOL_INTER_2', 'PN', 'c099999', datetime('now', '-5 hours'), NULL, NULL, NULL),
+                ('SOL_TERM_3', 'PN', 'c099999', datetime('now', '-50 hours'), 'ENVIADA PARA O CONDIS', 'MN-901', 'c099999')
+        """)
+        self.creator_conn.commit()
+
+        orig_conn = db_manager.get_connection_config
+        db_manager.get_connection_config = lambda *args, **kwargs: sqlite3.connect(self.db_uri, uri=True)
+        try:
+            df_gargalos = db_manager.get_gargalos_pos_elaboracao()
+            self.assertEqual(len(df_gargalos), 2)
+            sols = df_gargalos['Solicitação'].tolist()
+            self.assertIn('SOL_INTER_1', sols)
+            self.assertIn('SOL_INTER_2', sols)
+            self.assertNotIn('SOL_TERM_3', sols)
+
+            row_inter1 = df_gargalos[df_gargalos['Solicitação'] == 'SOL_INTER_1'].iloc[0]
+            self.assertIn('Alerta (> 24h)', row_inter1['Alerta'])
+            self.assertEqual(row_inter1['Status Atual'], 'ELABORADA')
+
+            row_inter2 = df_gargalos[df_gargalos['Solicitação'] == 'SOL_INTER_2'].iloc[0]
+            self.assertIn('Normal (<= 24h)', row_inter2['Alerta'])
+            self.assertEqual(row_inter2['Status Atual'], 'Aguardando 1ª Auditoria')
         finally:
             db_manager.get_connection_config = orig_conn
 

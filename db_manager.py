@@ -2752,7 +2752,10 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
 def get_solicitacoes_pendentes_conciliacao(limite=50):
     """
     Retorna lista de dicionários com solicitações que saíram da grade ativa
-    e ainda aguardam conciliação de status no GDIS-PM.
+    e ainda aguardam conciliação de status no GDIS-PM ou estão em estágios
+    intermediários não-terminais (ELABORADA, EM ANÁLISE, EM ALTERAÇÃO).
+    Prioriza itens novos (status_apurado IS NULL) e em seguida re-audita
+    os itens mais antigos por data_auditoria.
     """
     conn = get_connection_config()
     try:
@@ -2761,7 +2764,16 @@ def get_solicitacoes_pendentes_conciliacao(limite=50):
             SELECT solicitacao, sigla_regiao, matricula_responsavel, data_saida
             FROM fila_conciliacao
             WHERE status_apurado IS NULL
-            ORDER BY data_saida ASC
+               OR (
+                   UPPER(status_apurado) NOT IN ('ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS', 'REPROVADA', 'CANCELADA')
+                   AND UPPER(status_apurado) NOT LIKE '%CONDIS%'
+                   AND UPPER(status_apurado) NOT LIKE '%REPROVAD%'
+                   AND UPPER(status_apurado) NOT LIKE '%CANCELAD%'
+               )
+            ORDER BY 
+                CASE WHEN status_apurado IS NULL THEN 0 ELSE 1 END,
+                COALESCE(data_auditoria, '2000-01-01') ASC,
+                data_saida ASC
             LIMIT ?
         """, (limite,))
         rows = cursor.fetchall()
@@ -2819,6 +2831,195 @@ def atualizar_status_conciliado(solicitacao, status_apurado, manobra=None, usu_e
     finally:
         if conn:
             conn.close()
+
+
+def get_gargalos_pos_elaboracao():
+    """
+    Retorna DataFrame com solicitações que saíram da grade de programação
+    mas ainda se encontram em fluxo intermediário (não atingiram estado terminal:
+    CONDIS, REPROVADA ou CANCELADA), calculando tempo de estagnação (aging).
+    """
+    conn = get_connection_config()
+    try:
+        query = """
+            SELECT 
+                fc.solicitacao,
+                fc.sigla_regiao,
+                fc.matricula_responsavel,
+                u.nome as nome_responsavel,
+                fc.data_saida,
+                fc.status_apurado,
+                fc.data_auditoria,
+                fc.manobra,
+                fc.usu_elaboracao
+            FROM fila_conciliacao fc
+            LEFT JOIN usuarios u ON fc.matricula_responsavel = u.matricula
+            WHERE fc.status_apurado IS NULL
+               OR (
+                   UPPER(fc.status_apurado) NOT IN ('ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS', 'REPROVADA', 'CANCELADA')
+                   AND UPPER(fc.status_apurado) NOT LIKE '%CONDIS%'
+                   AND UPPER(fc.status_apurado) NOT LIKE '%REPROVAD%'
+                   AND UPPER(fc.status_apurado) NOT LIKE '%CANCELAD%'
+               )
+            ORDER BY fc.data_saida ASC
+        """
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            return pd.DataFrame(columns=[
+                'Solicitação', 'Região', 'Programador', 'Data Saída', 'Status Atual',
+                'Nº Manobra', 'Técnico Elaboração', 'Última Auditoria', 'Tempo Parado',
+                'Dias Parado', 'Horas Parado', 'Alerta'
+            ])
+            
+        agora = get_agora_br().replace(tzinfo=None)
+        df['dt_saida'] = pd.to_datetime(df['data_saida'], errors='coerce')
+        horas_parado = (agora - df['dt_saida']).dt.total_seconds() / 3600.0
+        df['Horas_Float'] = horas_parado.fillna(0.0).clip(lower=0.0)
+        df['Dias_Float'] = df['Horas_Float'] / 24.0
+
+        def classificar_alerta(horas):
+            if horas > 48.0:
+                return '🔴 Crítico (> 48h)'
+            elif horas > 24.0:
+                return '🟡 Alerta (> 24h)'
+            else:
+                return '🟢 Normal (<= 24h)'
+
+        def formatar_tempo(horas):
+            if horas < 24.0:
+                return f"{int(horas)}h"
+            dias = int(horas // 24)
+            h_rem = int(horas % 24)
+            return f"{dias}d {h_rem}h"
+
+        df['Alerta'] = df['Horas_Float'].apply(classificar_alerta)
+        df['Tempo Parado'] = df['Horas_Float'].apply(formatar_tempo)
+        df['Dias Parado'] = df['Dias_Float'].round(1)
+        df['Horas Parado'] = df['Horas_Float'].round(1)
+        df['Status Atual'] = df['status_apurado'].fillna('Aguardando 1ª Auditoria')
+        df['Nº Manobra'] = df['manobra'].fillna('-')
+        df['Técnico Elaboração'] = df['usu_elaboracao'].fillna('-')
+        df['Programador'] = df['nome_responsavel'].fillna(df['matricula_responsavel']).fillna('-')
+        df['Data Saída'] = df['dt_saida'].dt.strftime('%d/%m/%Y %H:%M').fillna(df['data_saida'])
+        df['Última Auditoria'] = pd.to_datetime(df['data_auditoria'], errors='coerce').dt.strftime('%d/%m/%Y %H:%M').fillna('-')
+        df['Solicitação'] = df['solicitacao'].astype(str).str.strip().str.lstrip('0')
+        df['Região'] = df['sigla_regiao'].fillna('-')
+
+        cols_final = [
+            'Solicitação', 'Região', 'Programador', 'Data Saída', 'Status Atual',
+            'Nº Manobra', 'Técnico Elaboração', 'Última Auditoria', 'Tempo Parado',
+            'Dias Parado', 'Horas Parado', 'Alerta'
+        ]
+        return df[cols_final].sort_values(by='Horas Parado', ascending=False)
+    except Exception as e:
+        print(f"[DB] Erro ao buscar gargalos pós-elaboração: {e}")
+        return pd.DataFrame()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_gargalos_aprovadas():
+    """
+    Retorna DataFrame com solicitações APROVADA na grade ativa, cruzando com a data
+    do evento NOVA em eventos_diarios para apurar tempo de espera na fila inicial.
+    """
+    df_raw = carregar_dados_recentes()
+    if df_raw is None or df_raw.empty:
+        return pd.DataFrame()
+
+    try:
+        cols = df_raw.columns.tolist()
+        col_sol = next((c for c in cols if 'solicita' in c.lower() and 'vinc' not in c.lower()), cols[0])
+        col_sit = next((c for c in cols if 'situa' in c.lower()), None)
+        col_resp = next((c for c in cols if 'resp' in c.lower()), None)
+        col_reg = 'Ref_Regiao' if 'Ref_Regiao' in cols else next((c for c in cols if 'regi' in c.lower()), None)
+        col_ini = next((c for c in cols if 'início' in c.lower() or 'inicio' in c.lower()), None)
+        col_urg = next((c for c in cols if 'urg' in c.lower()), None)
+
+        if not col_sit:
+            return pd.DataFrame()
+
+        mask_aprov = df_raw[col_sit].astype(str).str.upper().str.contains('APROVAD')
+        df_aprov = df_raw[mask_aprov].copy()
+        if df_aprov.empty:
+            return pd.DataFrame()
+
+        df_aprov['Solicitacao_Clean'] = df_aprov[col_sol].astype(str).str.strip().str.lstrip('0')
+        sols_list = df_aprov['Solicitacao_Clean'].dropna().unique().tolist()
+
+        mapa_chegada = {}
+        conn_app = get_connection_config()
+        try:
+            cur = conn_app.cursor()
+            chunk_size = 500
+            for i in range(0, len(sols_list), chunk_size):
+                chunk = sols_list[i:i+chunk_size]
+                placeholders = ','.join(['?'] * len(chunk))
+                cur.execute(f"""
+                    SELECT solicitacao, MIN(data_evento)
+                    FROM eventos_diarios
+                    WHERE (solicitacao IN ({placeholders}) OR LTRIM(solicitacao, '0') IN ({placeholders}))
+                      AND tipo_evento = 'NOVA'
+                    GROUP BY solicitacao
+                """, chunk + chunk)
+                for r in cur.fetchall():
+                    sol_norm = str(r[0]).strip().lstrip('0')
+                    if r[1] and sol_norm not in mapa_chegada:
+                        mapa_chegada[sol_norm] = r[1]
+        finally:
+            conn_app.close()
+
+        agora = get_agora_br().replace(tzinfo=None)
+
+        def extrair_data_entrada(row):
+            s_id = row['Solicitacao_Clean']
+            if s_id in mapa_chegada:
+                return mapa_chegada[s_id]
+            if 'Data_Extracao' in row and pd.notna(row['Data_Extracao']):
+                return str(row['Data_Extracao'])
+            return None
+
+        df_aprov['data_entrada_raw'] = df_aprov.apply(extrair_data_entrada, axis=1)
+        df_aprov['dt_entrada'] = pd.to_datetime(df_aprov['data_entrada_raw'], errors='coerce')
+
+        horas_fila = (agora - df_aprov['dt_entrada']).dt.total_seconds() / 3600.0
+        df_aprov['Horas_Fila'] = horas_fila.fillna(0.0).clip(lower=0.0)
+        df_aprov['Dias_Fila'] = (df_aprov['Horas_Fila'] / 24.0).round(1)
+
+        def classificar_alerta(horas):
+            if horas > 48.0:
+                return '🔴 Crítico (> 48h)'
+            elif horas > 24.0:
+                return '🟡 Alerta (> 24h)'
+            else:
+                return '🟢 Normal (<= 24h)'
+
+        def formatar_tempo(horas):
+            if horas < 24.0:
+                return f"{int(horas)}h"
+            dias = int(horas // 24)
+            h_rem = int(horas % 24)
+            return f"{dias}d {h_rem}h"
+
+        df_aprov['Alerta'] = df_aprov['Horas_Fila'].apply(classificar_alerta)
+        df_aprov['Tempo na Fila'] = df_aprov['Horas_Fila'].apply(formatar_tempo)
+        df_aprov['Solicitação'] = df_aprov['Solicitacao_Clean']
+        df_aprov['Região'] = df_aprov[col_reg].fillna('-') if col_reg else '-'
+        df_aprov['Responsável'] = df_aprov[col_resp].fillna('-') if col_resp else '-'
+        df_aprov['Data Início Prevista'] = pd.to_datetime(df_aprov[col_ini], dayfirst=True, errors='coerce').dt.strftime('%d/%m/%Y').fillna('-') if col_ini else '-'
+        df_aprov['Urgência'] = df_aprov[col_urg].fillna('-') if col_urg else '-'
+        df_aprov['Entrada na Fila'] = df_aprov['dt_entrada'].dt.strftime('%d/%m/%Y %H:%M').fillna('Recente / Sem Registro')
+
+        cols_final = [
+            'Solicitação', 'Região', 'Responsável', 'Entrada na Fila', 'Tempo na Fila',
+            'Dias_Fila', 'Horas_Fila', 'Data Início Prevista', 'Urgência', 'Alerta'
+        ]
+        return df_aprov[cols_final].rename(columns={'Dias_Fila': 'Dias na Fila', 'Horas_Fila': 'Horas na Fila'}).sort_values(by='Horas na Fila', ascending=False)
+    except Exception as e:
+        print(f"[DB] Erro ao buscar gargalos de aprovadas: {e}")
+        return pd.DataFrame()
+
 
 
 
