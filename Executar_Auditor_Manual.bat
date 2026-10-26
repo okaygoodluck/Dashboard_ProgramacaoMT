@@ -3,6 +3,9 @@ setlocal
 cd /d "%~dp0"
 title AUDITORIA MANUAL CCP - Reconciliacao de Status GDIS-PM
 
+:: Desativa Modo de Edicao Rapida do Windows para evitar congelamento por clique do mouse
+reg add "HKCU\Console" /v QuickEdit /t REG_DWORD /d 0 /f >nul 2>&1
+
 set "CCP_SERVER_MODE=true"
 
 :: Localiza o executável Python

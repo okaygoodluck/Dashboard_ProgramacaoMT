@@ -171,6 +171,9 @@ setlocal
 cd /d "%~dp0"
 title CCP - Centro de Controle da Programacao
 
+:: Desativa Modo de Edicao Rapida do Windows para evitar congelamento por clique do mouse
+reg add "HKCU\Console" /v QuickEdit /t REG_DWORD /d 0 /f >nul 2>&1
+
 set "PY_DIR=%~dp0python"
 set "PY_EXE=%PY_DIR%\\python.exe"
 :: Garantir isolamento

@@ -26,6 +26,36 @@ try:
 except ImportError:
     bcrypt = None
 
+def desativar_modo_edicao_rapida():
+    """
+    Desativa o QuickEdit Mode do console Windows (evita congelamento do processo
+    quando o usuario clica acidentalmente dentro da janela do terminal).
+    """
+    if os.name != 'nt':
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        GENERIC_READ = 0x80000000
+        GENERIC_WRITE = 0x40000000
+        FILE_SHARE_READ = 1
+        FILE_SHARE_WRITE = 2
+        OPEN_EXISTING = 3
+        hStdin = kernel32.CreateFileW("CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, None, OPEN_EXISTING, 0, None)
+        if hStdin != -1:
+            mode = ctypes.c_ulong()
+            if kernel32.GetConsoleMode(hStdin, ctypes.byref(mode)):
+                ENABLE_QUICK_EDIT_MODE = 0x0040
+                ENABLE_EXTENDED_FLAGS = 0x0080
+                new_mode = (mode.value & ~ENABLE_QUICK_EDIT_MODE) | ENABLE_EXTENDED_FLAGS
+                kernel32.SetConsoleMode(hStdin, new_mode)
+            kernel32.CloseHandle(hStdin)
+    except Exception:
+        pass
+
+desativar_modo_edicao_rapida()
+
+
 FERIADOS_BASE = ["2026-01-01", "2026-04-03", "2026-04-21", "2026-05-01", "2026-06-04", "2026-08-15", "2026-09-07", "2026-10-12", "2026-11-02", "2026-11-15", "2026-11-20", "2026-12-25"]
 
 def get_agora_br():
