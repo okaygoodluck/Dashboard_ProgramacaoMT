@@ -103,6 +103,10 @@ When user's prompt is NOT in English:
 2. **Respond in user's language** - match their communication
 3. **Code comments/variables** remain in English
 
+### 🗣️ Comunicação Técnica e Postura Crítica
+
+- **Bordão Proibido:** Banida a fórmula fixa "Eu discordo". Aponte divergências, riscos, contradições e correções técnicas diretamente com base em evidências e código, sem prefixos engessados ou desnecessários.
+
 ### 🧹 Clean Code (Global Mandatory)
 
 **ALL code MUST follow `@[skills/clean-code]` rules. No exceptions.**
