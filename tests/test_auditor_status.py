@@ -45,6 +45,18 @@ class TestAuditorStatus(unittest.TestCase):
                 usu_elaboracao TEXT
             )
         """)
+        self.creator_conn.execute("""
+            CREATE TABLE pendentes_snapshot (
+                data TEXT,
+                matricula TEXT,
+                pendentes_total INTEGER,
+                pendentes_iniciadas INTEGER,
+                pendentes_nao_iniciadas INTEGER,
+                pendentes_iniciadas_dia INTEGER,
+                pendentes_dias_anteriores INTEGER,
+                PRIMARY KEY (data, matricula)
+            )
+        """)
         self.creator_conn.commit()
 
     def tearDown(self):
@@ -64,7 +76,7 @@ class TestAuditorStatus(unittest.TestCase):
 
         # Mock da fábrica de conexões
         orig_conn = db_manager.get_connection_config
-        db_manager.get_connection_config = lambda: sqlite3.connect(self.db_uri, uri=True)
+        db_manager.get_connection_config = lambda *args, **kwargs: sqlite3.connect(self.db_uri, uri=True)
         try:
             # Verifica pendência
             pendentes = db_manager.get_solicitacoes_pendentes_conciliacao(limite=10)
@@ -99,6 +111,58 @@ class TestAuditorStatus(unittest.TestCase):
 
         finally:
             db_manager.get_connection_config = orig_conn
+
+    def test_performance_d1_e_drilldown_marco_zero(self):
+        # 1. Configura usuário
+        self.creator_conn.execute("""
+            INSERT INTO usuarios (matricula, nome, password_hash, nivel)
+            VALUES ('c012345', 'Tecnico Teste', 'hash123', 'USER')
+        """)
+        # 2. Configura eventos do dia 26/10/2026
+        self.creator_conn.execute("""
+            INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel, data_evento, status_detalhado)
+            VALUES 
+                ('SOL_1', 'NOVA', 'PN', 'c012345', '2026-10-26 08:00:00', NULL),
+                ('SOL_2', 'TRATADA', 'PN', 'c012345', '2026-10-26 09:00:00', 'ELABORADA'),
+                ('SOL_3', 'TRATADA', 'PN', 'c012345', '2026-10-26 10:00:00', 'REPROVADA'),
+                ('SOL_4', 'TRATADA', 'PN', 'c012345', '2026-10-26 11:00:00', NULL)
+        """)
+        self.creator_conn.execute("""
+            INSERT INTO fila_conciliacao (solicitacao, sigla_regiao, matricula_responsavel, data_saida, status_apurado, manobra, usu_elaboracao)
+            VALUES 
+                ('SOL_2', 'PN', 'c012345', '2026-10-26 09:00:00', 'ELABORADA', 'MN-101', 'c012345'),
+                ('SOL_3', 'PN', 'c012345', '2026-10-26 10:00:00', 'REPROVADA', 'MN-102', 'c012345')
+        """)
+        self.creator_conn.commit()
+
+        orig_conn = db_manager.get_connection_config
+        orig_read = db_manager.get_connection_read
+        db_manager.get_connection_config = lambda *args, **kwargs: sqlite3.connect(self.db_uri, uri=True)
+        db_manager.get_connection_read = lambda *args, **kwargs: sqlite3.connect(self.db_uri, uri=True)
+        try:
+            # Testa get_performance_d1
+            df_perf = db_manager.get_performance_d1('Tecnico Teste', '2026-10-26', '2026-10-26')
+            self.assertFalse(df_perf.empty)
+            row = df_perf.iloc[0]
+            self.assertEqual(row['Novas'], 1)
+            self.assertEqual(row['Tratadas'], 3)
+            self.assertEqual(row['Elaboradas'], 1)
+            self.assertEqual(row['Reprovadas'], 1)
+            self.assertEqual(row['Pendentes_Conciliacao'], 1)
+
+            # Testa get_detalhe_drilldown_performance
+            df_drill = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Tratadas/Reprovadas')
+            self.assertEqual(len(df_drill), 3)
+            situacoes = df_drill['Situação'].tolist()
+            self.assertIn('ELABORADA', situacoes)
+            self.assertIn('REPROVADA', situacoes)
+            self.assertIn('AGUARDANDO CONCILIAÇÃO', situacoes)
+            self.assertIn('Nº Manobra', df_drill.columns)
+            self.assertIn('Usu. Elaboração', df_drill.columns)
+
+        finally:
+            db_manager.get_connection_config = orig_conn
+            db_manager.get_connection_read = orig_read
 
 
 if __name__ == '__main__':

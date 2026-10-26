@@ -2318,24 +2318,28 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
         query_eventos = """
             SELECT 
                 date(data_evento) as data,
-                tipo_evento,
-                COUNT(*) as qtd
+                SUM(CASE WHEN tipo_evento = 'NOVA' THEN 1 ELSE 0 END) as Novas,
+                SUM(CASE WHEN tipo_evento = 'INICIADA' THEN 1 ELSE 0 END) as Iniciadas,
+                SUM(CASE WHEN tipo_evento = 'TRATADA' THEN 1 ELSE 0 END) as Tratadas,
+                SUM(CASE WHEN tipo_evento = 'TRATADA' AND UPPER(status_detalhado) IN ('ELABORADA', 'ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS') THEN 1 ELSE 0 END) as Elaboradas,
+                SUM(CASE WHEN tipo_evento = 'TRATADA' AND UPPER(status_detalhado) IN ('REPROVADA', 'CANCELADA') THEN 1 ELSE 0 END) as Reprovadas,
+                SUM(CASE WHEN tipo_evento = 'TRATADA' AND (status_detalhado IS NULL OR TRIM(status_detalhado) = '') AND date(data_evento) >= '2026-10-26' THEN 1 ELSE 0 END) as Pendentes_Conciliacao
             FROM eventos_diarios
             WHERE matricula_responsavel = ?
             AND date(data_evento) BETWEEN ? AND ?
-            GROUP BY date(data_evento), tipo_evento
+            GROUP BY date(data_evento)
         """
         df_eventos = pd.read_sql(query_eventos, conn_app, params=[matricula, data_inicio, data_fim])
         
         if df_eventos.empty:
-            df_perf = pd.DataFrame(columns=['Data', 'Novas', 'Tratadas', 'Pendentes'])
+            df_perf = pd.DataFrame(columns=[
+                'Data', 'Novas', 'Tratadas', 'Iniciadas', 'Elaboradas', 'Reprovadas', 'Pendentes_Conciliacao', 'Pendentes'
+            ])
         else:
-            df_pivot = df_eventos.pivot(index='data', columns='tipo_evento', values='qtd').fillna(0).reset_index()
-            for col in ['NOVA', 'TRATADA', 'INICIADA']:
-                if col not in df_pivot.columns:
-                    df_pivot[col] = 0
-            df_pivot = df_pivot.rename(columns={'data': 'Data', 'NOVA': 'Novas', 'TRATADA': 'Tratadas', 'INICIADA': 'Iniciadas'})
-            df_perf = df_pivot[['Data', 'Novas', 'Tratadas', 'Iniciadas']]
+            df_perf = df_eventos.rename(columns={'data': 'Data'})
+            for col in ['Novas', 'Tratadas', 'Iniciadas', 'Elaboradas', 'Reprovadas', 'Pendentes_Conciliacao']:
+                if col not in df_perf.columns:
+                    df_perf[col] = 0
             
         # --- PENDENTES: Ler do snapshot persistente (ccp_app.db) ---
         cursor.execute("""
@@ -2365,6 +2369,9 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 df_perf['Novas'] = 0
                 df_perf['Tratadas'] = 0
                 df_perf['Iniciadas'] = 0
+                df_perf['Elaboradas'] = 0
+                df_perf['Reprovadas'] = 0
+                df_perf['Pendentes_Conciliacao'] = 0
         else:
             df_perf['Pendentes'] = 0
             df_perf['Pendentes_Iniciadas'] = 0
@@ -2375,6 +2382,9 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
         if not df_perf.empty:
             df_perf['Novas'] = df_perf.get('Novas', 0).astype(int)
             df_perf['Tratadas'] = df_perf.get('Tratadas', 0).astype(int)
+            df_perf['Elaboradas'] = df_perf.get('Elaboradas', 0).astype(int)
+            df_perf['Reprovadas'] = df_perf.get('Reprovadas', 0).astype(int)
+            df_perf['Pendentes_Conciliacao'] = df_perf.get('Pendentes_Conciliacao', 0).astype(int)
             df_perf['Iniciadas'] = df_perf.get('Iniciadas', 0).astype(int)
             df_perf['Pendentes'] = df_perf.get('Pendentes', 0).astype(int)
             df_perf['Pendentes_Iniciadas'] = df_perf.get('Pendentes_Iniciadas', 0).astype(int)
@@ -2393,6 +2403,9 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 df_perf = df_full
                 df_perf['Novas'] = 0
                 df_perf['Tratadas'] = 0
+                df_perf['Elaboradas'] = 0
+                df_perf['Reprovadas'] = 0
+                df_perf['Pendentes_Conciliacao'] = 0
                 df_perf['Iniciadas'] = 0
                 df_perf['Pendentes'] = 0
                 df_perf['Pendentes_Iniciadas'] = 0
@@ -2403,6 +2416,9 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             # Preenche NaNs de eventos com 0
             df_perf['Novas'] = df_perf['Novas'].fillna(0).astype(int)
             df_perf['Tratadas'] = df_perf['Tratadas'].fillna(0).astype(int)
+            df_perf['Elaboradas'] = df_perf['Elaboradas'].fillna(0).astype(int)
+            df_perf['Reprovadas'] = df_perf['Reprovadas'].fillna(0).astype(int)
+            df_perf['Pendentes_Conciliacao'] = df_perf['Pendentes_Conciliacao'].fillna(0).astype(int)
             df_perf['Iniciadas'] = df_perf['Iniciadas'].fillna(0).astype(int)
 
             # Para dias sem snapshot (ex: fins de semana sem extração), propaga o estoque de pendências do dia útil anterior
@@ -2422,8 +2438,8 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
     except Exception as e:
         print(f"Erro em get_performance_d1: {e}")
         return pd.DataFrame(columns=[
-            'Data', 'Novas', 'Tratadas', 'Iniciadas', 'Pendentes',
-            'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas',
+            'Data', 'Novas', 'Tratadas', 'Elaboradas', 'Reprovadas', 'Pendentes_Conciliacao',
+            'Iniciadas', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas',
             'Pendentes_Iniciadas_Dia', 'Pendentes_Dias_Anteriores'
         ])
     finally:
@@ -2602,7 +2618,7 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
         cursor.execute("SELECT matricula FROM usuarios WHERE nome = ? OR matricula = ?", (resp_nome, resp_nome))
         res = cursor.fetchone()
         if not res:
-            return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início'])
+            return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início', 'Nº Manobra', 'Usu. Elaboração'])
         mat = res[0]
         
         dt_iso = pd.to_datetime(data_str, dayfirst=True).strftime('%Y-%m-%d')
@@ -2616,12 +2632,35 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
                 WHERE matricula_responsavel = ? AND tipo_evento = 'NOVA' AND date(data_evento) = ?
             """, conn_app, params=[mat, dt_iso])
             
-        elif 'tratadas' in serie_lower or 'reprovadas' in serie_lower:
+        elif ('reprovada' in serie_lower or 'cancelada' in serie_lower) and 'tratada' not in serie_lower:
             df_ev = pd.read_sql("""
-                SELECT solicitacao, regiao, data_evento as data_ref
-                FROM eventos_diarios
-                WHERE matricula_responsavel = ? AND tipo_evento = 'TRATADA' AND date(data_evento) = ?
+                SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
+                       e.status_detalhado, fc.manobra, fc.usu_elaboracao
+                FROM eventos_diarios e
+                LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
+                WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
+                  AND UPPER(e.status_detalhado) IN ('REPROVADA', 'CANCELADA')
             """, conn_app, params=[mat, dt_iso])
+            
+        elif 'tratadas' in serie_lower or 'elaborada' in serie_lower or 'condis' in serie_lower:
+            if dt_iso >= '2026-10-26' and ('elaborada' in serie_lower or 'condis' in serie_lower):
+                df_ev = pd.read_sql("""
+                    SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
+                           e.status_detalhado, fc.manobra, fc.usu_elaboracao
+                    FROM eventos_diarios e
+                    LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
+                    WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
+                      AND (UPPER(e.status_detalhado) IN ('ELABORADA', 'ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS')
+                           OR e.status_detalhado IS NULL)
+                """, conn_app, params=[mat, dt_iso])
+            else:
+                df_ev = pd.read_sql("""
+                    SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
+                           e.status_detalhado, fc.manobra, fc.usu_elaboracao
+                    FROM eventos_diarios e
+                    LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
+                    WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
+                """, conn_app, params=[mat, dt_iso])
             
         elif 'hoje e ontem' in serie_lower or 'iniciadas' in serie_lower or 'do dia' in serie_lower:
             dt_ontem_util = obter_dia_util_anterior(dt_iso)
@@ -2645,7 +2684,7 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
             df_ev = df_trav
             
         if df_ev.empty:
-            return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início'])
+            return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início', 'Nº Manobra', 'Usu. Elaboração'])
             
         sols = df_ev['solicitacao'].dropna().astype(str).str.strip().tolist()
         df_dem = pd.DataFrame()
@@ -2676,20 +2715,33 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
             df_dem['solicitacao_str'] = df_dem['solicitacao'].astype(str).str.strip()
             df_res = pd.merge(df_ev, df_dem, on='solicitacao_str', how='left')
             df_res['Região'] = df_res['regiao'].combine_first(df_res.get('regiao_dem')).fillna('ND')
-            df_res['Situação'] = df_res.get('situacao', 'EM ELABORAÇÃO')
             df_res['Data de Início'] = df_res.get('dt_inicio', '-')
             df_res['Solicitação'] = df_res['solicitacao_x']
         else:
             df_res = df_ev.copy()
             df_res['Solicitação'] = df_res['solicitacao']
             df_res['Região'] = df_res['regiao'].fillna('ND')
-            df_res['Situação'] = 'TRATADA' if 'tratada' in serie_lower else ('APROVADA' if 'aprovadas' in serie_lower else 'EM ELABORAÇÃO')
             df_res['Data de Início'] = '-'
             
-        return df_res[['Solicitação', 'Região', 'Situação', 'Data de Início']].drop_duplicates()
+        def _definir_sit(row):
+            st_det = row.get('status_detalhado')
+            if pd.notna(st_det) and str(st_det).strip():
+                return str(st_det).strip().upper()
+            if 'situacao' in row and pd.notna(row['situacao']) and str(row['situacao']).strip():
+                return str(row['situacao']).strip().upper()
+            if any(k in serie_lower for k in ['tratada', 'elaborada', 'reprovada', 'condis', 'cancelada']):
+                return 'AGUARDANDO CONCILIAÇÃO' if dt_iso >= '2026-10-26' else 'TRATADA (LEGADO)'
+            return 'APROVADA' if 'aprovadas' in serie_lower else 'EM ELABORAÇÃO'
+
+        df_res['Situação'] = df_res.apply(_definir_sit, axis=1)
+        df_res['Nº Manobra'] = df_res.get('manobra', '').fillna('-')
+        df_res['Usu. Elaboração'] = df_res.get('usu_elaboracao', '').fillna('-')
+
+        cols_ret = ['Solicitação', 'Região', 'Situação', 'Data de Início', 'Nº Manobra', 'Usu. Elaboração']
+        return df_res[cols_ret].drop_duplicates()
     except Exception as e:
         print(f"[DB] Erro em get_detalhe_drilldown_performance: {e}")
-        return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início'])
+        return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início', 'Nº Manobra', 'Usu. Elaboração'])
     finally:
         if 'conn_app' in locals() and conn_app:
             conn_app.close()

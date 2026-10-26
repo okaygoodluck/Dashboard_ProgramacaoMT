@@ -1496,14 +1496,39 @@ if df is not None:
                                 text=df_perf['Pendentes_Dias_Anteriores'],
                                 textposition='outside'
                             ))
-                            fig_d1.add_trace(go.Bar(
-                                x=df_perf['Data_Exibicao'], 
-                                y=df_perf['Tratadas'], 
-                                name='Tratadas/Reprovadas',
-                                marker_color='#10b981',
-                                text=df_perf['Tratadas'],
-                                textposition='outside'
-                            ))
+                            tem_dados_marco_zero = any(df_perf['Data'] >= '2026-10-26')
+                            
+                            if tem_dados_marco_zero:
+                                df_perf['Produtivas'] = df_perf.apply(
+                                    lambda r: r['Tratadas'] if str(r['Data']) < '2026-10-26' else r.get('Elaboradas', 0), axis=1
+                                )
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf['Produtivas'], 
+                                    name='Elaboradas / CONDIS (ou Legado)',
+                                    marker_color='#10b981',
+                                    text=df_perf['Produtivas'],
+                                    textposition='outside'
+                                ))
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf.get('Reprovadas', 0), 
+                                    name='Reprovadas / Canceladas',
+                                    marker_color='#f97316',
+                                    text=df_perf.get('Reprovadas', 0),
+                                    textposition='outside'
+                                ))
+                                nomes_series = ['Aprovadas no dia', 'Em elaboração (Hoje e Ontem)', 'Em elaboração (+2 dias)', 'Elaboradas / CONDIS (ou Legado)', 'Reprovadas / Canceladas']
+                            else:
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf['Tratadas'], 
+                                    name='Tratadas/Reprovadas',
+                                    marker_color='#10b981',
+                                    text=df_perf['Tratadas'],
+                                    textposition='outside'
+                                ))
+                                nomes_series = ['Aprovadas no dia', 'Em elaboração (Hoje e Ontem)', 'Em elaboração (+2 dias)', 'Tratadas/Reprovadas']
                                                         
                             fig_d1.update_layout(
                                 title=f"Desempenho Individual: {resp_d1} ({d1_inicio.strftime('%d/%m/%Y')} a {d1_fim.strftime('%d/%m/%Y')})",
@@ -1523,7 +1548,7 @@ if df is not None:
                                 key=f"drilldown_perf_{resp_d1}"
                             )
 
-                            # Interatividade Drill-down: Tabela Quantitativa e Detalhada por Região ao clicar na coluna
+                            # Interatividade Drill-down: Tabela Quantitativa e Detalhada por Região e Situação ao clicar na coluna
                             pt_sel = None
                             if event_d1 and isinstance(event_d1, dict) and "selection" in event_d1:
                                 pts = event_d1["selection"].get("points", [])
@@ -1533,18 +1558,26 @@ if df is not None:
                             if pt_sel:
                                 data_clicada = pt_sel.get("x")
                                 curve_num = pt_sel.get("curve_number", 0)
-                                nomes_series = ['Aprovadas no dia', 'Em elaboração (Hoje e Ontem)', 'Em elaboração (+2 dias)', 'Tratadas/Reprovadas']
                                 nome_serie = nomes_series[curve_num] if curve_num < len(nomes_series) else 'Aprovadas no dia'
                                 
                                 st.markdown(f"#### 🔍 {nome_serie} [{data_clicada}] [{resp_d1}]")
                                 df_drill = db_manager.get_detalhe_drilldown_performance(resp_d1, data_clicada, nome_serie)
                                 
                                 if not df_drill.empty:
-                                    col_q, _ = st.columns([1.5, 3.5])
+                                    col_q, col_sit = st.columns([1.5, 2.5])
                                     with col_q:
+                                        st.markdown("**Por Região**")
                                         s_cont = df_drill['Região'].value_counts()
                                         df_reg_resumo = pd.DataFrame({'Região': s_cont.index, 'Quantidade': s_cont.values})
                                         st.dataframe(df_reg_resumo, hide_index=True, use_container_width=True)
+                                    with col_sit:
+                                        st.markdown("**Por Situação Apurada**")
+                                        s_sit = df_drill['Situação'].value_counts()
+                                        df_sit_resumo = pd.DataFrame({'Situação': s_sit.index, 'Quantidade': s_sit.values})
+                                        st.dataframe(df_sit_resumo, hide_index=True, use_container_width=True)
+
+                                    with st.expander("📋 Ver Lista Detalhada de Solicitações", expanded=True):
+                                        st.dataframe(df_drill, hide_index=True, use_container_width=True)
                                 else:
                                     st.info("Nenhuma solicitação encontrada para este ponto.")
                         else:
