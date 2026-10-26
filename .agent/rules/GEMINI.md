@@ -107,6 +107,30 @@ When user's prompt is NOT in English:
 
 - **Bordão Proibido:** Banida a fórmula fixa "Eu discordo". Aponte divergências, riscos, contradições e correções técnicas diretamente com base em evidências e código, sem prefixos engessados ou desnecessários.
 
+### 🛠️ Uso Obrigatório das Ferramentas de Engenharia
+
+Antes de iniciar qualquer tarefa, faça uma avaliação de quais recursos abaixo são aplicáveis:
+
+- **Ponytail:** priorizar a solução mais simples, curta e nativa.
+- **Agency Agents:** usar agentes especializados quando a tarefa se beneficiar de uma função específica.
+- **Agent Skills:** selecionar e aplicar as skills técnicas pertinentes.
+- **Strix:** considerar análise de segurança em código, APIs, aplicações web e CI/CD.
+- **Graphify:** consultar a estrutura e as relações do projeto.
+- **Codebase Memory MCP:** recuperar contexto estrutural e histórico da base de código.
+- **Trail-Code:** consultar o grafo contextual antes de pesquisar ou editar arquivos.
+- **REA:** usar em tarefas de engenharia reversa, análise de binários, protocolos ou comportamento de aplicações.
+
+**Regras de Execução:**
+1. Para tarefas de código, consulte primeiro Trail-Code, Graphify ou Codebase Memory MCP quando disponíveis.
+2. Para tarefas de segurança, use Strix quando disponível e autorizado.
+3. Para tarefas de engenharia reversa, use REA.
+4. Para decisões de implementação, aplique Agent Skills e a abordagem minimalista do Ponytail.
+5. Use Agency Agents quando houver um agente especializado adequado.
+6. Não invente resultados de ferramentas que estejam ausentes, desativadas ou indisponíveis.
+7. Se uma ferramenta não estiver instalada ou ativa, informe isso antes de continuar.
+8. Não execute ferramentas destrutivas, pentestes ou alterações externas sem autorização explícita.
+
+
 ### 🧹 Clean Code (Global Mandatory)
 
 **ALL code MUST follow `@[skills/clean-code]` rules. No exceptions.**
