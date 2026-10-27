@@ -210,7 +210,7 @@ def extrair_resultado_consulta(ctx_tabela):
         return None
 
 
-def executar_auditoria(limite=50):
+def executar_auditoria(limite=15):
     """
     Executa a conciliação das solicitações pendentes no GDIS-PM.
     """
@@ -316,7 +316,7 @@ def executar_auditoria(limite=50):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Auditor Desacoplado de Status de Solicitações (GDIS-PM)")
-    parser.add_argument("--limite", type=int, default=50, help="Quantidade máxima de solicitações a auditar por ciclo")
+    parser.add_argument("--limite", type=int, default=15, help="Quantidade máxima de solicitações a auditar por ciclo")
     parser.add_argument("--debug", action="store_true", help="Executa o navegador com interface gráfica visível")
     args = parser.parse_args()
 

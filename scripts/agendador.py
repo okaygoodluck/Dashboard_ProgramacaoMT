@@ -115,11 +115,11 @@ def job_auditor():
         print(f"[AGENDADOR] Demandas pendentes detectadas. Iniciando auditor_status.py...")
         if getattr(sys, "frozen", False):
             import auditor_status
-            auditor_status.executar_auditoria()
+            auditor_status.executar_auditoria(limite=15)
         else:
             script_path = os.path.join(root_dir, "auditor_status.py")
             subprocess.run(
-                [sys.executable, script_path],
+                [sys.executable, script_path, "--limite", "15"],
                 check=True,
                 cwd=root_dir
             )
@@ -139,7 +139,7 @@ def main():
     janela_fim = _parse_hhmm(os.environ.get("AGENDADOR_JANELA_FIM"), "20:00")
     pausa_entre_execucoes = int(os.environ.get("AGENDADOR_PAUSA_SEGUNDOS", "15"))
     pausa_fora_janela = int(os.environ.get("AGENDADOR_SLEEP_FORA_JANELA_SEGUNDOS", "30"))
-    intervalo_auditoria_segundos = int(os.environ.get("AGENDADOR_INTERVALO_AUDITORIA_SEGUNDOS", "7200")) # 2 horas padrão
+    intervalo_auditoria_segundos = int(os.environ.get("AGENDADOR_INTERVALO_AUDITORIA_SEGUNDOS", "900")) # 15 minutos padrão (orientado à fila)
     
     print(f"Janela Operacional: {janela_inicio.strftime('%H:%M')} - {janela_fim.strftime('%H:%M')}")
     print(f"Pausa entre extrações rápidas: {pausa_entre_execucoes}s")
