@@ -171,13 +171,15 @@ class TestAuditorStatus(unittest.TestCase):
                 ('SOL_1', 'NOVA', 'PN', 'c012345', '2026-10-26 08:00:00', NULL),
                 ('SOL_2', 'TRATADA', 'PN', 'c012345', '2026-10-26 09:00:00', 'ELABORADA'),
                 ('SOL_3', 'TRATADA', 'PN', 'c012345', '2026-10-26 10:00:00', 'REPROVADA'),
-                ('SOL_4', 'TRATADA', 'PN', 'c012345', '2026-10-26 11:00:00', NULL)
+                ('SOL_4', 'TRATADA', 'PN', 'c012345', '2026-10-26 11:00:00', NULL),
+                ('SOL_5', 'TRATADA', 'PN', 'c012345', '2026-10-26 12:00:00', 'ENVIADA PARA O CONDIS')
         """)
         self.creator_conn.execute("""
             INSERT INTO fila_conciliacao (solicitacao, sigla_regiao, matricula_responsavel, data_saida, status_apurado, manobra, usu_elaboracao)
             VALUES 
                 ('SOL_2', 'PN', 'c012345', '2026-10-26 09:00:00', 'ELABORADA', 'MN-101', 'c012345'),
-                ('SOL_3', 'PN', 'c012345', '2026-10-26 10:00:00', 'REPROVADA', 'MN-102', 'c012345')
+                ('SOL_3', 'PN', 'c012345', '2026-10-26 10:00:00', 'REPROVADA', 'MN-102', 'c012345'),
+                ('SOL_5', 'PN', 'c012345', '2026-10-26 12:00:00', 'ENVIADA PARA O CONDIS', 'MN-103', 'c012345')
         """)
         self.creator_conn.commit()
 
@@ -186,25 +188,31 @@ class TestAuditorStatus(unittest.TestCase):
         db_manager.get_connection_config = lambda *args, **kwargs: sqlite3.connect(self.db_uri, uri=True)
         db_manager.get_connection_read = lambda *args, **kwargs: sqlite3.connect(self.db_uri, uri=True)
         try:
-            # Testa get_performance_d1
+            # Testa get_performance_d1 com separação entre CONDIS e Elaboradas
             df_perf = db_manager.get_performance_d1('Tecnico Teste', '2026-10-26', '2026-10-26')
             self.assertFalse(df_perf.empty)
             row = df_perf.iloc[0]
             self.assertEqual(row['Novas'], 1)
-            self.assertEqual(row['Tratadas'], 3)
+            self.assertEqual(row['Tratadas'], 4)
+            self.assertEqual(row['Enviadas_Condis'], 1)
             self.assertEqual(row['Elaboradas'], 1)
             self.assertEqual(row['Reprovadas'], 1)
             self.assertEqual(row['Pendentes_Conciliacao'], 1)
 
-            # Testa get_detalhe_drilldown_performance
-            df_drill = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Tratadas/Reprovadas')
-            self.assertEqual(len(df_drill), 3)
-            situacoes = df_drill['Situação'].tolist()
-            self.assertIn('ELABORADA', situacoes)
-            self.assertIn('REPROVADA', situacoes)
-            self.assertIn('AGUARDANDO CONCILIAÇÃO', situacoes)
-            self.assertIn('Nº Manobra', df_drill.columns)
-            self.assertIn('Usu. Elaboração', df_drill.columns)
+            # Testa get_detalhe_drilldown_performance para CONDIS
+            df_drill_condis = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Enviadas ao CONDIS (ou Legado)')
+            self.assertEqual(len(df_drill_condis), 1)
+            self.assertEqual(df_drill_condis['Situação'].iloc[0], 'ENVIADA PARA O CONDIS')
+
+            # Testa get_detalhe_drilldown_performance para Elaboradas
+            df_drill_elab = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Elaboradas (Aguardando CONDIS)')
+            self.assertEqual(len(df_drill_elab), 1)
+            self.assertEqual(df_drill_elab['Situação'].iloc[0], 'ELABORADA')
+
+            # Testa get_detalhe_drilldown_performance para Reprovadas
+            df_drill_rep = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Reprovadas / Canceladas')
+            self.assertEqual(len(df_drill_rep), 1)
+            self.assertEqual(df_drill_rep['Situação'].iloc[0], 'REPROVADA')
 
         finally:
             db_manager.get_connection_config = orig_conn

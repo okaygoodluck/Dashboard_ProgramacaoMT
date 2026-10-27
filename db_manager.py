@@ -2351,7 +2351,8 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 SUM(CASE WHEN tipo_evento = 'NOVA' THEN 1 ELSE 0 END) as Novas,
                 SUM(CASE WHEN tipo_evento = 'INICIADA' THEN 1 ELSE 0 END) as Iniciadas,
                 SUM(CASE WHEN tipo_evento = 'TRATADA' THEN 1 ELSE 0 END) as Tratadas,
-                SUM(CASE WHEN tipo_evento = 'TRATADA' AND UPPER(status_detalhado) IN ('ELABORADA', 'ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS') THEN 1 ELSE 0 END) as Elaboradas,
+                SUM(CASE WHEN tipo_evento = 'TRATADA' AND UPPER(status_detalhado) IN ('ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS') THEN 1 ELSE 0 END) as Enviadas_Condis,
+                SUM(CASE WHEN tipo_evento = 'TRATADA' AND UPPER(status_detalhado) IN ('ELABORADA', 'EM ANÁLISE', 'EM ANALISE', 'EM ALTERAÇÃO', 'EM ALTERACAO', 'AGRUPAMENTO PENDENTE') THEN 1 ELSE 0 END) as Elaboradas,
                 SUM(CASE WHEN tipo_evento = 'TRATADA' AND UPPER(status_detalhado) IN ('REPROVADA', 'CANCELADA') THEN 1 ELSE 0 END) as Reprovadas,
                 SUM(CASE WHEN tipo_evento = 'TRATADA' AND (status_detalhado IS NULL OR TRIM(status_detalhado) = '') AND date(data_evento) >= '2026-10-26' THEN 1 ELSE 0 END) as Pendentes_Conciliacao
             FROM eventos_diarios
@@ -2363,11 +2364,11 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
         
         if df_eventos.empty:
             df_perf = pd.DataFrame(columns=[
-                'Data', 'Novas', 'Tratadas', 'Iniciadas', 'Elaboradas', 'Reprovadas', 'Pendentes_Conciliacao', 'Pendentes'
+                'Data', 'Novas', 'Tratadas', 'Iniciadas', 'Enviadas_Condis', 'Elaboradas', 'Reprovadas', 'Pendentes_Conciliacao', 'Pendentes'
             ])
         else:
             df_perf = df_eventos.rename(columns={'data': 'Data'})
-            for col in ['Novas', 'Tratadas', 'Iniciadas', 'Elaboradas', 'Reprovadas', 'Pendentes_Conciliacao']:
+            for col in ['Novas', 'Tratadas', 'Iniciadas', 'Enviadas_Condis', 'Elaboradas', 'Reprovadas', 'Pendentes_Conciliacao']:
                 if col not in df_perf.columns:
                     df_perf[col] = 0
             
@@ -2672,16 +2673,15 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
                   AND UPPER(e.status_detalhado) IN ('REPROVADA', 'CANCELADA')
             """, conn_app, params=[mat, dt_iso])
             
-        elif 'tratadas' in serie_lower or 'elaborada' in serie_lower or 'condis' in serie_lower:
-            if dt_iso >= '2026-10-26' and ('elaborada' in serie_lower or 'condis' in serie_lower):
+        elif ('condis' in serie_lower or 'enviada' in serie_lower) and 'elaborada' not in serie_lower:
+            if dt_iso >= '2026-10-26':
                 df_ev = pd.read_sql("""
                     SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
                            e.status_detalhado, fc.manobra, fc.usu_elaboracao
                     FROM eventos_diarios e
                     LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
                     WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
-                      AND (UPPER(e.status_detalhado) IN ('ELABORADA', 'ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS')
-                           OR e.status_detalhado IS NULL)
+                      AND UPPER(e.status_detalhado) IN ('ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS')
                 """, conn_app, params=[mat, dt_iso])
             else:
                 df_ev = pd.read_sql("""
@@ -2691,6 +2691,35 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
                     LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
                     WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
                 """, conn_app, params=[mat, dt_iso])
+
+        elif 'elaborada' in serie_lower:
+            df_ev = pd.read_sql("""
+                SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
+                       e.status_detalhado, fc.manobra, fc.usu_elaboracao
+                FROM eventos_diarios e
+                LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
+                WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
+                  AND UPPER(e.status_detalhado) IN ('ELABORADA', 'EM ANÁLISE', 'EM ANALISE', 'EM ALTERAÇÃO', 'EM ALTERACAO', 'AGRUPAMENTO PENDENTE')
+            """, conn_app, params=[mat, dt_iso])
+
+        elif 'pendente' in serie_lower or 'concilia' in serie_lower:
+            df_ev = pd.read_sql("""
+                SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
+                       e.status_detalhado, fc.manobra, fc.usu_elaboracao
+                FROM eventos_diarios e
+                LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
+                WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
+                  AND (e.status_detalhado IS NULL OR TRIM(e.status_detalhado) = '')
+            """, conn_app, params=[mat, dt_iso])
+
+        elif 'tratadas' in serie_lower:
+            df_ev = pd.read_sql("""
+                SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
+                       e.status_detalhado, fc.manobra, fc.usu_elaboracao
+                FROM eventos_diarios e
+                LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
+                WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
+            """, conn_app, params=[mat, dt_iso])
             
         elif 'hoje e ontem' in serie_lower or 'iniciadas' in serie_lower or 'do dia' in serie_lower:
             dt_ontem_util = obter_dia_util_anterior(dt_iso)
