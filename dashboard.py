@@ -1519,7 +1519,7 @@ if df is not None:
                                     x=df_perf['Data_Exibicao'], 
                                     y=df_perf['Elaboradas_Hoje_Ontem'], 
                                     name='Elaborada/Em análise (Hoje e Ontem)',
-                                    marker_color='#64748b',
+                                    marker_color='#0d9488',
                                     text=df_perf['Elaboradas_Hoje_Ontem'],
                                     textposition='outside'
                                 ))
@@ -1527,7 +1527,7 @@ if df is not None:
                                     x=df_perf['Data_Exibicao'], 
                                     y=df_perf['Elaboradas_Mais_2_Dias'], 
                                     name='Elaborada/Em análise (+2 dias)',
-                                    marker_color='#334155',
+                                    marker_color='#1e293b',
                                     text=df_perf['Elaboradas_Mais_2_Dias'],
                                     textposition='outside'
                                 ))
