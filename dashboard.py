@@ -1514,7 +1514,7 @@ if df is not None:
                                     x=df_perf['Data_Exibicao'], 
                                     y=df_perf.get('Elaboradas', 0), 
                                     name='Elaboradas (Aguardando CONDIS)',
-                                    marker_color='#0284c7',
+                                    marker_color='#64748b',
                                     text=df_perf.get('Elaboradas', 0),
                                     textposition='outside'
                                 ))
