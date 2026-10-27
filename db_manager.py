@@ -2843,9 +2843,10 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
             df_ev['solicitacao_str'] = df_ev['solicitacao'].astype(str).str.strip()
             df_dem['solicitacao_str'] = df_dem['solicitacao'].astype(str).str.strip()
             df_res = pd.merge(df_ev, df_dem, on='solicitacao_str', how='left')
-            df_res['Região'] = df_res['regiao'].combine_first(df_res.get('regiao_dem')).fillna('ND')
-            df_res['Data de Início'] = df_res.get('dt_inicio', '-')
-            df_res['Solicitação'] = df_res['solicitacao_x']
+            c_reg = df_res['regiao_dem'] if 'regiao_dem' in df_res.columns else None
+            df_res['Região'] = df_res['regiao'].combine_first(c_reg).fillna('ND') if c_reg is not None else df_res['regiao'].fillna('ND')
+            df_res['Data de Início'] = df_res['dt_inicio'].fillna('-') if 'dt_inicio' in df_res.columns else '-'
+            df_res['Solicitação'] = df_res['solicitacao_x'] if 'solicitacao_x' in df_res.columns else df_res['solicitacao']
         else:
             df_res = df_ev.copy()
             df_res['Solicitação'] = df_res['solicitacao']
@@ -2863,8 +2864,8 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
             return 'APROVADA' if 'aprovadas' in serie_lower else 'EM ELABORAÇÃO'
 
         df_res['Situação'] = df_res.apply(_definir_sit, axis=1)
-        df_res['Nº Manobra'] = df_res.get('manobra', '').fillna('-')
-        df_res['Usu. Elaboração'] = df_res.get('usu_elaboracao', '').fillna('-')
+        df_res['Nº Manobra'] = df_res['manobra'].fillna('-') if 'manobra' in df_res.columns else '-'
+        df_res['Usu. Elaboração'] = df_res['usu_elaboracao'].fillna('-') if 'usu_elaboracao' in df_res.columns else '-'
 
         cols_ret = ['Solicitação', 'Região', 'Situação', 'Data de Início', 'Nº Manobra', 'Usu. Elaboração']
         return df_res[cols_ret].drop_duplicates()
