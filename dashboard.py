@@ -1431,11 +1431,21 @@ if df is not None:
                     limite_inferior = date(2026, 7, 7)
                     data_inicio_padrao = max(limite_inferior, hoje - timedelta(days=15))
                     
-                    # Estilo CSS global para garantir alinhamento vertical perfeito dos seletores
+                    # Estilo CSS global para garantir alinhamento dos seletores e mover o menu do gráfico (modebar) para o rodapé
                     st.markdown("""
                         <style>
                         div[data-testid="stDateInput"], div[data-testid="stDateInput"] > div {
                             max-width: 270px !important;
+                        }
+                        /* Reposiciona a barra de ferramentas/menu (modebar) para a parte inferior direita do gráfico */
+                        div[class*="drilldown_perf"] .modebar-container,
+                        div[class*="drilldown_perf"] .plotly .modebar-container {
+                            top: auto !important;
+                            bottom: 2px !important;
+                            right: 15px !important;
+                        }
+                        div[class*="drilldown_perf"] .modebar {
+                            background: transparent !important;
                         }
                         </style>
                     """, unsafe_allow_html=True)
@@ -1564,22 +1574,23 @@ if df is not None:
                                 nomes_series = ['Aprovadas no dia', 'Em elaboração (Hoje e Ontem)', 'Em elaboração (+2 dias)', 'Tratadas/Reprovadas']
                                                         
                             fig_d1.update_layout(
-                                title=f"Desempenho Individual: {resp_d1} ({d1_inicio.strftime('%d/%m/%Y')} a {d1_fim.strftime('%d/%m/%Y')})",
                                 xaxis_title="Data",
                                 yaxis_title="Quantidade",
                                 barmode='group',
                                 hovermode='x unified',
-                                margin=dict(l=10, r=10, t=50, b=10),
-                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                                margin=dict(l=10, r=10, t=35, b=50),
+                                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
                             )
                             fig_d1.update_xaxes(type='category')
-                            event_d1 = st.plotly_chart(
-                                fig_d1, 
-                                use_container_width=True, 
-                                on_select="rerun", 
-                                selection_mode="points", 
-                                key=f"drilldown_perf_{resp_d1}"
-                            )
+                            with st.container(key=f"box_drilldown_perf_{resp_d1}"):
+                                event_d1 = st.plotly_chart(
+                                    fig_d1, 
+                                    use_container_width=True, 
+                                    on_select="rerun", 
+                                    selection_mode="points", 
+                                    key=f"drilldown_perf_{resp_d1}",
+                                    config={"displaylogo": False}
+                                )
 
                             # Interatividade Drill-down: Tabela Quantitativa e Detalhada por Região e Situação ao clicar na coluna
                             pt_sel = None
