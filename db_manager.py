@@ -2867,11 +2867,15 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
         df_res['Nº Manobra'] = df_res['manobra'].fillna('-') if 'manobra' in df_res.columns else '-'
         df_res['Usu. Elaboração'] = df_res['usu_elaboracao'].fillna('-') if 'usu_elaboracao' in df_res.columns else '-'
 
-        cols_ret = ['Solicitação', 'Região', 'Situação', 'Data de Início', 'Nº Manobra', 'Usu. Elaboração']
+        if any(k in serie_lower for k in ['aprovada', 'nova', 'em elaboração', 'em elaboracao']):
+            cols_ret = ['Solicitação', 'Região', 'Situação']
+        else:
+            cols_ret = ['Solicitação', 'Região', 'Situação', 'Nº Manobra', 'Usu. Elaboração']
+
         return df_res[cols_ret].drop_duplicates()
     except Exception as e:
         print(f"[DB] Erro em get_detalhe_drilldown_performance: {e}")
-        return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação', 'Data de Início', 'Nº Manobra', 'Usu. Elaboração'])
+        return pd.DataFrame(columns=['Solicitação', 'Região', 'Situação'])
     finally:
         if 'conn_app' in locals() and conn_app:
             conn_app.close()

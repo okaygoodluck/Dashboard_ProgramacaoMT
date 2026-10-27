@@ -1593,17 +1593,24 @@ if df is not None:
                                 df_drill = db_manager.get_detalhe_drilldown_performance(resp_d1, data_clicada, nome_serie)
                                 
                                 if not df_drill.empty:
-                                    col_q, col_sit = st.columns([1.5, 2.5])
-                                    with col_q:
+                                    is_aprovadas = 'aprovada' in nome_serie.lower() or 'nova' in nome_serie.lower()
+                                    if is_aprovadas:
                                         st.markdown("**Por Região**")
                                         s_cont = df_drill['Região'].value_counts()
                                         df_reg_resumo = pd.DataFrame({'Região': s_cont.index, 'Quantidade': s_cont.values})
                                         st.dataframe(df_reg_resumo, hide_index=True, use_container_width=True)
-                                    with col_sit:
-                                        st.markdown("**Por Situação Apurada**")
-                                        s_sit = df_drill['Situação'].value_counts()
-                                        df_sit_resumo = pd.DataFrame({'Situação': s_sit.index, 'Quantidade': s_sit.values})
-                                        st.dataframe(df_sit_resumo, hide_index=True, use_container_width=True)
+                                    else:
+                                        col_q, col_sit = st.columns([1.5, 2.5])
+                                        with col_q:
+                                            st.markdown("**Por Região**")
+                                            s_cont = df_drill['Região'].value_counts()
+                                            df_reg_resumo = pd.DataFrame({'Região': s_cont.index, 'Quantidade': s_cont.values})
+                                            st.dataframe(df_reg_resumo, hide_index=True, use_container_width=True)
+                                        with col_sit:
+                                            st.markdown("**Por Situação Apurada**")
+                                            s_sit = df_drill['Situação'].value_counts()
+                                            df_sit_resumo = pd.DataFrame({'Situação': s_sit.index, 'Quantidade': s_sit.values})
+                                            st.dataframe(df_sit_resumo, hide_index=True, use_container_width=True)
 
                                     with st.expander("📋 Ver Lista Detalhada de Solicitações", expanded=True):
                                         st.dataframe(df_drill, hide_index=True, use_container_width=True)
