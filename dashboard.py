@@ -1595,10 +1595,15 @@ if df is not None:
                                 if not df_drill.empty:
                                     is_aprovadas = 'aprovada' in nome_serie.lower() or 'nova' in nome_serie.lower()
                                     if is_aprovadas:
-                                        st.markdown("**Por Região**")
-                                        s_cont = df_drill['Região'].value_counts()
-                                        df_reg_resumo = pd.DataFrame({'Região': s_cont.index, 'Quantidade': s_cont.values})
-                                        st.dataframe(df_reg_resumo, hide_index=True, use_container_width=True)
+                                        col_reg, col_det = st.columns([1.2, 2.8])
+                                        with col_reg:
+                                            st.markdown("**Por Região**")
+                                            s_cont = df_drill['Região'].value_counts()
+                                            df_reg_resumo = pd.DataFrame({'Região': s_cont.index, 'Quantidade': s_cont.values})
+                                            st.dataframe(df_reg_resumo, hide_index=True, use_container_width=True)
+                                        with col_det:
+                                            st.markdown("**📋 Solicitações Detalhadas**")
+                                            st.dataframe(df_drill, hide_index=True, use_container_width=True)
                                     else:
                                         col_q, col_sit = st.columns([1.5, 2.5])
                                         with col_q:
@@ -1612,8 +1617,8 @@ if df is not None:
                                             df_sit_resumo = pd.DataFrame({'Situação': s_sit.index, 'Quantidade': s_sit.values})
                                             st.dataframe(df_sit_resumo, hide_index=True, use_container_width=True)
 
-                                    with st.expander("📋 Ver Lista Detalhada de Solicitações", expanded=True):
-                                        st.dataframe(df_drill, hide_index=True, use_container_width=True)
+                                        with st.expander("📋 Ver Lista Detalhada de Solicitações", expanded=True):
+                                            st.dataframe(df_drill, hide_index=True, use_container_width=True)
                                 else:
                                     st.info("Nenhuma solicitação encontrada para este ponto.")
                         else:
