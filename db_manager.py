@@ -1420,10 +1420,36 @@ def deduplicar_historico_eventos():
             )
         """)
         removidos = cursor.rowcount
+
+        # Limpeza defensiva de duplicatas históricas de NOVA (uma solicitação só nasce uma vez)
+        cursor.execute("""
+            DELETE FROM eventos_diarios
+            WHERE tipo_evento = 'NOVA'
+            AND id NOT IN (
+                SELECT MIN(id)
+                FROM eventos_diarios
+                WHERE tipo_evento = 'NOVA'
+                GROUP BY solicitacao
+            )
+        """)
+        removidos_novas = cursor.rowcount
+
+        # Garante que NOVAs pertençam exclusivamente ao titular oficial cadastrado da região
+        cursor.execute("""
+            UPDATE eventos_diarios
+            SET matricula_responsavel = COALESCE(
+                (SELECT matricula_responsavel FROM regioes_responsaveis WHERE sigla_regiao = eventos_diarios.regiao),
+                'Não Atribuído'
+            )
+            WHERE tipo_evento = 'NOVA'
+            AND matricula_responsavel NOT IN (SELECT DISTINCT matricula_responsavel FROM regioes_responsaveis)
+        """)
+        corrigidos_titulares = cursor.rowcount
+
         conn.commit()
-        if removidos > 0:
-            print(f"[DB CLEANUP] {removidos} eventos duplicados de manobras foram limpos da tabela 'eventos_diarios'.")
-        return removidos
+        if (removidos + removidos_novas + corrigidos_titulares) > 0:
+            print(f"[DB CLEANUP] {removidos} duplicatas diárias, {removidos_novas} duplicatas históricas de NOVA e {corrigidos_titulares} NOVAs reatribuídas a titulares.")
+        return removidos + removidos_novas
     except Exception as e:
         print(f"[DB CLEANUP] Erro ao deduplicar histórico de eventos: {e}")
         return 0
