@@ -133,5 +133,59 @@ class TestDemandAnalysisFixes(unittest.TestCase):
         user_info_apos = db_manager.validar_token_sessao(token)
         self.assertIsNone(user_info_apos)
 
+    def test_nova_attribution_and_historical_uniqueness(self):
+        """Verifica se NOVA pertence estritamente ao dono da região e se trava de unicidade impede reingresso falso."""
+        from unittest.mock import patch
+        
+        uri_app = "file:test_nova_attr_app?mode=memory&cache=shared"
+        conn_app = sqlite3.connect(uri_app, uri=True)
+        conn_app.execute("""
+            CREATE TABLE eventos_diarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                solicitacao TEXT,
+                tipo_evento TEXT,
+                regiao TEXT,
+                matricula_responsavel TEXT,
+                data_evento TIMESTAMP
+            )
+        """)
+        conn_app.execute("CREATE TABLE solicitacoes_travadas (solicitacao TEXT, matricula TEXT)")
+        conn_app.execute("CREATE TABLE regioes_responsaveis (sigla_regiao TEXT PRIMARY KEY, matricula_responsavel TEXT)")
+        # CL pertence a e270047
+        conn_app.execute("INSERT INTO regioes_responsaveis VALUES ('CL', 'e270047')")
+        # Solicitação 999999 já nasceu em 2026-10-14
+        conn_app.execute("INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel, data_evento) VALUES ('999999', 'NOVA', 'CL', 'e270047', '2026-10-14 10:00:00')")
+        conn_app.commit()
+
+        try:
+            with patch('db_manager.get_connection_config', side_effect=lambda read_only=False: sqlite3.connect(uri_app, uri=True)), \
+                 patch('db_manager.get_agora_br', return_value=pd.to_datetime('2026-10-27 10:00:00')):
+                
+                df_antigo = pd.DataFrame([
+                    {'Solicitação': '111111', 'Ref_Regiao': 'CL', 'Situação': 'APROVADA', 'Resp. Manobra': '-'}
+                ])
+                # df_novo traz uma nova real (222222 com Resp. Manobra = c060795) e uma repetida histórica (999999)
+                df_novo = pd.DataFrame([
+                    {'Solicitação': '111111', 'Ref_Regiao': 'CL', 'Situação': 'APROVADA', 'Resp. Manobra': '-'},
+                    {'Solicitação': '222222', 'Ref_Regiao': 'CL', 'Situação': 'APROVADA', 'Resp. Manobra': 'c060795'},
+                    {'Solicitação': '999999', 'Ref_Regiao': 'CL', 'Situação': 'APROVADA', 'Resp. Manobra': 'c060795'}
+                ])
+
+                db_manager.registrar_eventos_diarios(df_antigo, df_novo)
+
+                # Verifica eventos gerados
+                df_res = pd.read_sql("SELECT solicitacao, tipo_evento, matricula_responsavel FROM eventos_diarios WHERE date(data_evento) = '2026-10-27'", conn_app)
+                
+                # 222222 deve ser inserida como NOVA para o dono da região (e270047), NUNCA para c060795
+                self.assertEqual(len(df_res), 1)
+                self.assertEqual(df_res['solicitacao'].iloc[0], '222222')
+                self.assertEqual(df_res['matricula_responsavel'].iloc[0], 'e270047')
+
+                # 999999 NÃO deve ser reinserida como NOVA
+                self.assertNotIn('999999', df_res['solicitacao'].tolist())
+        finally:
+            conn_app.close()
+
 if __name__ == '__main__':
     unittest.main()
+

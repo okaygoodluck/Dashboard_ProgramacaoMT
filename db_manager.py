@@ -2240,7 +2240,8 @@ def registrar_eventos_diarios(df_antigo, df_novo):
                 if not ignorar_novas_em_massa:
                     regiao = row_nova.get('Ref_Regiao', '')
                     sigla = str(regiao).strip()[:2].upper() if pd.notna(regiao) else ""
-                    matricula = get_responsavel(sol_id, regiao, row_nova)
+                    # Demanda NOVA representa entrada na fila regional: pertence exclusivamente ao titular da região
+                    matricula = normalizar_matricula(regioes_dict[sigla]) if sigla in regioes_dict else "Não Atribuído"
                     eventos_para_inserir.append((sol_id, 'NOVA', sigla, matricula, data_evento_aplicar))
             else:
                 row_antiga = antigas_dict[sol_id]
@@ -2279,12 +2280,33 @@ def registrar_eventos_diarios(df_antigo, df_novo):
             """, (hoje_str,))
             existentes_recentes = set((str(row[0]).strip().lstrip('0'), str(row[1]).strip()) for row in cursor.fetchall())
             
+            # Trava global de unicidade para NOVA: uma solicitação só pode ter 1 registro de NOVA em toda a história
+            sols_novas = [str(ev[0]).strip().lstrip('0') for ev in eventos_para_inserir if ev[1] == 'NOVA']
+            existentes_novas_historico = set()
+            if sols_novas:
+                placeholders = ', '.join(['?'] * len(sols_novas))
+                cursor.execute(f"""
+                    SELECT DISTINCT solicitacao 
+                    FROM eventos_diarios 
+                    WHERE tipo_evento = 'NOVA' AND solicitacao IN ({placeholders})
+                """, sols_novas)
+                existentes_novas_historico = set(str(row[0]).strip().lstrip('0') for row in cursor.fetchall())
+
             eventos_unicos = []
             for ev in eventos_para_inserir:
-                chave = (str(ev[0]).strip().lstrip('0'), str(ev[1]).strip())
+                s_id = str(ev[0]).strip().lstrip('0')
+                tipo_ev = str(ev[1]).strip()
+                chave = (s_id, tipo_ev)
+
+                # Bloqueia reingresso de demanda que já nasceu no histórico
+                if tipo_ev == 'NOVA' and s_id in existentes_novas_historico:
+                    continue
+
                 if chave not in existentes_recentes:
                     eventos_unicos.append(ev)
                     existentes_recentes.add(chave) # Adiciona para evitar duplicatas dentro do próprio lote
+                    if tipo_ev == 'NOVA':
+                        existentes_novas_historico.add(s_id)
             
             if eventos_unicos:
                 cursor.executemany('''
