@@ -2397,12 +2397,8 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 df_perf = pd.merge(df_perf, df_pendentes, on='Data', how='outer').fillna(0)
             elif not df_pendentes.empty:
                 df_perf = df_pendentes
-                df_perf['Novas'] = 0
-                df_perf['Tratadas'] = 0
-                df_perf['Iniciadas'] = 0
-                df_perf['Elaboradas'] = 0
-                df_perf['Reprovadas'] = 0
-                df_perf['Pendentes_Conciliacao'] = 0
+                for col in ['Novas', 'Tratadas', 'Iniciadas', 'Enviadas_Condis', 'Elaboradas', 'Elaboradas_Hoje_Ontem', 'Elaboradas_Mais_2_Dias', 'Reprovadas', 'Pendentes_Conciliacao']:
+                    df_perf[col] = 0
         else:
             df_perf['Pendentes'] = 0
             df_perf['Pendentes_Iniciadas'] = 0
@@ -2410,18 +2406,11 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             df_perf['Pendentes_Iniciadas_Dia'] = 0
             df_perf['Pendentes_Dias_Anteriores'] = 0
                 
-        if not df_perf.empty:
-            df_perf['Novas'] = df_perf.get('Novas', 0).astype(int)
-            df_perf['Tratadas'] = df_perf.get('Tratadas', 0).astype(int)
-            df_perf['Elaboradas'] = df_perf.get('Elaboradas', 0).astype(int)
-            df_perf['Reprovadas'] = df_perf.get('Reprovadas', 0).astype(int)
-            df_perf['Pendentes_Conciliacao'] = df_perf.get('Pendentes_Conciliacao', 0).astype(int)
-            df_perf['Iniciadas'] = df_perf.get('Iniciadas', 0).astype(int)
-            df_perf['Pendentes'] = df_perf.get('Pendentes', 0).astype(int)
-            df_perf['Pendentes_Iniciadas'] = df_perf.get('Pendentes_Iniciadas', 0).astype(int)
-            df_perf['Pendentes_Nao_Iniciadas'] = df_perf.get('Pendentes_Nao_Iniciadas', 0).astype(int)
-            df_perf['Pendentes_Iniciadas_Dia'] = df_perf.get('Pendentes_Iniciadas_Dia', 0).astype(int)
-            df_perf['Pendentes_Dias_Anteriores'] = df_perf.get('Pendentes_Dias_Anteriores', 0).astype(int)
+        for col in ['Novas', 'Tratadas', 'Iniciadas', 'Enviadas_Condis', 'Elaboradas', 'Elaboradas_Hoje_Ontem', 'Elaboradas_Mais_2_Dias', 'Reprovadas', 'Pendentes_Conciliacao', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas', 'Pendentes_Iniciadas_Dia', 'Pendentes_Dias_Anteriores']:
+            if col not in df_perf.columns:
+                df_perf[col] = 0
+            else:
+                df_perf[col] = df_perf[col].fillna(0).astype(int)
 
         # Garante linha contínua para todas as datas do período (com ffill para o estoque de Pendências/Em Elaboração no FDS)
         try:
@@ -2432,25 +2421,12 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
                 df_perf = pd.merge(df_full, df_perf, on='Data', how='left')
             else:
                 df_perf = df_full
-                df_perf['Novas'] = 0
-                df_perf['Tratadas'] = 0
-                df_perf['Elaboradas'] = 0
-                df_perf['Reprovadas'] = 0
-                df_perf['Pendentes_Conciliacao'] = 0
-                df_perf['Iniciadas'] = 0
-                df_perf['Pendentes'] = 0
-                df_perf['Pendentes_Iniciadas'] = 0
-                df_perf['Pendentes_Nao_Iniciadas'] = 0
-                df_perf['Pendentes_Iniciadas_Dia'] = 0
-                df_perf['Pendentes_Dias_Anteriores'] = 0
-
-            # Preenche NaNs de eventos com 0
-            df_perf['Novas'] = df_perf['Novas'].fillna(0).astype(int)
-            df_perf['Tratadas'] = df_perf['Tratadas'].fillna(0).astype(int)
-            df_perf['Elaboradas'] = df_perf['Elaboradas'].fillna(0).astype(int)
-            df_perf['Reprovadas'] = df_perf['Reprovadas'].fillna(0).astype(int)
-            df_perf['Pendentes_Conciliacao'] = df_perf['Pendentes_Conciliacao'].fillna(0).astype(int)
-            df_perf['Iniciadas'] = df_perf['Iniciadas'].fillna(0).astype(int)
+                
+            for col in ['Novas', 'Tratadas', 'Iniciadas', 'Enviadas_Condis', 'Elaboradas', 'Elaboradas_Hoje_Ontem', 'Elaboradas_Mais_2_Dias', 'Reprovadas', 'Pendentes_Conciliacao', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas', 'Pendentes_Iniciadas_Dia', 'Pendentes_Dias_Anteriores']:
+                if col not in df_perf.columns:
+                    df_perf[col] = 0
+                else:
+                    df_perf[col] = df_perf[col].fillna(0).astype(int)
 
             # Para dias sem snapshot (ex: fins de semana sem extração), propaga o estoque de pendências do dia útil anterior
             df_perf['Pendentes_Iniciadas'] = df_perf['Pendentes_Iniciadas'].ffill().fillna(0).astype(int)

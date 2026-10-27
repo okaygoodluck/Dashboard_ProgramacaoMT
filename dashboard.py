@@ -1462,10 +1462,15 @@ if df is not None:
                             df_perf = db_manager.get_performance_d1(resp_d1, data_inicio=d1_inicio.strftime('%Y-%m-%d'), data_fim=d1_fim.strftime('%Y-%m-%d'))
 
                         if not df_perf.empty:
-                            if 'Pendentes_Iniciadas_Dia' not in df_perf.columns:
-                                df_perf['Pendentes_Iniciadas_Dia'] = 0
-                            if 'Pendentes_Dias_Anteriores' not in df_perf.columns:
-                                df_perf['Pendentes_Dias_Anteriores'] = df_perf.get('Pendentes_Iniciadas', 0)
+                            for c_req in ['Novas', 'Tratadas', 'Iniciadas', 'Enviadas_Condis', 'Elaboradas', 'Elaboradas_Hoje_Ontem', 'Elaboradas_Mais_2_Dias', 'Reprovadas', 'Pendentes_Iniciadas_Dia', 'Pendentes_Dias_Anteriores']:
+                                if c_req not in df_perf.columns:
+                                    if c_req == 'Elaboradas_Hoje_Ontem':
+                                        df_perf[c_req] = df_perf.get('Elaboradas', 0)
+                                    elif c_req == 'Pendentes_Dias_Anteriores':
+                                        df_perf[c_req] = df_perf.get('Pendentes_Iniciadas', 0)
+                                    else:
+                                        df_perf[c_req] = 0
+                                df_perf[c_req] = df_perf[c_req].fillna(0).astype(int)
 
                             df_perf['Data_Exibicao'] = pd.to_datetime(df_perf['Data']).dt.strftime('%d/%m/%Y')
                             
@@ -1500,7 +1505,7 @@ if df is not None:
                             
                             if tem_dados_marco_zero:
                                 df_perf['Condis_Ou_Legado'] = df_perf.apply(
-                                    lambda r: r['Tratadas'] if str(r['Data']) < '2026-10-26' else r.get('Enviadas_Condis', 0), axis=1
+                                    lambda r: r['Tratadas'] if str(r['Data']) < '2026-10-26' else r['Enviadas_Condis'], axis=1
                                 )
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
@@ -1512,26 +1517,26 @@ if df is not None:
                                 ))
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
-                                    y=df_perf.get('Elaboradas_Hoje_Ontem', 0), 
+                                    y=df_perf['Elaboradas_Hoje_Ontem'], 
                                     name='Elaborada/Em análise (Hoje e Ontem)',
                                     marker_color='#64748b',
-                                    text=df_perf.get('Elaboradas_Hoje_Ontem', 0),
+                                    text=df_perf['Elaboradas_Hoje_Ontem'],
                                     textposition='outside'
                                 ))
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
-                                    y=df_perf.get('Elaboradas_Mais_2_Dias', 0), 
+                                    y=df_perf['Elaboradas_Mais_2_Dias'], 
                                     name='Elaborada/Em análise (+2 dias)',
                                     marker_color='#334155',
-                                    text=df_perf.get('Elaboradas_Mais_2_Dias', 0),
+                                    text=df_perf['Elaboradas_Mais_2_Dias'],
                                     textposition='outside'
                                 ))
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
-                                    y=df_perf.get('Reprovadas', 0), 
+                                    y=df_perf['Reprovadas'], 
                                     name='Reprovadas / Canceladas',
                                     marker_color='#f97316',
-                                    text=df_perf.get('Reprovadas', 0),
+                                    text=df_perf['Reprovadas'],
                                     textposition='outside'
                                 ))
                                 nomes_series = [
