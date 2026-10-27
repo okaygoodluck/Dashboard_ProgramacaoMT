@@ -2462,6 +2462,85 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
             df_perf['Pendentes_Dias_Anteriores'] = (df_perf['Pendentes_Iniciadas'] - df_perf['Pendentes_Iniciadas_Dia']).clip(lower=0).astype(int)
             
             df_perf = df_perf.sort_values('Data')
+
+            # --- ELABORADAS / EM ANÁLISE: Calcular Hoje e Ontem vs +2 dias ---
+            try:
+                cursor.execute("""
+                    SELECT fc.solicitacao, date(fc.data_saida) as dt_saida, fc.status_apurado, date(fc.data_auditoria) as dt_auditoria
+                    FROM fila_conciliacao fc
+                    WHERE fc.matricula_responsavel = ?
+                      AND (
+                          UPPER(fc.status_apurado) IN ('ELABORADA', 'EM ANÁLISE', 'EM ANALISE', 'EM ALTERAÇÃO', 'EM ALTERACAO', 'AGRUPAMENTO PENDENTE')
+                          OR fc.solicitacao IN (
+                              SELECT e.solicitacao FROM eventos_diarios e
+                              WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA'
+                                AND UPPER(e.status_detalhado) IN ('ELABORADA', 'EM ANÁLISE', 'EM ANALISE', 'EM ALTERAÇÃO', 'EM ALTERACAO', 'AGRUPAMENTO PENDENTE')
+                          )
+                      )
+                """, (matricula, matricula))
+                rows_fc_elab = cursor.fetchall()
+            except Exception:
+                rows_fc_elab = []
+
+            try:
+                cursor.execute("""
+                    SELECT solicitacao, date(data_evento) as dt_saida, status_detalhado, NULL as dt_auditoria
+                    FROM eventos_diarios
+                    WHERE matricula_responsavel = ? AND tipo_evento = 'TRATADA'
+                      AND UPPER(status_detalhado) IN ('ELABORADA', 'EM ANÁLISE', 'EM ANALISE', 'EM ALTERAÇÃO', 'EM ALTERACAO', 'AGRUPAMENTO PENDENTE')
+                """, (matricula,))
+                rows_ev_elab = cursor.fetchall()
+            except Exception:
+                rows_ev_elab = []
+
+            dict_elab = {}
+            for r in rows_ev_elab:
+                sol = str(r[0]).strip().lstrip('0')
+                dict_elab[sol] = {'dt_saida': str(r[1]) if r[1] else None, 'status': str(r[2]) if r[2] else 'ELABORADA', 'dt_aud': None}
+            for r in rows_fc_elab:
+                sol = str(r[0]).strip().lstrip('0')
+                dict_elab[sol] = {
+                    'dt_saida': str(r[1]) if r[1] else (dict_elab.get(sol, {}).get('dt_saida')),
+                    'status': str(r[2]) if r[2] else (dict_elab.get(sol, {}).get('status', 'ELABORADA')),
+                    'dt_aud': str(r[3]) if r[3] else None
+                }
+
+            df_perf['Elaboradas_Hoje_Ontem'] = 0
+            df_perf['Elaboradas_Mais_2_Dias'] = 0
+
+            for idx, row_d in df_perf.iterrows():
+                d_str = str(row_d['Data'])
+                ontem_util = obter_dia_util_anterior(d_str)
+                
+                cnt_hoje_ontem = 0
+                cnt_mais_2 = 0
+                
+                for sol, info in dict_elab.items():
+                    dt_s = info['dt_saida']
+                    st_ap = (info['status'] or '').upper()
+                    dt_a = info['dt_aud']
+                    
+                    if not dt_s or dt_s > d_str:
+                        continue
+                        
+                    if ('CONDIS' in st_ap or 'ENVIADA' in st_ap) and dt_a and dt_a <= d_str:
+                        continue
+                    if ('REPROVADA' in st_ap or 'CANCELADA' in st_ap) and dt_a and dt_a <= d_str:
+                        continue
+                        
+                    if dt_s >= ontem_util:
+                        cnt_hoje_ontem += 1
+                    else:
+                        cnt_mais_2 += 1
+                        
+                if (cnt_hoje_ontem + cnt_mais_2) > 0:
+                    df_perf.at[idx, 'Elaboradas_Hoje_Ontem'] = cnt_hoje_ontem
+                    df_perf.at[idx, 'Elaboradas_Mais_2_Dias'] = cnt_mais_2
+                    df_perf.at[idx, 'Elaboradas'] = cnt_hoje_ontem + cnt_mais_2
+                else:
+                    tot_e = int(row_d.get('Elaboradas', 0))
+                    df_perf.at[idx, 'Elaboradas_Hoje_Ontem'] = tot_e
+                    df_perf.at[idx, 'Elaboradas_Mais_2_Dias'] = 0
         except Exception:
             pass
             
@@ -2469,9 +2548,9 @@ def get_performance_d1(nome_responsavel, data_inicio=None, data_fim=None):
     except Exception as e:
         print(f"Erro em get_performance_d1: {e}")
         return pd.DataFrame(columns=[
-            'Data', 'Novas', 'Tratadas', 'Elaboradas', 'Reprovadas', 'Pendentes_Conciliacao',
-            'Iniciadas', 'Pendentes', 'Pendentes_Iniciadas', 'Pendentes_Nao_Iniciadas',
-            'Pendentes_Iniciadas_Dia', 'Pendentes_Dias_Anteriores'
+            'Data', 'Novas', 'Tratadas', 'Elaboradas', 'Elaboradas_Hoje_Ontem', 'Elaboradas_Mais_2_Dias',
+            'Reprovadas', 'Pendentes_Conciliacao', 'Iniciadas', 'Pendentes', 'Pendentes_Iniciadas', 
+            'Pendentes_Nao_Iniciadas', 'Pendentes_Iniciadas_Dia', 'Pendentes_Dias_Anteriores'
         ])
     finally:
         if 'conn_app' in locals() and conn_app:
@@ -2673,13 +2752,13 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
                   AND UPPER(e.status_detalhado) IN ('REPROVADA', 'CANCELADA')
             """, conn_app, params=[mat, dt_iso])
             
-        elif ('condis' in serie_lower or 'enviada' in serie_lower) and 'elaborada' not in serie_lower:
+        elif ('condis' in serie_lower or 'enviada' in serie_lower) and 'elaborada' not in serie_lower and 'análise' not in serie_lower and 'analise' not in serie_lower:
             if dt_iso >= '2026-10-26':
                 df_ev = pd.read_sql("""
                     SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
                            e.status_detalhado, fc.manobra, fc.usu_elaboracao
                     FROM eventos_diarios e
-                    LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
+                    LEFT JOIN fila_conciliacao fc ON (e.solicitacao = fc.solicitacao OR LTRIM(e.solicitacao, '0') = LTRIM(fc.solicitacao, '0'))
                     WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
                       AND UPPER(e.status_detalhado) IN ('ENVIADA PARA O CONDIS', 'ENVIANDO PARA CONDIS')
                 """, conn_app, params=[mat, dt_iso])
@@ -2688,19 +2767,34 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
                     SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
                            e.status_detalhado, fc.manobra, fc.usu_elaboracao
                     FROM eventos_diarios e
-                    LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
+                    LEFT JOIN fila_conciliacao fc ON (e.solicitacao = fc.solicitacao OR LTRIM(e.solicitacao, '0') = LTRIM(fc.solicitacao, '0'))
                     WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
                 """, conn_app, params=[mat, dt_iso])
 
-        elif 'elaborada' in serie_lower:
+        elif 'elaborada' in serie_lower or 'análise' in serie_lower or 'analise' in serie_lower:
+            dt_ontem_util = obter_dia_util_anterior(dt_iso)
             df_ev = pd.read_sql("""
-                SELECT e.solicitacao, e.regiao, e.data_evento as data_ref,
-                       e.status_detalhado, fc.manobra, fc.usu_elaboracao
+                SELECT DISTINCT e.solicitacao, e.regiao, 
+                       COALESCE(fc.data_saida, e.data_evento) as data_ref,
+                       COALESCE(fc.status_apurado, e.status_detalhado) as status_detalhado, 
+                       fc.manobra, fc.usu_elaboracao
                 FROM eventos_diarios e
-                LEFT JOIN fila_conciliacao fc ON e.solicitacao = fc.solicitacao
-                WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
-                  AND UPPER(e.status_detalhado) IN ('ELABORADA', 'EM ANÁLISE', 'EM ANALISE', 'EM ALTERAÇÃO', 'EM ALTERACAO', 'AGRUPAMENTO PENDENTE')
+                LEFT JOIN fila_conciliacao fc ON (e.solicitacao = fc.solicitacao OR LTRIM(e.solicitacao, '0') = LTRIM(fc.solicitacao, '0'))
+                WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA'
+                  AND (
+                      UPPER(e.status_detalhado) IN ('ELABORADA', 'EM ANÁLISE', 'EM ANALISE', 'EM ALTERAÇÃO', 'EM ALTERACAO', 'AGRUPAMENTO PENDENTE')
+                      OR UPPER(fc.status_apurado) IN ('ELABORADA', 'EM ANÁLISE', 'EM ANALISE', 'EM ALTERAÇÃO', 'EM ALTERACAO', 'AGRUPAMENTO PENDENTE')
+                  )
+                  AND date(COALESCE(fc.data_saida, e.data_evento)) <= ?
             """, conn_app, params=[mat, dt_iso])
+            
+            if not df_ev.empty:
+                df_ev['dt_saida_str'] = pd.to_datetime(df_ev['data_ref']).dt.strftime('%Y-%m-%d')
+                if '+2' in serie_lower or '2 dias' in serie_lower:
+                    df_ev = df_ev[df_ev['dt_saida_str'] < dt_ontem_util]
+                elif 'hoje e ontem' in serie_lower:
+                    df_ev = df_ev[df_ev['dt_saida_str'] >= dt_ontem_util]
+                df_ev = df_ev.drop(columns=['dt_saida_str'], errors='ignore')
 
         elif 'pendente' in serie_lower or 'concilia' in serie_lower:
             df_ev = pd.read_sql("""

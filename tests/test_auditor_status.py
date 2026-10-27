@@ -188,7 +188,7 @@ class TestAuditorStatus(unittest.TestCase):
         db_manager.get_connection_config = lambda *args, **kwargs: sqlite3.connect(self.db_uri, uri=True)
         db_manager.get_connection_read = lambda *args, **kwargs: sqlite3.connect(self.db_uri, uri=True)
         try:
-            # Testa get_performance_d1 com separação entre CONDIS e Elaboradas
+            # Testa get_performance_d1 com separação entre CONDIS e Elaboradas (Hoje/Ontem e +2 dias)
             df_perf = db_manager.get_performance_d1('Tecnico Teste', '2026-10-26', '2026-10-26')
             self.assertFalse(df_perf.empty)
             row = df_perf.iloc[0]
@@ -196,18 +196,31 @@ class TestAuditorStatus(unittest.TestCase):
             self.assertEqual(row['Tratadas'], 4)
             self.assertEqual(row['Enviadas_Condis'], 1)
             self.assertEqual(row['Elaboradas'], 1)
+            self.assertEqual(row['Elaboradas_Hoje_Ontem'], 1)
+            self.assertEqual(row['Elaboradas_Mais_2_Dias'], 0)
             self.assertEqual(row['Reprovadas'], 1)
             self.assertEqual(row['Pendentes_Conciliacao'], 1)
 
-            # Testa get_detalhe_drilldown_performance para CONDIS
-            df_drill_condis = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Enviadas ao CONDIS (ou Legado)')
+            # Testa get_detalhe_drilldown_performance para CONDIS (novo nome e legado)
+            df_drill_condis = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Enviadas ao CONDIS')
             self.assertEqual(len(df_drill_condis), 1)
             self.assertEqual(df_drill_condis['Situação'].iloc[0], 'ENVIADA PARA O CONDIS')
 
-            # Testa get_detalhe_drilldown_performance para Elaboradas
-            df_drill_elab = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Elaboradas (Aguardando CONDIS)')
-            self.assertEqual(len(df_drill_elab), 1)
-            self.assertEqual(df_drill_elab['Situação'].iloc[0], 'ELABORADA')
+            df_drill_condis_legado = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Enviadas ao CONDIS (ou Legado)')
+            self.assertEqual(len(df_drill_condis_legado), 1)
+
+            # Testa get_detalhe_drilldown_performance para Elaboradas Hoje e Ontem
+            df_drill_elab_hoje_ontem = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Elaborada/Em análise (Hoje e Ontem)')
+            self.assertEqual(len(df_drill_elab_hoje_ontem), 1)
+            self.assertEqual(df_drill_elab_hoje_ontem['Situação'].iloc[0], 'ELABORADA')
+
+            # Testa get_detalhe_drilldown_performance para Elaboradas +2 dias (espera vazio para item criado no mesmo dia)
+            df_drill_elab_mais2 = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Elaborada/Em análise (+2 dias)')
+            self.assertEqual(len(df_drill_elab_mais2), 0)
+
+            # Testa compatibilidade legada com 'Elaboradas (Aguardando CONDIS)'
+            df_drill_elab_legado = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Elaboradas (Aguardando CONDIS)')
+            self.assertEqual(len(df_drill_elab_legado), 1)
 
             # Testa get_detalhe_drilldown_performance para Reprovadas
             df_drill_rep = db_manager.get_detalhe_drilldown_performance('Tecnico Teste', '26/10/2026', 'Reprovadas / Canceladas')

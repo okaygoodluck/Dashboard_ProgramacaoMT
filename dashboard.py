@@ -1505,17 +1505,25 @@ if df is not None:
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
                                     y=df_perf['Condis_Ou_Legado'], 
-                                    name='Enviadas ao CONDIS (ou Legado)',
+                                    name='Enviadas ao CONDIS',
                                     marker_color='#10b981',
                                     text=df_perf['Condis_Ou_Legado'],
                                     textposition='outside'
                                 ))
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
-                                    y=df_perf.get('Elaboradas', 0), 
-                                    name='Elaboradas (Aguardando CONDIS)',
+                                    y=df_perf.get('Elaboradas_Hoje_Ontem', 0), 
+                                    name='Elaborada/Em análise (Hoje e Ontem)',
                                     marker_color='#64748b',
-                                    text=df_perf.get('Elaboradas', 0),
+                                    text=df_perf.get('Elaboradas_Hoje_Ontem', 0),
+                                    textposition='outside'
+                                ))
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf.get('Elaboradas_Mais_2_Dias', 0), 
+                                    name='Elaborada/Em análise (+2 dias)',
+                                    marker_color='#334155',
+                                    text=df_perf.get('Elaboradas_Mais_2_Dias', 0),
                                     textposition='outside'
                                 ))
                                 fig_d1.add_trace(go.Bar(
@@ -1530,8 +1538,9 @@ if df is not None:
                                     'Aprovadas no dia', 
                                     'Em elaboração (Hoje e Ontem)', 
                                     'Em elaboração (+2 dias)', 
-                                    'Enviadas ao CONDIS (ou Legado)', 
-                                    'Elaboradas (Aguardando CONDIS)', 
+                                    'Enviadas ao CONDIS', 
+                                    'Elaborada/Em análise (Hoje e Ontem)', 
+                                    'Elaborada/Em análise (+2 dias)', 
                                     'Reprovadas / Canceladas'
                                 ]
                             else:
