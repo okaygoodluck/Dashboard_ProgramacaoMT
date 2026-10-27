@@ -1191,11 +1191,15 @@ if df is not None:
                 return name
     
             df_equipe_agg['Responsavel'] = df_equipe_agg['Responsavel'].apply(short_name)
+            mask_aprov = (df_equipe_agg['Is_Aprovada'] == True) if 'Is_Aprovada' in df_equipe_agg.columns else pd.Series(True, index=df_equipe_agg.index)
+            df_equipe_agg['Aprovada_Atrasada'] = mask_aprov & (df_equipe_agg['Status_Prazo'] == 'Atrasada')
+            df_equipe_agg['Aprovada_Urgencia'] = mask_aprov & (df_equipe_agg['Status_Prazo'] == 'Urgência')
+            
             df_equipe_agg = df_equipe_agg.groupby('Responsavel').agg(
                 Total=('Status_Prazo', 'count'),
                 Em_Elaboracao=('Is_Elaboracao', 'sum'),
-                Atrasadas=('Status_Prazo', lambda x: x.isin(['Atrasada']).sum()),
-                Urgencia=('Status_Prazo', lambda x: x.isin(['Urgência']).sum()),
+                Atrasadas=('Aprovada_Atrasada', 'sum'),
+                Urgencia=('Aprovada_Urgencia', 'sum'),
                 Alertas=('Status_Prazo', lambda x: (x == 'Alerta de Prazo').sum())
             ).reset_index()
     
