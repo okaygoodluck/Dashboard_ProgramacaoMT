@@ -186,6 +186,57 @@ class TestDemandAnalysisFixes(unittest.TestCase):
         finally:
             conn_app.close()
 
+    def test_blindar_titularidade_historica_novas(self):
+        """Testa se a blindagem histórica realinha NOVAs ocorridas antes da transição de região."""
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE historico_transicao_regioes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sigla_regiao TEXT,
+                matricula_anterior TEXT,
+                matricula_nova TEXT,
+                data_transicao TIMESTAMP
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE regioes_responsaveis (
+                sigla_regiao TEXT PRIMARY KEY,
+                matricula_responsavel TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE eventos_diarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                solicitacao TEXT,
+                tipo_evento TEXT,
+                regiao TEXT,
+                matricula_responsavel TEXT,
+                data_evento TIMESTAMP
+            )
+        """)
+        # Transição: Região SL passou de c059565 para e248824 em 2026-10-24 10:00:00
+        cur.execute("INSERT INTO historico_transicao_regioes (sigla_regiao, matricula_anterior, matricula_nova, data_transicao) VALUES ('SL', 'c059565', 'e248824', '2026-10-24 10:00:00')")
+        cur.execute("INSERT INTO regioes_responsaveis VALUES ('SL', 'e248824')")
+        
+        # Evento 1: ocorrido em 20/10 (anterior à transição) mas erroneamente marcado com e248824
+        cur.execute("INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel, data_evento) VALUES ('1001', 'NOVA', 'SL', 'e248824', '2026-10-20 08:30:00')")
+        # Evento 2: ocorrido em 25/10 (posterior à transição) legitimamente com e248824
+        cur.execute("INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel, data_evento) VALUES ('1002', 'NOVA', 'SL', 'e248824', '2026-10-25 08:30:00')")
+        conn.commit()
+
+        corrigidos = db_manager.blindar_titularidade_historica_novas(cur)
+        conn.commit()
+
+        self.assertEqual(corrigidos, 1)
+
+        cur.execute("SELECT solicitacao, matricula_responsavel FROM eventos_diarios ORDER BY solicitacao")
+        rows = dict(cur.fetchall())
+        self.assertEqual(rows['1001'], 'c059565')
+        self.assertEqual(rows['1002'], 'e248824')
+        conn.close()
+
 if __name__ == '__main__':
     unittest.main()
 

@@ -1399,6 +1399,66 @@ def atribuir_regioes_massa(matricula_responsavel, lista_siglas):
     finally:
         conn.close()
 
+def blindar_titularidade_historica_novas(cursor):
+    """
+    Blindagem de integridade: Garante que todo evento 'NOVA' pertença exclusivamente
+    ao titular regional legítimo no exato instante em que o evento ocorreu,
+    respeitando a linha do tempo de 'historico_transicao_regioes'.
+    """
+    try:
+        cursor.execute("""
+            SELECT sigla_regiao, matricula_anterior, matricula_nova, data_transicao
+            FROM historico_transicao_regioes
+            ORDER BY sigla_regiao, data_transicao ASC
+        """)
+        trans_rows = cursor.fetchall()
+        trans_by_reg = {}
+        for t in trans_rows:
+            reg = str(t[0]).strip().upper()[:2]
+            trans_by_reg.setdefault(reg, []).append({'ant': t[1], 'nova': t[2], 'dt': str(t[3])})
+
+        cursor.execute("SELECT sigla_regiao, matricula_responsavel FROM regioes_responsaveis")
+        reg_atuais = {str(r[0]).strip().upper()[:2]: r[1] for r in cursor.fetchall()}
+
+        cursor.execute("""
+            SELECT id, regiao, data_evento, matricula_responsavel
+            FROM eventos_diarios
+            WHERE tipo_evento = 'NOVA'
+        """)
+        all_novas = cursor.fetchall()
+
+        updates = []
+        for ev_id, ev_reg, ev_dt, ev_mat in all_novas:
+            reg_clean = str(ev_reg).strip().upper()[:2] if ev_reg else ""
+            if not reg_clean:
+                continue
+            titular = None
+            if reg_clean in trans_by_reg:
+                lista = trans_by_reg[reg_clean]
+                dt_str = str(ev_dt)
+                if dt_str < lista[0]['dt']:
+                    titular = lista[0]['ant']
+                else:
+                    titular = lista[0]['nova']
+                    for t in lista:
+                        if dt_str >= t['dt']:
+                            titular = t['nova']
+                        else:
+                            break
+            if not titular:
+                titular = reg_atuais.get(reg_clean)
+
+            if titular and titular != ev_mat and titular not in ('Não Atribuído', 'SEM_RESPONSAVEL', ''):
+                updates.append((titular, ev_id))
+
+        if updates:
+            cursor.executemany("UPDATE eventos_diarios SET matricula_responsavel = ? WHERE id = ?", updates)
+            return len(updates)
+        return 0
+    except Exception as e:
+        print(f"[BLINDAGEM HISTÓRICA] Erro ao blindar titularidade de NOVAs: {e}")
+        return 0
+
 def deduplicar_historico_eventos():
     """
     Remove duplicatas verdadeiras na tabela eventos_diarios, mantendo apenas 
@@ -1434,57 +1494,14 @@ def deduplicar_historico_eventos():
         """)
         removidos_novas = cursor.rowcount
 
-        # Reatribuição cronológica de NOVAs órfãs ou de técnicos volantes sem região (ex: Alexandre c060795)
-        # Respeita o histórico de handover de historico_transicao_regioes para não sobrecarregar titulares atuais
-        cursor.execute("""
-            SELECT id, regiao, data_evento
-            FROM eventos_diarios
-            WHERE tipo_evento = 'NOVA'
-            AND (matricula_responsavel = 'c060795' OR matricula_responsavel NOT IN (SELECT matricula FROM usuarios))
-        """)
-        orfaos = cursor.fetchall()
-        corrigidos_titulares = 0
-        if orfaos:
-            cursor.execute("""
-                SELECT sigla_regiao, matricula_anterior, matricula_nova, data_transicao
-                FROM historico_transicao_regioes
-                ORDER BY sigla_regiao, data_transicao ASC
-            """)
-            trans_rows = cursor.fetchall()
-            trans_by_reg = {}
-            for t in trans_rows:
-                r_sigla = str(t[0]).strip().upper()[:2]
-                trans_by_reg.setdefault(r_sigla, []).append({'ant': t[1], 'nova': t[2], 'dt': t[3]})
-
-            cursor.execute("SELECT sigla_regiao, matricula_responsavel FROM regioes_responsaveis")
-            reg_atuais = {str(r[0]).strip().upper()[:2]: r[1] for r in cursor.fetchall()}
-
-            updates_orfaos = []
-            for ev_id, ev_reg, ev_dt in orfaos:
-                reg_clean = str(ev_reg).strip().upper()[:2] if ev_reg else ""
-                titular = None
-                if reg_clean in trans_by_reg:
-                    lista = trans_by_reg[reg_clean]
-                    if str(ev_dt) < lista[0]['dt']:
-                        titular = lista[0]['ant']
-                    else:
-                        titular = lista[0]['nova']
-                        for t in lista:
-                            if str(ev_dt) >= t['dt']:
-                                titular = t['nova']
-                            else:
-                                break
-                if not titular:
-                    titular = reg_atuais.get(reg_clean, 'Não Atribuído')
-                updates_orfaos.append((titular, ev_id))
-
-            if updates_orfaos:
-                cursor.executemany("UPDATE eventos_diarios SET matricula_responsavel = ? WHERE id = ?", updates_orfaos)
-                corrigidos_titulares = len(updates_orfaos)
+        # Blindagem de integridade: Garante que todo evento 'NOVA' pertença exclusivamente
+        # ao titular regional legítimo no exato instante em que o evento ocorreu,
+        # respeitando a linha do tempo de 'historico_transicao_regioes'.
+        corrigidos_titulares = blindar_titularidade_historica_novas(cursor)
 
         conn.commit()
         if (removidos + removidos_novas + corrigidos_titulares) > 0:
-            print(f"[DB CLEANUP] {removidos} duplicatas diárias, {removidos_novas} duplicatas históricas de NOVA e {corrigidos_titulares} NOVAs reatribuídas a titulares.")
+            print(f"[DB CLEANUP] {removidos} duplicatas diárias, {removidos_novas} duplicatas históricas de NOVA e {corrigidos_titulares} NOVAs realinhadas a titulares cronológicos.")
         return removidos + removidos_novas
     except Exception as e:
         print(f"[DB CLEANUP] Erro ao deduplicar histórico de eventos: {e}")
