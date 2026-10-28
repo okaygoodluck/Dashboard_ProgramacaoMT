@@ -1434,17 +1434,53 @@ def deduplicar_historico_eventos():
         """)
         removidos_novas = cursor.rowcount
 
-        # Garante que NOVAs pertençam exclusivamente ao titular oficial cadastrado da região
+        # Reatribuição cronológica de NOVAs órfãs ou de técnicos volantes sem região (ex: Alexandre c060795)
+        # Respeita o histórico de handover de historico_transicao_regioes para não sobrecarregar titulares atuais
         cursor.execute("""
-            UPDATE eventos_diarios
-            SET matricula_responsavel = COALESCE(
-                (SELECT matricula_responsavel FROM regioes_responsaveis WHERE sigla_regiao = eventos_diarios.regiao),
-                'Não Atribuído'
-            )
+            SELECT id, regiao, data_evento
+            FROM eventos_diarios
             WHERE tipo_evento = 'NOVA'
-            AND matricula_responsavel NOT IN (SELECT DISTINCT matricula_responsavel FROM regioes_responsaveis)
+            AND (matricula_responsavel = 'c060795' OR matricula_responsavel NOT IN (SELECT matricula FROM usuarios))
         """)
-        corrigidos_titulares = cursor.rowcount
+        orfaos = cursor.fetchall()
+        corrigidos_titulares = 0
+        if orfaos:
+            cursor.execute("""
+                SELECT sigla_regiao, matricula_anterior, matricula_nova, data_transicao
+                FROM historico_transicao_regioes
+                ORDER BY sigla_regiao, data_transicao ASC
+            """)
+            trans_rows = cursor.fetchall()
+            trans_by_reg = {}
+            for t in trans_rows:
+                r_sigla = str(t[0]).strip().upper()[:2]
+                trans_by_reg.setdefault(r_sigla, []).append({'ant': t[1], 'nova': t[2], 'dt': t[3]})
+
+            cursor.execute("SELECT sigla_regiao, matricula_responsavel FROM regioes_responsaveis")
+            reg_atuais = {str(r[0]).strip().upper()[:2]: r[1] for r in cursor.fetchall()}
+
+            updates_orfaos = []
+            for ev_id, ev_reg, ev_dt in orfaos:
+                reg_clean = str(ev_reg).strip().upper()[:2] if ev_reg else ""
+                titular = None
+                if reg_clean in trans_by_reg:
+                    lista = trans_by_reg[reg_clean]
+                    if str(ev_dt) < lista[0]['dt']:
+                        titular = lista[0]['ant']
+                    else:
+                        titular = lista[0]['nova']
+                        for t in lista:
+                            if str(ev_dt) >= t['dt']:
+                                titular = t['nova']
+                            else:
+                                break
+                if not titular:
+                    titular = reg_atuais.get(reg_clean, 'Não Atribuído')
+                updates_orfaos.append((titular, ev_id))
+
+            if updates_orfaos:
+                cursor.executemany("UPDATE eventos_diarios SET matricula_responsavel = ? WHERE id = ?", updates_orfaos)
+                corrigidos_titulares = len(updates_orfaos)
 
         conn.commit()
         if (removidos + removidos_novas + corrigidos_titulares) > 0:
