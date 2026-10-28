@@ -2869,7 +2869,7 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
                 df_ev['dt_saida_str'] = pd.to_datetime(df_ev['data_ref']).dt.strftime('%Y-%m-%d')
                 if '+2' in serie_lower or '2 dias' in serie_lower:
                     df_ev = df_ev[df_ev['dt_saida_str'] < dt_ontem_util]
-                elif 'hoje e ontem' in serie_lower:
+                elif 'hoje e ontem' in serie_lower or 'hoje ontem' in serie_lower:
                     df_ev = df_ev[df_ev['dt_saida_str'] >= dt_ontem_util]
                 df_ev = df_ev.drop(columns=['dt_saida_str'], errors='ignore')
 
@@ -2892,7 +2892,7 @@ def get_detalhe_drilldown_performance(resp_nome, data_str, nome_serie):
                 WHERE e.matricula_responsavel = ? AND e.tipo_evento = 'TRATADA' AND date(e.data_evento) = ?
             """, conn_app, params=[mat, dt_iso])
             
-        elif 'hoje e ontem' in serie_lower or 'iniciadas' in serie_lower or 'do dia' in serie_lower:
+        elif 'hoje e ontem' in serie_lower or 'hoje ontem' in serie_lower or 'iniciadas' in serie_lower or 'do dia' in serie_lower:
             dt_ontem_util = obter_dia_util_anterior(dt_iso)
             df_ev = pd.read_sql("""
                 SELECT solicitacao, regiao, data_evento as data_ref

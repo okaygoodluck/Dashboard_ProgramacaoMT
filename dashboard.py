@@ -1491,6 +1491,7 @@ if df is not None:
                             import plotly.graph_objects as go
                             fig_d1 = go.Figure()
                             
+                            # 1. Aprovadas no dia
                             fig_d1.add_trace(go.Bar(
                                 x=df_perf['Data_Exibicao'], 
                                 y=df_perf['Novas'], 
@@ -1499,14 +1500,7 @@ if df is not None:
                                 text=df_perf['Novas'],
                                 textposition='outside'
                             ))
-                            fig_d1.add_trace(go.Bar(
-                                x=df_perf['Data_Exibicao'], 
-                                y=df_perf['Pendentes_Iniciadas_Dia'], 
-                                name='Em elaboração (Hoje e Ontem)',
-                                marker_color='#eab308',
-                                text=df_perf['Pendentes_Iniciadas_Dia'],
-                                textposition='outside'
-                            ))
+                            # 2. Em elaboração (+2 dias)
                             fig_d1.add_trace(go.Bar(
                                 x=df_perf['Data_Exibicao'], 
                                 y=df_perf['Pendentes_Dias_Anteriores'], 
@@ -1515,52 +1509,65 @@ if df is not None:
                                 text=df_perf['Pendentes_Dias_Anteriores'],
                                 textposition='outside'
                             ))
+                            # 3. Em elaboração (Hoje e ontem)
+                            fig_d1.add_trace(go.Bar(
+                                x=df_perf['Data_Exibicao'], 
+                                y=df_perf['Pendentes_Iniciadas_Dia'], 
+                                name='Em elaboração (Hoje e ontem)',
+                                marker_color='#eab308',
+                                text=df_perf['Pendentes_Iniciadas_Dia'],
+                                textposition='outside'
+                            ))
                             tem_dados_marco_zero = any(df_perf['Data'] >= '2026-10-26')
                             
                             if tem_dados_marco_zero:
                                 df_perf['Condis_Ou_Legado'] = df_perf.apply(
                                     lambda r: r['Tratadas'] if str(r['Data']) < '2026-10-26' else r['Enviadas_Condis'], axis=1
                                 )
-                                fig_d1.add_trace(go.Bar(
-                                    x=df_perf['Data_Exibicao'], 
-                                    y=df_perf['Condis_Ou_Legado'], 
-                                    name='Enviadas ao CONDIS',
-                                    marker_color='#10b981',
-                                    text=df_perf['Condis_Ou_Legado'],
-                                    textposition='outside'
-                                ))
-                                fig_d1.add_trace(go.Bar(
-                                    x=df_perf['Data_Exibicao'], 
-                                    y=df_perf['Elaboradas_Hoje_Ontem'], 
-                                    name='Elaborada/Em análise (Hoje e Ontem)',
-                                    marker_color='#0d9488',
-                                    text=df_perf['Elaboradas_Hoje_Ontem'],
-                                    textposition='outside'
-                                ))
+                                # 4. Elaboradas/Em analise (+2 dias)
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
                                     y=df_perf['Elaboradas_Mais_2_Dias'], 
-                                    name='Elaborada/Em análise (+2 dias)',
+                                    name='Elaboradas/Em analise (+2 dias)',
                                     marker_color='#1e293b',
                                     text=df_perf['Elaboradas_Mais_2_Dias'],
                                     textposition='outside'
                                 ))
+                                # 5. Elaboradas/Em analise (Hoje e ontem)
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf['Elaboradas_Hoje_Ontem'], 
+                                    name='Elaboradas/Em analise (Hoje e ontem)',
+                                    marker_color='rgb(255, 128, 64)',
+                                    text=df_perf['Elaboradas_Hoje_Ontem'],
+                                    textposition='outside'
+                                ))
+                                # 6. Enviadas ao Condis
+                                fig_d1.add_trace(go.Bar(
+                                    x=df_perf['Data_Exibicao'], 
+                                    y=df_perf['Condis_Ou_Legado'], 
+                                    name='Enviadas ao Condis',
+                                    marker_color='#10b981',
+                                    text=df_perf['Condis_Ou_Legado'],
+                                    textposition='outside'
+                                ))
+                                # 7. Reprovadas/Canceladas
                                 fig_d1.add_trace(go.Bar(
                                     x=df_perf['Data_Exibicao'], 
                                     y=df_perf['Reprovadas'], 
-                                    name='Reprovadas / Canceladas',
+                                    name='Reprovadas/Canceladas',
                                     marker_color='#f97316',
                                     text=df_perf['Reprovadas'],
                                     textposition='outside'
                                 ))
                                 nomes_series = [
                                     'Aprovadas no dia', 
-                                    'Em elaboração (Hoje e Ontem)', 
                                     'Em elaboração (+2 dias)', 
-                                    'Enviadas ao CONDIS', 
-                                    'Elaborada/Em análise (Hoje e Ontem)', 
-                                    'Elaborada/Em análise (+2 dias)', 
-                                    'Reprovadas / Canceladas'
+                                    'Em elaboração (Hoje e ontem)', 
+                                    'Elaboradas/Em analise (+2 dias)', 
+                                    'Elaboradas/Em analise (Hoje e ontem)', 
+                                    'Enviadas ao Condis', 
+                                    'Reprovadas/Canceladas'
                                 ]
                             else:
                                 fig_d1.add_trace(go.Bar(
@@ -1571,7 +1578,12 @@ if df is not None:
                                     text=df_perf['Tratadas'],
                                     textposition='outside'
                                 ))
-                                nomes_series = ['Aprovadas no dia', 'Em elaboração (Hoje e Ontem)', 'Em elaboração (+2 dias)', 'Tratadas/Reprovadas']
+                                nomes_series = [
+                                    'Aprovadas no dia', 
+                                    'Em elaboração (+2 dias)', 
+                                    'Em elaboração (Hoje e ontem)', 
+                                    'Tratadas/Reprovadas'
+                                ]
                                                         
                             fig_d1.update_layout(
                                 xaxis_title="Data",
