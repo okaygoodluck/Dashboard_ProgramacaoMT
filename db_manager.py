@@ -791,7 +791,12 @@ def atualizar_email_decp_bd(map_email):
         col_sol = next((c for c in cols if 'solicita' in c.lower() and 'status' not in c.lower()), None)
         if col_sol:
             for solic, tem_email in map_email.items():
-                cursor.execute(f"UPDATE demanda_atual SET Tem_Email_DECP = ? WHERE CAST({col_sol} AS TEXT) = ?", (1 if tem_email else 0, str(solic)))
+                s = str(solic).strip()
+                s_trim = s.lstrip('0')
+                cursor.execute(
+                    f"UPDATE demanda_atual SET Tem_Email_DECP = ? WHERE CAST({col_sol} AS TEXT) = ? OR CAST({col_sol} AS TEXT) = ?",
+                    (1 if tem_email else 0, s, s_trim)
+                )
         conn.commit()
     except Exception as e:
         print(f"[DB] Erro ao atualizar status de email DECP: {e}")

@@ -535,6 +535,34 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual([d['solicitacao'] for d in hoje_e_ontem], ['S1', 'S2'])
         self.assertEqual([d['solicitacao'] for d in mais_2_dias], ['S3', 'S4'])
 
+    def test_email_autorizacao_todas_solicitacoes_e_conjunto_restrito(self):
+        from views.tab_detalhes import preparar_dataframe_detalhes
+
+        df_input = pd.DataFrame([
+            # 1. Solicitacao normal (CHI baixo, sem restricao) com e-mail DECP -> DECP
+            {'Solicitacao': '9001', 'CHI': 100, 'Urgencia': 'NAO', 'Tem_Email_DECP': True, 'Tem_Email': False, 'Alimentador': 'ALIM_LIVRE', 'Ref_Regiao': 'BH'},
+            # 2. Solicitacao normal sem e-mail DECP -> — (nao deve ser marcada como pendente indevidamente)
+            {'Solicitacao': '9002', 'CHI': 100, 'Urgencia': 'NAO', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'ALIM_LIVRE', 'Ref_Regiao': 'BH'},
+            # 3. Solicitacao com CHI >= 1500 sem e-mail -> Pendente
+            {'Solicitacao': '9003', 'CHI': 1600, 'Urgencia': 'NAO', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'ALIM_LIVRE', 'Ref_Regiao': 'BH'},
+            # 4. Solicitacao com CHI >= 500 em conjunto restrito sem e-mail -> Pendente
+            {'Solicitacao': '9004', 'CHI': 600, 'Urgencia': 'NAO', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'LAD 005', 'Ref_Regiao': 'JF - JUIZ DE FORA'},
+            # 5. Solicitacao com CHI >= 500 em conjunto restrito COM e-mail -> DECP
+            {'Solicitacao': '9005', 'CHI': 600, 'Urgencia': 'NAO', 'Tem_Email_DECP': True, 'Tem_Email': False, 'Alimentador': 'LAD 005', 'Ref_Regiao': 'JF - JUIZ DE FORA'},
+            # 6. Solicitacao Urgente sem e-mail -> Pendente
+            {'Solicitacao': '9006', 'CHI': 100, 'Urgencia': 'SIM', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'ALIM_LIVRE', 'Ref_Regiao': 'BH'},
+        ])
+
+        df_view, _, _, _ = preparar_dataframe_detalhes(df_input)
+        
+        res = dict(zip(df_view['Solicitacao'].astype(str), df_view['E-mail']))
+        self.assertEqual(res['9001'], 'DECP')
+        self.assertEqual(res['9002'], '—')
+        self.assertEqual(res['9003'], 'Pendente')
+        self.assertEqual(res['9004'], 'Pendente')
+        self.assertEqual(res['9005'], 'DECP')
+        self.assertEqual(res['9006'], 'Pendente')
+
 if __name__ == '__main__':
     unittest.main()
 

@@ -826,27 +826,25 @@ def extrair_dados():
                     print(f"\n[AVISO] Erro na sincronia de e-mails urgentes: {e_email}")
                     df['Tem_Email'] = False
 
-                # --- 6.1 SINCRONIA DE E-MAIL GESTÃO DECP (CHI >= 1500) ---
+                # --- 6.1 SINCRONIA DE E-MAIL GESTÃO DECP (100% DA BASE VIA INBOX HARVESTING) ---
                 try:
                     col_solic = next((c for c in df.columns if 'solicita' in c.lower()), None)
-                    ids_decp = []
-                    if 'CHI' in df.columns and col_solic:
-                        mask_decp = pd.to_numeric(df['CHI'], errors='coerce').fillna(0) >= 1500
-                        ids_decp = df[mask_decp][col_solic].dropna().unique().tolist()
+                    path_script = os.path.join(os.path.dirname(__file__), "scripts", "sync_emails.ps1")
 
-                    if ids_decp:
-                        print(f"\n[EMAIL DECP] Sincronizando e-mails para {len(ids_decp)} protocolos com CHI >= 1500...")
-                        ids_str_decp = ",".join([str(i) for i in ids_decp])
-                        path_script = os.path.join(os.path.dirname(__file__), "scripts", "sync_emails.ps1")
-
-                        cmd_decp = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, ids_str_decp, "SHM-gestaodecp@cemig.com.br"]
+                    if col_solic and os.path.exists(path_script):
+                        print(f"\n[EMAIL DECP] Sincronizando caixa Gestão DECP para toda a base ({len(df)} solicitações)...")
+                        cmd_decp = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, "ALL", "SHM-gestaodecp@cemig.com.br"]
                         try:
                             result_decp = subprocess.run(cmd_decp, capture_output=True, text=True, encoding='utf-8', timeout=60)
-                            if result_decp.returncode == 0:
+                            if result_decp.returncode == 0 and result_decp.stdout.strip():
                                 try:
                                     map_email_decp = json.loads(result_decp.stdout)
-                                    df['Tem_Email_DECP'] = df[col_solic].astype(str).map(lambda x: map_email_decp.get(x, False))
-                                    print(f"    -> Sincronização DECP concluída. {df['Tem_Email_DECP'].sum()} e-mails confirmados.")
+                                    def _has_email_decp(val):
+                                        if pd.isna(val): return False
+                                        s = str(val).strip()
+                                        return bool(map_email_decp.get(s, False) or map_email_decp.get(s.lstrip('0'), False))
+                                    df['Tem_Email_DECP'] = df[col_solic].apply(_has_email_decp)
+                                    print(f"    -> Sincronização DECP concluída. {df['Tem_Email_DECP'].sum()} e-mails confirmados na base ativa.")
                                 except Exception as e_json_decp:
                                     print(f"    -> [ERRO] Falha ao processar JSON do e-mail DECP: {e_json_decp}")
                                     df['Tem_Email_DECP'] = False
@@ -857,7 +855,7 @@ def extrair_dados():
                             print("    -> [ALERTA] Timeout: O Outlook demorou mais de 60s para responder para DECP.")
                             df['Tem_Email_DECP'] = False
                     else:
-                        print("\n[EMAIL DECP] Nenhuma solicitação com CHI >= 1500 detectada para sincronização.")
+                        print("\n[EMAIL DECP] Coluna de solicitação ou script de sincronia não localizados.")
                         df['Tem_Email_DECP'] = False
                 except Exception as e_email_decp:
                     print(f"\n[AVISO] Erro na sincronia de e-mails DECP: {e_email_decp}")

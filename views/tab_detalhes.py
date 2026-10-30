@@ -24,10 +24,9 @@ def render_tab_detalhes(df_filtered, col_situacao):
         btn_sync = st.button("🔄 Sincronizar E-mails", key="btn_sync_emails", use_container_width=True, help="Consulta no Outlook as caixas DECP (CHI ≥ 1500) e Urgência (Fora do Prazo)")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Disparo da Sincronização Manual sob Demanda (DECP + Urgência)
+    # Disparo da Sincronização Manual sob Demanda (DECP 100% via Inbox Harvesting + Urgência)
     if btn_sync:
         col_solic_busca = next((c for c in df_filtered.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
-        col_chi_busca = next((c for c in df_filtered.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), None)
         col_urg_busca = next((c for c in df_filtered.columns if 'urg' in c.lower()), None)
 
         def is_urg_busca_fn(val):
@@ -36,72 +35,62 @@ def render_tab_detalhes(df_filtered, col_situacao):
             if s in ['SEM', 'NÃO', 'NAO', 'N', 'FALSE', '0', '']: return False
             return s in ['SIM', 'S', 'TRUE', '1'] or 'SIM' in s or s.startswith('S')
 
-        solics_decp = []
-        if col_solic_busca and col_chi_busca:
-            mask_decp = pd.to_numeric(df_filtered[col_chi_busca], errors='coerce').fillna(0) >= 1500
-            solics_decp = df_filtered[mask_decp][col_solic_busca].dropna().unique().tolist()
-
         solics_urg = []
         if col_solic_busca and col_urg_busca:
             mask_urg = df_filtered[col_urg_busca].apply(is_urg_busca_fn)
             solics_urg = df_filtered[mask_urg][col_solic_busca].dropna().unique().tolist()
 
-        if not solics_decp and not solics_urg:
-            st.info("Nenhuma solicitação com CHI ≥ 1500 ou Urgência encontrada para sincronizar.")
-        else:
-            path_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "sync_emails.ps1")
-            mensagens_sucesso = []
-            with st.spinner("Consultando caixas de e-mail no Outlook..."):
-                # 1. Sincronização DECP (CHI >= 1500)
-                if solics_decp:
-                    ids_str_decp = ",".join([str(s) for s in solics_decp])
-                    cmd_decp = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, ids_str_decp, "SHM-gestaodecp@cemig.com.br"]
+        path_script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scripts", "sync_emails.ps1")
+        mensagens_sucesso = []
+        with st.spinner("Consultando caixas de e-mail no Outlook..."):
+            # 1. Sincronização DECP (100% da base via ALL)
+            cmd_decp = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, "ALL", "SHM-gestaodecp@cemig.com.br"]
+            try:
+                res_decp = subprocess.run(cmd_decp, capture_output=True, text=True, encoding='utf-8', timeout=60)
+                if res_decp.returncode == 0 and res_decp.stdout.strip():
+                    map_res_decp = json.loads(res_decp.stdout)
+                    if 'map_email_decp' not in st.session_state:
+                        st.session_state.map_email_decp = {}
+                    st.session_state.map_email_decp.update(map_res_decp)
                     try:
-                        res_decp = subprocess.run(cmd_decp, capture_output=True, text=True, encoding='utf-8', timeout=60)
-                        if res_decp.returncode == 0:
-                            map_res_decp = json.loads(res_decp.stdout)
-                            if 'map_email_decp' not in st.session_state:
-                                st.session_state.map_email_decp = {}
-                            st.session_state.map_email_decp.update(map_res_decp)
-                            try:
-                                db_manager.atualizar_email_decp_bd(map_res_decp)
-                            except Exception as e_db:
-                                print(f"[DB] Aviso ao persistir sync DECP: {e_db}")
-                            conf_decp = sum(1 for v in map_res_decp.values() if v)
-                            mensagens_sucesso.append(f"DECP: {conf_decp}/{len(map_res_decp)}")
-                    except Exception as e:
-                        print(f"[Outlook DECP] Erro: {e}")
+                        db_manager.atualizar_email_decp_bd(map_res_decp)
+                    except Exception as e_db:
+                        print(f"[DB] Aviso ao persistir sync DECP: {e_db}")
+                    conf_decp = sum(1 for v in map_res_decp.values() if v)
+                    mensagens_sucesso.append(f"DECP: {conf_decp} e-mails na caixa")
+            except Exception as e:
+                print(f"[Outlook DECP] Erro: {e}")
 
-                # 2. Sincronização Urgência (Fora do Prazo)
-                if solics_urg:
-                    ids_str_urg = ",".join([str(s) for s in solics_urg])
-                    cmd_urg = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, ids_str_urg, "SHM-man-urgencia@cemig.com.br"]
-                    try:
-                        res_urg = subprocess.run(cmd_urg, capture_output=True, text=True, encoding='utf-8', timeout=60)
-                        if res_urg.returncode == 0:
-                            map_res_urg = json.loads(res_urg.stdout)
-                            if 'map_email_urgencia' not in st.session_state:
-                                st.session_state.map_email_urgencia = {}
-                            st.session_state.map_email_urgencia.update(map_res_urg)
-                            try:
-                                db_manager.atualizar_email_urgencia_bd(map_res_urg)
-                            except Exception as e_db:
-                                print(f"[DB] Aviso ao persistir sync Urgência: {e_db}")
-                            conf_urg = sum(1 for v in map_res_urg.values() if v)
-                            mensagens_sucesso.append(f"Urgência: {conf_urg}/{len(map_res_urg)}")
-                    except Exception as e:
-                        print(f"[Outlook Urgência] Erro: {e}")
-
+            # 2. Sincronização Urgência (Fora do Prazo)
+            if solics_urg:
+                ids_str_urg = ",".join([str(s) for s in solics_urg])
+                cmd_urg = ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", path_script, ids_str_urg, "SHM-man-urgencia@cemig.com.br"]
                 try:
-                    db_manager.carregar_dados_recentes.clear()
-                except Exception:
-                    pass
+                    res_urg = subprocess.run(cmd_urg, capture_output=True, text=True, encoding='utf-8', timeout=60)
+                    if res_urg.returncode == 0 and res_urg.stdout.strip():
+                        map_res_urg = json.loads(res_urg.stdout)
+                        if 'map_email_urgencia' not in st.session_state:
+                            st.session_state.map_email_urgencia = {}
+                        st.session_state.map_email_urgencia.update(map_res_urg)
+                        try:
+                            db_manager.atualizar_email_urgencia_bd(map_res_urg)
+                        except Exception as e_db:
+                            print(f"[DB] Aviso ao persistir sync Urgência: {e_db}")
+                        conf_urg = sum(1 for v in map_res_urg.values() if v)
+                        mensagens_sucesso.append(f"Urgência: {conf_urg}/{len(map_res_urg)}")
+                except Exception as e:
+                    print(f"[Outlook Urgência] Erro: {e}")
 
-                if mensagens_sucesso:
-                    st.success(f"Sincronização concluída! ({' | '.join(mensagens_sucesso)} e-mails confirmados).")
-                    st.rerun()
-                else:
-                    st.warning("Falha ao comunicar com o Outlook. Verifique se o aplicativo está aberto e com acesso às caixas.")
+        try:
+            db_manager.carregar_dados_recentes.clear()
+        except Exception:
+            pass
+
+        if mensagens_sucesso:
+            st.success(f"Sincronização concluída! ({' | '.join(mensagens_sucesso)} e-mails confirmados).")
+            st.rerun()
+        else:
+            st.warning("Falha ao comunicar com o Outlook. Verifique se o aplicativo está aberto e com acesso às caixas.")
 
     df_detalhe_view = df_filtered.copy()
 
@@ -278,38 +267,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
                 email_urg_map[k_clean] = val
                 email_urg_map[k_clean.lstrip('0')] = val
 
-    def is_urgente_val(val):
-        if pd.isna(val): return False
-        s = str(val).strip().upper()
-        if s in ['SEM', 'NÃO', 'NAO', 'N', 'FALSE', '0', '']: return False
-        return s in ['SIM', 'S', 'TRUE', '1'] or 'SIM' in s or s.startswith('S')
-
-    def get_email_autorizacao(row):
-        chi_val = pd.to_numeric(row.get(col_chi_view, 0), errors='coerce')
-        is_chi = pd.notna(chi_val) and chi_val >= 1500
-        urg_val = row.get(col_urg_view, None) if col_urg_view else None
-        is_urg = is_urgente_val(urg_val)
-
-        if not is_chi and not is_urg:
-            return "—"
-
-        solic_raw = str(row.get(col_solic, '')).strip()
-        solic_trim = solic_raw.lstrip('0')
-        tem_decp = email_decp_map.get(solic_raw, False) or email_decp_map.get(solic_trim, False)
-        tem_urg = email_urg_map.get(solic_raw, False) or email_urg_map.get(solic_trim, False)
-
-        if tem_decp and tem_urg:
-            return "DECP + Urgência"
-        elif tem_decp:
-            return "DECP"
-        elif tem_urg:
-            return "Urgência"
-        else:
-            return "Pendente"
-
-    df_view['E-mail'] = df_view.apply(get_email_autorizacao, axis=1)
-
-    # Identificação de Conjuntos Restritos
+    # Identificação de Conjuntos Restritos (avaliado previamente para subsidiar autorização)
     def get_status_conjunto(row):
         if 'Conjunto' in row and str(row['Conjunto']).strip().upper() == 'RESTRITO':
             return 'RESTRITO'
@@ -321,6 +279,38 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
             return "RESTRITO"
         return "—"
     df_view['Conjunto'] = df_view.apply(get_status_conjunto, axis=1)
+
+    def is_urgente_val(val):
+        if pd.isna(val): return False
+        s = str(val).strip().upper()
+        if s in ['SEM', 'NÃO', 'NAO', 'N', 'FALSE', '0', '']: return False
+        return s in ['SIM', 'S', 'TRUE', '1'] or 'SIM' in s or s.startswith('S')
+
+    def get_email_autorizacao(row):
+        chi_val = pd.to_numeric(row.get(col_chi_view, 0), errors='coerce')
+        is_chi = pd.notna(chi_val) and chi_val >= 1500
+        urg_val = row.get(col_urg_view, None) if col_urg_view else None
+        is_urg = is_urgente_val(urg_val)
+        is_restrito = str(row.get('Conjunto', '—')).strip() == 'RESTRITO'
+        is_exige_decp = is_chi or (is_restrito and pd.notna(chi_val) and chi_val >= 500)
+
+        solic_raw = str(row.get(col_solic, '')).strip()
+        solic_trim = solic_raw.lstrip('0')
+        tem_decp = bool(email_decp_map.get(solic_raw, False) or email_decp_map.get(solic_trim, False))
+        tem_urg = bool(email_urg_map.get(solic_raw, False) or email_urg_map.get(solic_trim, False))
+
+        if tem_decp and tem_urg:
+            return "DECP + Urgência"
+        elif tem_decp:
+            return "DECP"
+        elif tem_urg:
+            return "Urgência"
+        elif is_exige_decp or is_urg:
+            return "Pendente"
+        else:
+            return "—"
+
+    df_view['E-mail'] = df_view.apply(get_email_autorizacao, axis=1)
 
     # Remover colunas ocultadas (Limpeza Visual + Flags Internas)
     cols_to_hide = [

@@ -1,18 +1,23 @@
 # scripts/sync_emails.ps1
 # Motor de Sincronização Vanguard - Sincronia de E-mail via Outlook Local
-# Uso: powershell.exe -File sync_emails.ps1 "1620154,1621053,..."
+# Uso: 
+#   powershell.exe -File sync_emails.ps1 "1620154,1621053,..." "SHM-gestaodecp@cemig.com.br"
+#   powershell.exe -File sync_emails.ps1 "ALL" "SHM-gestaodecp@cemig.com.br"
 
 # Configuração de Encoding para evitar problemas com caracteres brasileiros
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$solicitacoes = $args[0] -split "," | ForEach-Object { $_.Trim() }
-$resultado = @{}
+$argSolic = if ($args.Count -ge 1 -and -not [string]::IsNullOrWhiteSpace($args[0])) { $args[0].Trim() } else { "ALL" }
+$isAllMode = ($argSolic -eq "ALL" -or $argSolic -eq "*")
 
-if ($null -eq $solicitacoes -or $solicitacoes.Count -eq 0) {
-    Write-Output "{}"
-    exit
+$solicitacoes = if (-not $isAllMode) {
+    $argSolic -split "," | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+} else {
+    @()
 }
+
+$resultado = @{}
 
 try {
     # 1. Conectar ao Outlook
@@ -29,37 +34,45 @@ try {
         # 6 = olFolderInbox
         $inbox = $namespace.GetSharedDefaultFolder($recipient, 6)
         
-        # Filtrar apenas e-mails dos últimos 7 dias para performance
-        $dataLimite = (Get-Date).AddDays(-7).ToString("dd/MM/yyyy HH:mm")
+        # Filtrar e-mails dos últimos 15 dias para cobrir feriados e fins de semana
+        $dataLimite = (Get-Date).AddDays(-15).ToString("dd/MM/yyyy HH:mm")
         $filter = "[ReceivedTime] >= '$dataLimite'"
         $items = $inbox.Items.Restrict($filter)
         $items.Sort("[ReceivedTime]", $true)
 
-        # Para cada solicitação, verificar se existe e-mail
-        foreach ($solic in $solicitacoes) {
-            if ([string]::IsNullOrWhiteSpace($solic)) { continue }
-            
-            $encontrado = $false
-            # Busca otimizada: Procura o número no Assunto ou no Corpo
-            # Nota: O filter do Outlook ([Subject] like ...) pode ser limitado,
-            # vasculhamos a coleção filtrada por data.
-            foreach ($item in $items) {
-                try {
-                    if ($item.Subject -like "*$solic*" -or $item.Body -like "*$solic*") {
-                        $encontrado = $true
-                        break
-                    }
-                } catch { continue }
+        # Extração em massa via Inbox Harvesting (Lê a caixa apenas uma única vez)
+        $encontrados = @{}
+        $regexProtocolo = [regex]'\b\d{7}\b'
+
+        foreach ($item in $items) {
+            try {
+                $texto = "$($item.Subject) $($item.Body)"
+                $matches = $regexProtocolo.Matches($texto)
+                foreach ($m in $matches) {
+                    $id = [string]$m.Value
+                    $encontrados[$id] = $true
+                }
+            } catch { continue }
+        }
+
+        if ($isAllMode) {
+            $resultado = $encontrados
+        } else {
+            foreach ($solic in $solicitacoes) {
+                $s = [string]$solic
+                $sTrim = [string]$solic.TrimStart('0')
+                $resultado[$s] = ($encontrados.ContainsKey($s) -or $encontrados.ContainsKey($sTrim))
             }
-            $resultado[$solic] = $encontrado
         }
     } else {
-        # Se não resolveu a caixa, marcamos tudo como falso
-        foreach ($solic in $solicitacoes) { $resultado[$solic] = $false }
+        if (-not $isAllMode) {
+            foreach ($solic in $solicitacoes) { $resultado[[string]$solic] = $false }
+        }
     }
 } catch {
-    # Em caso de erro (ex: Outlook fechado), retornamos tudo falso
-    foreach ($solic in $solicitacoes) { $resultado[$solic] = $false }
+    if (-not $isAllMode) {
+        foreach ($solic in $solicitacoes) { $resultado[[string]$solic] = $false }
+    }
 }
 
 # Retorna o resultado em JSON para o Python ler
