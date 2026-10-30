@@ -21,8 +21,11 @@ def render_tab_detalhes(df_filtered, col_situacao):
         st.subheader("📋 Base de Dados Detalhada")
     with col_btn:
         st.markdown("<div style='padding-top: 4px;'>", unsafe_allow_html=True)
-        btn_sync = st.button("🔄 Sincronizar E-mails", key="btn_sync_emails", use_container_width=True, help="Consulta no Outlook as caixas DECP (CHI ≥ 1500) e Urgência (Fora do Prazo)")
+        btn_sync = st.button("🔄 Sincronizar E-mails", key="btn_sync_emails", use_container_width=True, help="Consulta no Outlook as caixas Gestão DECP (toda a base) e Urgência (Fora do Prazo)")
         st.markdown("</div>", unsafe_allow_html=True)
+
+    if 'msg_sync_sucesso' in st.session_state:
+        st.success(f"✅ {st.session_state.pop('msg_sync_sucesso')}")
 
     # Disparo da Sincronização Manual sob Demanda (DECP 100% via Inbox Harvesting + Urgência)
     if btn_sync:
@@ -87,10 +90,10 @@ def render_tab_detalhes(df_filtered, col_situacao):
             pass
 
         if mensagens_sucesso:
-            st.success(f"Sincronização concluída! ({' | '.join(mensagens_sucesso)} e-mails confirmados).")
+            st.session_state['msg_sync_sucesso'] = f"Sincronização concluída! ({' | '.join(mensagens_sucesso)})"
             st.rerun()
         else:
-            st.warning("Falha ao comunicar com o Outlook. Verifique se o aplicativo está aberto e com acesso às caixas.")
+            st.warning("Falha ao comunicar com o Outlook. Verifique se o aplicativo está aberto e com acesso às caixas compartilhadas.")
 
     df_detalhe_view = df_filtered.copy()
 
