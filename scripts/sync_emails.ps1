@@ -47,8 +47,8 @@ try {
         foreach ($item in $items) {
             try {
                 $texto = "$($item.Subject) $($item.Body)"
-                $matches = $regexProtocolo.Matches($texto)
-                foreach ($m in $matches) {
+                $regexMatches = $regexProtocolo.Matches($texto)
+                foreach ($m in $regexMatches) {
                     $id = [string]$m.Value
                     $encontrados[$id] = $true
                 }
