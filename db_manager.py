@@ -705,7 +705,8 @@ def carregar_conjuntos_restritos():
         df_restr['polo_clean'] = df_restr[col_polo_restr].astype(str).str.upper().str.strip().str[:2] if col_polo_restr else ""
 
         if col_restri_restr:
-            df_sub = df_restr[df_restr[col_restri_restr].astype(str).str.upper().str.contains('RESTRIT')]
+            s_restri = df_restr[col_restri_restr].astype(str).str.upper().str.strip()
+            df_sub = df_restr[s_restri.str.contains('RESTRIT') & ~s_restri.str.contains('NÃO|NAO|SEM')]
             if df_sub.empty:
                 df_sub = df_restr
         else:
@@ -721,12 +722,12 @@ def carregar_conjuntos_restritos():
         df_alim['polo_clean'] = df_alim['sigla_clean'].map(map_sigla_to_polo).fillna('')
         df_alim['is_restrito'] = df_alim['sigla_clean'].isin(set_conj_restritos).astype(int)
 
-        # Priorizar correspondência onde o alimentador inicia com a sigla do conjunto
-        # e onde o conjunto seja restrito para não sobrescrever com conjuntos não restritos
+        # Priorizar correspondência onde o alimentador inicia com a sigla do conjunto (titularidade da subestação)
+        # e usar is_restrito apenas como critério de desempate secundário
         df_alim['prefix_match'] = df_alim.apply(
             lambda r: len(r['sigla_clean']) if r['alim_norm'].startswith(r['sigla_clean']) else 0, axis=1
         )
-        df_alim = df_alim.sort_values(by=['is_restrito', 'prefix_match'], ascending=[True, True])
+        df_alim = df_alim.sort_values(by=['prefix_match', 'is_restrito'], ascending=[True, True])
 
         map_alim_to_sigla = {}
         for _, row in df_alim.iterrows():
@@ -759,13 +760,12 @@ def is_alimentador_restrito(alim, polo_ou_regiao=None):
     polo = str(polo_ou_regiao).strip().upper()[:2] if polo_ou_regiao else ""
     variantes = _expandir_variantes_alimentador(alim)
 
-    # 1. Tenta correspondência contextual por (variante, polo)
+    # 1. Tenta correspondência contextual estrita por (variante, polo)
     if polo:
         for var in variantes:
             if (var, polo) in map_alim_to_sigla:
                 sigla = map_alim_to_sigla[(var, polo)]
-                if sigla in set_conj_restritos:
-                    return True
+                return sigla in set_conj_restritos
 
     # 2. Fallback: verifica se alguma variante do alimentador pertence a conjunto restrito global
     for var in variantes:

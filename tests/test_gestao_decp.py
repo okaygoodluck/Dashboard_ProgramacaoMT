@@ -586,6 +586,18 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(res['9005'], 'DECP')
         self.assertEqual(res['9006'], 'Pendente')
 
+    def test_exclusao_nao_restrito_e_prioridade_prefixo(self):
+        """Garante que 'NÃO RESTRITO' não seja classificado como restrito e que o prefixo titular prevaleça."""
+        _, set_conj_restritos, _ = db_manager.carregar_conjuntos_restritos()
+        if set_conj_restritos:
+            # Conjunto SQNU, ULAU, JTAD e PTID são 'NÃO RESTRITO' na planilha atualizada
+            self.assertNotIn('SQNU', set_conj_restritos)
+            self.assertNotIn('JTAD', set_conj_restritos)
+            self.assertNotIn('PTID', set_conj_restritos)
+            self.assertFalse(db_manager.is_alimentador_restrito('JTAD208', 'PA - POUSO ALEGRE'))
+            self.assertFalse(db_manager.is_alimentador_restrito('PTID207', 'PR - PARA DE MINAS'))
+            self.assertTrue(db_manager.is_alimentador_restrito('LAD 005', 'JF - JUIZ DE FORA'))
+
 if __name__ == '__main__':
     unittest.main()
 
