@@ -242,6 +242,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
     col_urg_view = next((c for c in df_view.columns if 'urg' in c.lower()), None)
     col_chi_view = next((c for c in df_view.columns if c.strip().upper() == 'CHI' or c.startswith('CHI')), 'CHI')
     col_alim_view = next((c for c in df_view.columns if 'alim' in c.lower()), None)
+    col_reg_view = next((c for c in df_view.columns if 'regi' in c.lower()), None)
 
     # Carrega mapeamento de conjuntos restritos via db_manager
     map_alim_to_sigla, set_conj_restritos, _ = db_manager.carregar_conjuntos_restritos()
@@ -314,12 +315,11 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
             return 'RESTRITO'
         if not col_alim_view:
             return "—"
-        alim_raw = str(row.get(col_alim_view, '')).replace(' ', '').strip().upper()
-        sigla = map_alim_to_sigla.get(alim_raw)
-        if sigla and sigla in set_conj_restritos:
+        alim_val = row.get(col_alim_view, '')
+        reg_val = row.get(col_reg_view, '') if col_reg_view else None
+        if db_manager.is_alimentador_restrito(alim_val, reg_val):
             return "RESTRITO"
         return "—"
-
     df_view['Conjunto'] = df_view.apply(get_status_conjunto, axis=1)
 
     # Remover colunas ocultadas (Limpeza Visual + Flags Internas)

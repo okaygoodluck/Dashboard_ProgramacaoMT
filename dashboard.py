@@ -900,12 +900,13 @@ if df is not None:
         qtd_chi_critico = 0
 
     col_alim_calc = next((c for c in df_filtered.columns if 'alim' in c.lower()), None)
+    col_reg_calc = next((c for c in df_filtered.columns if 'regi' in c.lower()), None)
     map_alim_sigla, set_conj_restr, _ = db_manager.carregar_conjuntos_restritos()
     if col_alim_calc and set_conj_restr:
         def _is_restr_item(row):
-            alim_clean = str(row.get(col_alim_calc, '')).replace(' ', '').strip().upper()
-            sigla = map_alim_sigla.get(alim_clean)
-            return bool(sigla and sigla in set_conj_restr)
+            alim_val = row.get(col_alim_calc, '')
+            reg_val = row.get(col_reg_calc, '') if col_reg_calc else None
+            return db_manager.is_alimentador_restrito(alim_val, reg_val)
         df_conjunto_restrito = df_filtered[mask_aprovada & df_filtered.apply(_is_restr_item, axis=1)]
         qtd_conjunto_restrito = len(df_conjunto_restrito)
     else:

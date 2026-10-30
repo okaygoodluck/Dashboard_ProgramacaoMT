@@ -237,6 +237,27 @@ class TestDemandAnalysisFixes(unittest.TestCase):
         self.assertEqual(rows['1002'], 'e248824')
         conn.close()
 
+    def test_normalizar_codigo_alimentador(self):
+        """Testa normalizacao canonica de alimentadores prevenindo discrepancia de digitos."""
+        self.assertEqual(db_manager.normalizar_codigo_alimentador('LAD 005'), 'LAD5')
+        self.assertEqual(db_manager.normalizar_codigo_alimentador('LAD 05'), 'LAD5')
+        self.assertEqual(db_manager.normalizar_codigo_alimentador('LAD5'), 'LAD5')
+        self.assertEqual(db_manager.normalizar_codigo_alimentador('SLAD203'), 'SLAD203')
+        self.assertEqual(db_manager.normalizar_codigo_alimentador('BBI 010'), 'BBI10')
+        self.assertEqual(db_manager.normalizar_codigo_alimentador('BBI 002'), 'BBI2')
+        self.assertEqual(db_manager.normalizar_codigo_alimentador(None), '')
+
+    def test_is_alimentador_restrito(self):
+        """Testa verificacao de alimentador em conjunto restrito com resolucao regional."""
+        # LAD 005 na regiao JF pertence ao conjunto SND (Santos Dumont), que e RESTRITO
+        self.assertTrue(db_manager.is_alimentador_restrito('LAD 005', 'JF - JUIZ DE FORA'))
+        self.assertTrue(db_manager.is_alimentador_restrito('LAD 05', 'JF'))
+        self.assertTrue(db_manager.is_alimentador_restrito('LAD005', 'JF'))
+        self.assertTrue(db_manager.is_alimentador_restrito('LAD 005', None))
+        # Alimentador nao restrito
+        self.assertFalse(db_manager.is_alimentador_restrito('SLAD203', 'SL'))
+        self.assertFalse(db_manager.is_alimentador_restrito(None, 'JF'))
+
 if __name__ == '__main__':
     unittest.main()
 

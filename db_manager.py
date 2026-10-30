@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import re
 
 try:
     import streamlit as st
@@ -618,6 +619,38 @@ def carregar_dados_recentes():
     finally:
         conn.close()
 
+def normalizar_codigo_alimentador(alim):
+    """
+    Normaliza o código do alimentador para chave canônica, unificando variações de padding de zeros.
+    Ex: 'LAD 005', 'LAD 05', 'LAD5' -> 'LAD5'
+    Ex: 'SLAD203' -> 'SLAD203'
+    Ex: 'BBI 010' -> 'BBI10'
+    """
+    if not alim or pd.isna(alim):
+        return ""
+    s = str(alim).replace(" ", "").strip().upper()
+    m = re.match(r"^([A-Z]+)0*(\d+)$", s)
+    return f"{m.group(1)}{int(m.group(2))}" if m else s
+
+def _expandir_variantes_alimentador(alim):
+    """Gera todas as representações possíveis de um alimentador para lookups seguros."""
+    if not alim or pd.isna(alim):
+        return set()
+    s = str(alim).replace(" ", "").strip().upper()
+    raw = str(alim).strip().upper()
+    variants = {s, raw}
+    m = re.match(r"^([A-Z]+)0*(\d+)$", s)
+    if m:
+        prefix, num_str = m.groups()
+        num = int(num_str)
+        variants.add(f"{prefix}{num}")
+        variants.add(f"{prefix} {num}")
+        variants.add(f"{prefix}{num:02d}")
+        variants.add(f"{prefix} {num:02d}")
+        variants.add(f"{prefix}{num:03d}")
+        variants.add(f"{prefix} {num:03d}")
+    return variants
+
 @st.cache_data(ttl=600)
 def carregar_conjuntos_restritos():
     """
@@ -659,27 +692,17 @@ def carregar_conjuntos_restritos():
         col_alim = next((c for c in df_alim.columns if 'alimentador' in c.lower()), df_alim.columns[1] if len(df_alim.columns) > 1 else None)
         col_sigla_alim = next((c for c in df_alim.columns if 'sigla' in c.lower() or 'conj' in c.lower()), df_alim.columns[0])
 
-        df_alim['alim_clean'] = df_alim[col_alim].astype(str).str.replace(' ', '').str.upper().str.strip()
-        df_alim['sigla_clean'] = df_alim[col_sigla_alim].astype(str).str.upper().str.strip()
-
-        # Priorizar correspondência onde o alimentador inicia com a sigla do conjunto
-        # (ex: MAGT312 começa com MAGT, evitando que MAGT312 seja associado a URAT ou outras siglas em duplicidade)
-        df_alim['prefix_match'] = df_alim.apply(
-            lambda r: len(r['sigla_clean']) if r['alim_clean'].startswith(r['sigla_clean']) else 0, axis=1
-        )
-        df_alim = df_alim.sort_values(by=['alim_clean', 'prefix_match'], ascending=[True, True])
-        df_alim = df_alim.drop_duplicates(subset=['alim_clean'], keep='last')
-
-        map_alim_to_sigla = dict(zip(df_alim['alim_clean'], df_alim['sigla_clean']))
-
         col_sigla_restr = next((c for c in df_restr.columns if 'sigla' in c.lower()), None)
         col_nome_restr = next((c for c in df_restr.columns if 'conjunto' in c.lower()), None)
         col_restri_restr = next((c for c in df_restr.columns if 'restri' in c.lower()), None)
+        col_polo_restr = next((c for c in df_restr.columns if 'polo' in c.lower()), None)
 
         if col_sigla_restr:
             df_restr['sigla_clean'] = df_restr[col_sigla_restr].astype(str).str.upper().str.strip()
         else:
             df_restr['sigla_clean'] = df_restr.iloc[:, 3].astype(str).str.upper().str.strip()
+
+        df_restr['polo_clean'] = df_restr[col_polo_restr].astype(str).str.upper().str.strip().str[:2] if col_polo_restr else ""
 
         if col_restri_restr:
             df_sub = df_restr[df_restr[col_restri_restr].astype(str).str.upper().str.contains('RESTRIT')]
@@ -690,11 +713,68 @@ def carregar_conjuntos_restritos():
 
         set_conj_restritos = set(df_sub['sigla_clean'].dropna().unique())
         map_sigla_to_nome = dict(zip(df_restr['sigla_clean'], df_restr[col_nome_restr])) if col_nome_restr else {}
+        map_sigla_to_polo = dict(zip(df_restr['sigla_clean'], df_restr['polo_clean'])) if col_polo_restr else {}
+
+        df_alim['alim_raw'] = df_alim[col_alim].astype(str).str.strip().str.upper()
+        df_alim['alim_norm'] = df_alim['alim_raw'].apply(normalizar_codigo_alimentador)
+        df_alim['sigla_clean'] = df_alim[col_sigla_alim].astype(str).str.upper().str.strip()
+        df_alim['polo_clean'] = df_alim['sigla_clean'].map(map_sigla_to_polo).fillna('')
+        df_alim['is_restrito'] = df_alim['sigla_clean'].isin(set_conj_restritos).astype(int)
+
+        # Priorizar correspondência onde o alimentador inicia com a sigla do conjunto
+        # e onde o conjunto seja restrito para não sobrescrever com conjuntos não restritos
+        df_alim['prefix_match'] = df_alim.apply(
+            lambda r: len(r['sigla_clean']) if r['alim_norm'].startswith(r['sigla_clean']) else 0, axis=1
+        )
+        df_alim = df_alim.sort_values(by=['is_restrito', 'prefix_match'], ascending=[True, True])
+
+        map_alim_to_sigla = {}
+        for _, row in df_alim.iterrows():
+            sigla = row['sigla_clean']
+            polo = row['polo_clean']
+            a_raw = row['alim_raw']
+            variantes = _expandir_variantes_alimentador(a_raw)
+            for var in variantes:
+                if polo:
+                    map_alim_to_sigla[(var, polo)] = sigla
+                map_alim_to_sigla[var] = sigla
 
         return map_alim_to_sigla, set_conj_restritos, map_sigla_to_nome
     except Exception as e:
         print(f"[CONJUNTOS RESTRITOS] Erro ao carregar planilhas: {e}")
         return {}, set(), {}
+
+def is_alimentador_restrito(alim, polo_ou_regiao=None):
+    """
+    Verifica se um alimentador pertence a um conjunto restrito.
+    Suporta correspondência por polo/região (ex: 'JF - JUIZ DE FORA' ou 'JF')
+    e unifica variações de dígitos numéricos (ex: 'LAD 005', 'LAD 05', 'LAD5').
+    """
+    if not alim or pd.isna(alim):
+        return False
+    map_alim_to_sigla, set_conj_restritos, _ = carregar_conjuntos_restritos()
+    if not set_conj_restritos or not map_alim_to_sigla:
+        return False
+
+    polo = str(polo_ou_regiao).strip().upper()[:2] if polo_ou_regiao else ""
+    variantes = _expandir_variantes_alimentador(alim)
+
+    # 1. Tenta correspondência contextual por (variante, polo)
+    if polo:
+        for var in variantes:
+            if (var, polo) in map_alim_to_sigla:
+                sigla = map_alim_to_sigla[(var, polo)]
+                if sigla in set_conj_restritos:
+                    return True
+
+    # 2. Fallback: verifica se alguma variante do alimentador pertence a conjunto restrito global
+    for var in variantes:
+        if var in map_alim_to_sigla:
+            sigla = map_alim_to_sigla[var]
+            if sigla in set_conj_restritos:
+                return True
+
+    return False
 
 def atualizar_email_decp_bd(map_email):
     """Atualiza a coluna Tem_Email_DECP na tabela demanda_atual para as solicitações mapeadas."""
