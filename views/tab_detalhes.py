@@ -417,18 +417,33 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
     # Função de estilização para destacar a linha inteira quando CHI >= 1500, Urgência == 'SIM' ou Conjunto == 'RESTRITO'
     def aplicar_destaque_autorizacao(row):
         status_conj = str(row.get('Conjunto', '—')).strip()
-        if status_conj == 'RESTRITO':
-            # Fundo avermelhado/alerta para solicitação em conjunto restrito com CHI >= 500
-            return ['background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'] * len(row)
-
         status_aut = str(row.get('E-mail', '—')).strip()
-        if status_aut in ['DECP', 'Urgência', 'DECP + Urgência']:
+        tem_email = status_aut in ['DECP', 'Urgência', 'DECP + Urgência']
+
+        estilo_vermelho = 'background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'
+        estilo_verde = 'background-color: rgba(16, 185, 129, 0.40); font-weight: 700; color: #ffffff;'
+        estilo_neutro = ''
+
+        cols = row.index if hasattr(row, 'index') else list(row.keys())
+
+        if status_conj == 'RESTRITO':
+            if tem_email:
+                # Linha inteira verde quando possui e-mail, mantendo apenas a célula 'Conjunto' em vermelho
+                return [
+                    estilo_vermelho if col in ['Conjunto', 'Restrito'] else estilo_verde
+                    for col in cols
+                ]
+            else:
+                # Fundo avermelhado para conjunto restrito sem confirmação
+                return [estilo_vermelho] * len(cols)
+
+        if tem_email:
             # Fundo verde para solicitação com e-mail confirmado (ao menos um recebido) com texto branco contrastante
-            return ['background-color: rgba(16, 185, 129, 0.40); font-weight: 700; color: #ffffff;'] * len(row)
+            return [estilo_verde] * len(cols)
         elif status_aut == 'Pendente':
             # Fundo avermelhado/alerta para solicitação aguardando e-mail com texto branco brilhante legível
-            return ['background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'] * len(row)
-        return [''] * len(row)
+            return [estilo_vermelho] * len(cols)
+        return [estilo_neutro] * len(cols)
 
     return df_view, col_config, format_styler, aplicar_destaque_autorizacao
 

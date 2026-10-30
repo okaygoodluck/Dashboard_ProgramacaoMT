@@ -284,21 +284,44 @@ class TestGestaoDECP(unittest.TestCase):
         row4 = {'CHI': 148, 'Alimentador': 'ALIM01'}
         self.assertEqual(get_status_conjunto(row4), 'RESTRITO')
 
-        # Teste 5: Estilização de linha avermelhada para RESTRITO
+        # Teste 5: Estilização condicional híbrida para RESTRITO e E-mail
         def aplicar_destaque_teste(row):
             status_conj = str(row.get('Conjunto', '—')).strip()
-            if status_conj == 'RESTRITO':
-                return 'red'
             status_aut = str(row.get('E-mail Autorização', '—')).strip()
-            if status_aut in ['DECP', 'Urgência']:
-                return 'green'
-            elif status_aut == 'Pendente':
-                return 'red'
-            return 'none'
+            tem_email = status_aut in ['DECP', 'Urgência', 'DECP + Urgência']
 
-        self.assertEqual(aplicar_destaque_teste({'Conjunto': 'RESTRITO', 'E-mail Autorização': 'DECP'}), 'red')
-        self.assertEqual(aplicar_destaque_teste({'Conjunto': '—', 'E-mail Autorização': 'DECP'}), 'green')
-        self.assertEqual(aplicar_destaque_teste({'Conjunto': '—', 'E-mail Autorização': '—'}), 'none')
+            cols = row.index if hasattr(row, 'index') else list(row.keys())
+            if status_conj == 'RESTRITO':
+                if tem_email:
+                    return {col: ('red' if col in ['Conjunto', 'Restrito'] else 'green') for col in cols}
+                return {col: 'red' for col in cols}
+
+            if tem_email:
+                return {col: 'green' for col in cols}
+            elif status_aut == 'Pendente':
+                return {col: 'red' for col in cols}
+            return {col: 'none' for col in cols}
+
+        row_restrito_email = {'Conjunto': 'RESTRITO', 'E-mail Autorização': 'DECP', 'CHI': 600}
+        res_restr_email = aplicar_destaque_teste(row_restrito_email)
+        self.assertEqual(res_restr_email['Conjunto'], 'red')
+        self.assertEqual(res_restr_email['E-mail Autorização'], 'green')
+        self.assertEqual(res_restr_email['CHI'], 'green')
+
+        row_restrito_sem_email = {'Conjunto': 'RESTRITO', 'E-mail Autorização': 'Pendente', 'CHI': 600}
+        res_restr_sem = aplicar_destaque_teste(row_restrito_sem_email)
+        self.assertEqual(res_restr_sem['Conjunto'], 'red')
+        self.assertEqual(res_restr_sem['CHI'], 'red')
+
+        row_normal_email = {'Conjunto': '—', 'E-mail Autorização': 'DECP', 'CHI': 1600}
+        res_norm_email = aplicar_destaque_teste(row_normal_email)
+        self.assertEqual(res_norm_email['Conjunto'], 'green')
+        self.assertEqual(res_norm_email['CHI'], 'green')
+
+        row_normal_sem = {'Conjunto': '—', 'E-mail Autorização': '—', 'CHI': 200}
+        res_norm_sem = aplicar_destaque_teste(row_normal_sem)
+        self.assertEqual(res_norm_sem['Conjunto'], 'none')
+        self.assertEqual(res_norm_sem['CHI'], 'none')
 
     def test_conjunto_restrito_kpi_calculation(self):
         """Verifica a lógica de filtragem e contagem do KPI 'Conjunto Restrito' (alimentador em conjunto restrito)."""
