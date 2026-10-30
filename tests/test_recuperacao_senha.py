@@ -153,6 +153,40 @@ class TestRecuperacaoSenha(unittest.TestCase):
             self.assertEqual(sess_data[2], 'SubGerencial')
             db_manager.remover_sessao(tok)
 
+    def test_validar_desafio_cadastral_e_redefinir_senha(self):
+        """Testa o fluxo de redefinicao direta por desafio cadastral para Home Office."""
+        # 1. Sucesso com matricula e e-mail correspondentes
+        ok, msg = db_manager.validar_desafio_cadastral_e_redefinir_senha(
+            'c999999', 'teste.auto@cemig.com.br', 'SenhaNovaHome123'
+        )
+        self.assertTrue(ok)
+        self.assertIn("sucesso", msg.lower())
+
+        # Verifica se a nova senha funciona no login
+        user_info = db_manager.verificar_login('c999999', 'SenhaNovaHome123')
+        self.assertIsNotNone(user_info)
+
+        # 2. E-mail errado
+        ok, msg = db_manager.validar_desafio_cadastral_e_redefinir_senha(
+            'c999999', 'email.errado@cemig.com.br', 'OutraSenha123'
+        )
+        self.assertFalse(ok)
+        self.assertIn("não confere", msg.lower())
+
+        # 3. Matricula inexistente
+        ok, msg = db_manager.validar_desafio_cadastral_e_redefinir_senha(
+            'c000nonexistent', 'qualquer@cemig.com.br', 'OutraSenha123'
+        )
+        self.assertFalse(ok)
+        self.assertIn("não localizada", msg.lower())
+
+        # 4. Senha curta (< 4 caracteres)
+        ok, msg = db_manager.validar_desafio_cadastral_e_redefinir_senha(
+            'c999999', 'teste.auto@cemig.com.br', '12'
+        )
+        self.assertFalse(ok)
+        self.assertIn("pelo menos 4 caracteres", msg.lower())
+
 if __name__ == '__main__':
     unittest.main()
 

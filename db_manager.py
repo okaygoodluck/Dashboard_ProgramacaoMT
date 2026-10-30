@@ -1139,6 +1139,56 @@ def validar_e_redefinir_senha_recuperacao(matricula, codigo, nova_senha):
     finally:
         conn.close()
 
+def validar_desafio_cadastral_e_redefinir_senha(matricula, email_digitado, nova_senha):
+    """
+    Validação cadastral para técnicos em Home Office ou sem Outlook Desktop:
+    Valida matrícula e confirmação exata do e-mail corporativo cadastrado.
+    Retorna: (sucesso: bool, mensagem: str)
+    """
+    if not matricula or not str(matricula).strip():
+        return False, "Por favor, informe sua matrícula."
+    if not email_digitado or '@' not in str(email_digitado):
+        return False, "Por favor, informe seu e-mail corporativo completo (@cemig.com.br)."
+    if len(str(nova_senha).strip()) < 4:
+        return False, "A nova senha deve possuir pelo menos 4 caracteres."
+
+    mat_clean = str(matricula).strip()
+    email_clean = str(email_digitado).strip().lower()
+
+    conn = get_connection_config_read()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT matricula, nome, email FROM usuarios WHERE matricula = ? COLLATE NOCASE", (mat_clean,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            return False, "Matrícula não localizada no cadastro de usuários."
+
+        mat_db, nome_db, email_db = user_row
+        if not email_db or not str(email_db).strip() or str(email_db).strip().upper() == 'DESLIGADO':
+            return False, "Usuário sem e-mail corporativo ativo cadastrado. Contate o Administrador."
+
+        db_email_clean = str(email_db).strip().lower()
+        if email_clean != db_email_clean:
+            return False, "O e-mail corporativo informado não confere com o cadastro desta matrícula."
+
+        # Atualiza a senha no banco de dados corporativo
+        ok = atualizar_senha(mat_db, nova_senha)
+        if ok:
+            try:
+                conn_w = get_connection_config()
+                conn_w.execute("UPDATE recuperacao_senhas SET usado = 1 WHERE matricula = ? AND usado = 0", (mat_db,))
+                conn_w.commit()
+                conn_w.close()
+            except Exception:
+                pass
+            return True, f"Senha redefinida com sucesso para {nome_db}! Você já pode fazer login."
+        else:
+            return False, "Erro ao gravar a nova senha no banco de dados. Tente novamente."
+    except Exception as e:
+        return False, f"Erro interno ao validar dados cadastrais: {e}"
+    finally:
+        conn.close()
+
 def verificar_se_codigo_recuperacao(matricula, codigo_digitado):
     """Verifica se o valor digitado corresponde a um código de recuperação ativo e válido."""
     if not matricula or not codigo_digitado:
