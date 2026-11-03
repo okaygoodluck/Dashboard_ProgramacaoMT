@@ -1326,14 +1326,18 @@ def get_regioes_disponiveis_data():
 
     return sorted(list(regioes))
 
-def registrar_transicao_regiao(sigla_regiao, matricula_nova, matricula_anterior=None):
+def registrar_transicao_regiao(sigla_regiao, matricula_nova, matricula_anterior=None, conn=None, df_snapshot=None):
     """
     Grava um retrato congelado da região quando ocorre troca de responsabilidade.
     Suporta busca inteligente do responsável anterior (mesmo que desvinculado previamente)
     e registro de assunção inicial a partir de 'Não Atribuído'.
     """
     sigla_clean = str(sigla_regiao).strip().upper()[:2]
-    conn = get_connection_config()
+    should_close = False
+    if conn is None:
+        conn = get_connection_config()
+        should_close = True
+
     try:
         cursor = conn.cursor()
         
@@ -1350,7 +1354,7 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova, matricula_anterior=
                     SELECT matricula_nova, nome_novo 
                     FROM historico_transicao_regioes 
                     WHERE UPPER(sigla_regiao) = ? AND matricula_nova NOT IN ('SEM_RESPONSAVEL', '')
-                    ORDER BY id DESC LIMIT 1
+                    ORDER BY data_transicao DESC, id DESC LIMIT 1
                 """, (sigla_clean,))
                 last_tr = cursor.fetchone()
                 if last_tr and last_tr[0] and str(last_tr[0]).strip() != str(matricula_nova).strip():
@@ -1363,12 +1367,15 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova, matricula_anterior=
             return # Sem alteração real de responsável entre dois técnicos
             
         # Pega nomes dos usuários
-        cursor.execute("SELECT nome FROM usuarios WHERE matricula = ?", (matricula_nova,))
-        res_novo_nome = cursor.fetchone()
-        nome_novo = res_novo_nome[0] if res_novo_nome else matricula_nova
+        if str(matricula_nova).strip() in ("SEM_RESPONSAVEL", ""):
+            nome_novo = "Não Atribuído"
+        else:
+            cursor.execute("SELECT nome FROM usuarios WHERE matricula = ?", (matricula_nova,))
+            res_novo_nome = cursor.fetchone()
+            nome_novo = res_novo_nome[0] if res_novo_nome else matricula_nova
         
         nome_anterior = "Não Atribuído"
-        if matricula_anterior and matricula_anterior != "SEM_RESPONSAVEL":
+        if matricula_anterior and str(matricula_anterior).strip() != "SEM_RESPONSAVEL":
             cursor.execute("SELECT nome FROM usuarios WHERE matricula = ?", (matricula_anterior,))
             res_ant_nome = cursor.fetchone()
             if res_ant_nome:
@@ -1377,7 +1384,7 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova, matricula_anterior=
                 nome_anterior = matricula_anterior
 
         # Calcula passivo atual congelado da região lendo os dados mais recentes
-        df = carregar_dados_recentes()
+        df = df_snapshot if df_snapshot is not None else carregar_dados_recentes()
         total_pendentes = 0
         atrasadas = 0
         urgencias = 0
@@ -1449,12 +1456,14 @@ def registrar_transicao_regiao(sigla_regiao, matricula_nova, matricula_anterior=
         ''', (sigla_clean, matricula_anterior, nome_anterior, matricula_nova, nome_novo,
               total_pendentes, atrasadas, urgencias, alertas, em_elaboracao,
               aprovadas_herdadas, atrasadas_herdadas, du8_herdadas, du9_herdadas, du10_herdadas, du11_herdadas))
-        conn.commit()
+        if should_close:
+            conn.commit()
         print(f"[HANDOVER] Transição registrada: Região {sigla_clean} ({nome_anterior} -> {nome_novo}) - Pendentes: {total_pendentes}")
     except Exception as e:
         print(f"[HANDOVER ERRO] Falha ao registrar transição de região: {e}")
     finally:
-        conn.close()
+        if should_close:
+            conn.close()
 
 def deletar_transicao_regiao(id_transicao):
     """Permite apagar uma transição registrada indevidamente."""
@@ -1487,12 +1496,77 @@ def get_historico_transicoes(regiao=None, matricula=None):
             query += " AND (matricula_anterior = ? OR matricula_nova = ?)"
             params.extend([matricula, matricula])
             
-        query += " ORDER BY id DESC"
+        query += " ORDER BY data_transicao DESC, id DESC"
         df = pd.read_sql(query, conn, params=params)
         return df
     except Exception as e:
         print(f"[HANDOVER ERRO] Falha ao buscar histórico de transições: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
+
+def salvar_escala_global(novo_mapa_slots):
+    """
+    Grava de forma estritamente atômica e global toda a escala de regiões dos técnicos.
+    novo_mapa_slots: dict {matricula: [sigla1, sigla2, ...]}
+    
+    Blindagem contra perda de titular anterior e race conditions:
+    1. Captura o snapshot completo de todas as regiões antes de qualquer mutação.
+    2. Compara o estado anterior com o novo estado desejado para cada região.
+    3. Registra as transições explicitamente com o titular anterior correto e novo titular.
+    4. Atualiza regioes_responsaveis em lote numa transação única (BEGIN ... COMMIT).
+    """
+    conn = get_connection_config()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+        
+        # 1. Snapshot de todas as regiões com responsáveis atuais no banco
+        cursor.execute("SELECT UPPER(TRIM(sigla_regiao)), TRIM(matricula_responsavel) FROM regioes_responsaveis WHERE matricula_responsavel IS NOT NULL")
+        mapa_anterior = {row[0][:2]: row[1] for row in cursor.fetchall() if row[0] and row[1]}
+        
+        # 2. Consolidação do mapa novo vindo do painel de slots
+        mapa_novo = {}
+        for mat_raw, slots in novo_mapa_slots.items():
+            mat = str(mat_raw).strip()
+            if not mat:
+                continue
+            for s in slots:
+                s_str = str(s).strip().upper()[:2] if s else ""
+                if s_str and s_str not in ("—", "-"):
+                    mapa_novo[s_str] = mat
+                    
+        # Carrega snapshot de dados de demanda apenas uma vez para toda a transação
+        df_demanda = carregar_dados_recentes()
+        
+        # 3. Identifica deltas e grava as transições com conn compartilhado
+        todas_siglas = set(mapa_anterior.keys()) | set(mapa_novo.keys())
+        for sigla in sorted(todas_siglas):
+            ant = mapa_anterior.get(sigla)
+            nov = mapa_novo.get(sigla)
+            
+            if ant != nov:
+                mat_anterior = ant if ant else "SEM_RESPONSAVEL"
+                mat_nova = nov if nov else "SEM_RESPONSAVEL"
+                try:
+                    registrar_transicao_regiao(sigla, mat_nova, matricula_anterior=mat_anterior, conn=conn, df_snapshot=df_demanda)
+                except Exception as e_tr:
+                    print(f"[HANDOVER GLOBAL] Falha ao registrar transição para região {sigla}: {e_tr}")
+                    
+        # 4. Atualiza a tabela regioes_responsaveis
+        cursor.execute("DELETE FROM regioes_responsaveis")
+        for sigla, mat in sorted(mapa_novo.items()):
+            cursor.execute('''
+                INSERT INTO regioes_responsaveis (sigla_regiao, matricula_responsavel)
+                VALUES (?, ?)
+            ''', (sigla, mat))
+            
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        print(f"[ERRO DB] Falha crítica ao salvar escala global: {e}")
+        return False
     finally:
         conn.close()
 

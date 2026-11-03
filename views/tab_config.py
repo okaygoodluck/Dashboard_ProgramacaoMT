@@ -298,11 +298,7 @@ def render_tab_config():
         # Ações de Salvamento e Reset
         if btn_salvar:
             with st.spinner("Salvando escala de regiões no banco de dados..."):
-                sucesso = True
-                for mat_tec, slots_tec in st.session_state.map_slots.items():
-                    siglas_escolhidas = [s for s in slots_tec if s and s != "—"]
-                    if not db_manager.atribuir_regioes_massa(mat_tec, siglas_escolhidas):
-                        sucesso = False
+                sucesso = db_manager.salvar_escala_global(st.session_state.map_slots)
                 
                 db_manager.get_mapeamento_regioes.clear()
                 if sucesso:

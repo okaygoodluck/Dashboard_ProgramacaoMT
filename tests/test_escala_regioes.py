@@ -134,6 +134,78 @@ class TestEscalaRegioes(unittest.TestCase):
         finally:
             conn_init.close()
 
+    def test_salvar_escala_global_blindagem_transferencia(self):
+        """Verifica se salvar_escala_global preserva o técnico anterior real sem gerar 'Não Atribuído'."""
+        import sqlite3
+        from unittest.mock import patch
+        
+        uri = "file:test_mem_escala_global?mode=memory&cache=shared"
+        conn_init = sqlite3.connect(uri, uri=True)
+        cursor = conn_init.cursor()
+        cursor.execute('''CREATE TABLE IF NOT EXISTS regioes_responsaveis (
+            sigla_regiao TEXT PRIMARY KEY,
+            matricula_responsavel TEXT
+        )''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS historico_transicao_regioes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_transicao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sigla_regiao TEXT,
+            matricula_anterior TEXT,
+            nome_anterior TEXT,
+            matricula_nova TEXT,
+            nome_novo TEXT,
+            total_pendentes INTEGER DEFAULT 0,
+            atrasadas INTEGER DEFAULT 0,
+            urgencias INTEGER DEFAULT 0,
+            alertas INTEGER DEFAULT 0,
+            em_elaboracao INTEGER DEFAULT 0,
+            aprovadas_herdadas INTEGER DEFAULT 0,
+            atrasadas_herdadas INTEGER DEFAULT 0,
+            du8_herdadas INTEGER DEFAULT 0,
+            du9_herdadas INTEGER DEFAULT 0,
+            du10_herdadas INTEGER DEFAULT 0,
+            du11_herdadas INTEGER DEFAULT 0
+        )''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS usuarios (
+            matricula TEXT PRIMARY KEY,
+            nome TEXT
+        )''')
+        cursor.execute("INSERT OR REPLACE INTO usuarios VALUES ('tec_a', 'TECNICO A')")
+        cursor.execute("INSERT OR REPLACE INTO usuarios VALUES ('tec_b', 'TECNICO B')")
+        cursor.execute("INSERT OR REPLACE INTO regioes_responsaveis VALUES ('BH', 'tec_a')")
+        cursor.execute("INSERT OR REPLACE INTO regioes_responsaveis VALUES ('SL', 'tec_a')")
+        cursor.execute("INSERT OR REPLACE INTO regioes_responsaveis VALUES ('SG', 'tec_b')")
+        conn_init.commit()
+
+        def mock_get_conn(read_only=False):
+            return sqlite3.connect(uri, uri=True)
+
+        try:
+            with patch('db_manager.get_connection_config', side_effect=mock_get_conn):
+                # Transferência de BH de tec_a para tec_b
+                novo_map_slots = {
+                    'tec_a': ['SL', '—', '—', '—'],
+                    'tec_b': ['SG', 'BH', '—', '—']
+                }
+                sucesso = db_manager.salvar_escala_global(novo_map_slots)
+                self.assertTrue(sucesso)
+                
+                # Verifica tabela regioes_responsaveis
+                cursor.execute("SELECT sigla_regiao, matricula_responsavel FROM regioes_responsaveis WHERE sigla_regiao = 'BH'")
+                row_bh = cursor.fetchone()
+                self.assertEqual(row_bh, ('BH', 'tec_b'))
+
+                # Verifica se a transição gravou TECNICO A como titular anterior (e não 'Não Atribuído')
+                cursor.execute("SELECT matricula_anterior, nome_anterior, matricula_nova, nome_novo FROM historico_transicao_regioes WHERE sigla_regiao = 'BH'")
+                row_trans = cursor.fetchone()
+                self.assertIsNotNone(row_trans)
+                self.assertEqual(row_trans[0], 'tec_a')
+                self.assertEqual(row_trans[1], 'TECNICO A')
+                self.assertEqual(row_trans[2], 'tec_b')
+                self.assertEqual(row_trans[3], 'TECNICO B')
+        finally:
+            conn_init.close()
+
 if __name__ == '__main__':
     unittest.main()
 

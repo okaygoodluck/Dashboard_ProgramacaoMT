@@ -1872,7 +1872,8 @@ if df is not None:
                             
                             # Tabela de Histórico de Transições com Detalhamento de Herdadas
                             df_trans_display = df_trans_filtered.copy()
-                            df_trans_display['Data / Hora da Troca'] = pd.to_datetime(df_trans_display['data_transicao']).dt.strftime('%d/%m/%Y %H:%M')
+                            df_trans_display['data_transicao_dt'] = pd.to_datetime(df_trans_display['data_transicao'])
+                            df_trans_display = df_trans_display.sort_values(by=['data_transicao_dt', 'id'], ascending=[False, False])
                             
                             # Garante existência das novas colunas de detecção de herdadas
                             for col_def in ['aprovadas_herdadas', 'atrasadas_herdadas', 'du8_herdadas', 'du9_herdadas', 'du10_herdadas', 'du11_herdadas']:
@@ -1882,10 +1883,11 @@ if df is not None:
                                     df_trans_display[col_def] = df_trans_display[col_def].fillna(0).astype(int)
                                     
                             st.dataframe(
-                                df_trans_display[['Data / Hora da Troca', 'sigla_regiao', 'nome_anterior', 'nome_novo', 'aprovadas_herdadas', 'atrasadas_herdadas', 'du8_herdadas', 'du9_herdadas', 'du10_herdadas', 'du11_herdadas', 'total_pendentes']],
+                                df_trans_display[['data_transicao_dt', 'sigla_regiao', 'nome_anterior', 'nome_novo', 'aprovadas_herdadas', 'atrasadas_herdadas', 'du8_herdadas', 'du9_herdadas', 'du10_herdadas', 'du11_herdadas', 'total_pendentes']],
                                 use_container_width=True,
                                 hide_index=True,
                                 column_config={
+                                    "data_transicao_dt": st.column_config.DatetimeColumn("Data / Hora da Troca", format="DD/MM/YYYY HH:mm"),
                                     "sigla_regiao": st.column_config.TextColumn("Região"),
                                     "nome_anterior": st.column_config.TextColumn("Técnico Anterior"),
                                     "nome_novo": st.column_config.TextColumn("Novo Técnico"),
