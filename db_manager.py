@@ -652,6 +652,9 @@ def _expandir_variantes_alimentador(alim):
     return variants
 
 class ConjuntosRestritosResult(tuple):
+    map_alim_polo_siglas: dict
+    map_alim_global_siglas: dict
+
     def __new__(cls, map_alim_to_sigla=None, set_conj_restritos=None, map_sigla_to_nome=None, map_alim_polo_siglas=None, map_alim_global_siglas=None):
         if isinstance(map_alim_to_sigla, tuple) and len(map_alim_to_sigla) == 3 and set_conj_restritos is None:
             inst = super().__new__(cls, map_alim_to_sigla)
