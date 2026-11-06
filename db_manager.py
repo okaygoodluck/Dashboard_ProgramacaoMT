@@ -651,12 +651,27 @@ def _expandir_variantes_alimentador(alim):
         variants.add(f"{prefix} {num:03d}")
     return variants
 
+class ConjuntosRestritosResult(tuple):
+    def __new__(cls, map_alim_to_sigla=None, set_conj_restritos=None, map_sigla_to_nome=None, map_alim_polo_siglas=None, map_alim_global_siglas=None):
+        if isinstance(map_alim_to_sigla, tuple) and len(map_alim_to_sigla) == 3 and set_conj_restritos is None:
+            inst = super().__new__(cls, map_alim_to_sigla)
+            inst.map_alim_polo_siglas = {}
+            inst.map_alim_global_siglas = {}
+            return inst
+        inst = super().__new__(cls, (map_alim_to_sigla or {}, set_conj_restritos or set(), map_sigla_to_nome or {}))
+        inst.map_alim_polo_siglas = map_alim_polo_siglas or {}
+        inst.map_alim_global_siglas = map_alim_global_siglas or {}
+        return inst
+
+    def __reduce__(self):
+        return (ConjuntosRestritosResult, (self[0], self[1], self[2], self.map_alim_polo_siglas, self.map_alim_global_siglas))
+
 @st.cache_data(ttl=600)
 def carregar_conjuntos_restritos():
     """
     Carrega as planilhas 'Alimentadores do Conjuntos.xlsx' e 'Conjuntos Restritos.xlsx'
     a partir de REDE_BASE ou caminhos candidatos corporativos.
-    Retorna: (map_alim_to_sigla, set_conj_restritos, map_sigla_to_nome)
+    Retorna: ConjuntosRestritosResult (compatível com tupla de 3 elementos: map_alim_to_sigla, set_conj_restritos, map_sigla_to_nome)
     """
     if os.environ.get("CCP_MODO_TESTE") == "1" or os.environ.get("CCP_FORCAR_LOCAL") == "1":
         candidatos_dir = [REDE_BASE or "."]
@@ -677,13 +692,13 @@ def carregar_conjuntos_restritos():
             break
             
     if not dir_valido:
-        return {}, set(), {}
+        return ConjuntosRestritosResult({}, set(), {})
 
     f_alim = os.path.join(dir_valido, "Alimentadores do Conjuntos.xlsx")
     f_restr = os.path.join(dir_valido, "Conjuntos Restritos.xlsx")
 
     if not os.path.exists(f_alim) or not os.path.exists(f_restr):
-        return {}, set(), {}
+        return ConjuntosRestritosResult({}, set(), {})
 
     try:
         df_alim = pd.read_excel(f_alim)
@@ -730,6 +745,9 @@ def carregar_conjuntos_restritos():
         df_alim = df_alim.sort_values(by=['prefix_match', 'is_restrito'], ascending=[True, True])
 
         map_alim_to_sigla = {}
+        map_alim_polo_siglas = {}
+        map_alim_global_siglas = {}
+
         for _, row in df_alim.iterrows():
             sigla = row['sigla_clean']
             polo = row['polo_clean']
@@ -738,43 +756,104 @@ def carregar_conjuntos_restritos():
             for var in variantes:
                 if polo:
                     map_alim_to_sigla[(var, polo)] = sigla
+                    if (var, polo) not in map_alim_polo_siglas:
+                        map_alim_polo_siglas[(var, polo)] = []
+                    if sigla not in map_alim_polo_siglas[(var, polo)]:
+                        map_alim_polo_siglas[(var, polo)].append(sigla)
                 map_alim_to_sigla[var] = sigla
+                if var not in map_alim_global_siglas:
+                    map_alim_global_siglas[var] = []
+                if sigla not in map_alim_global_siglas[var]:
+                    map_alim_global_siglas[var].append(sigla)
 
-        return map_alim_to_sigla, set_conj_restritos, map_sigla_to_nome
+        return ConjuntosRestritosResult(
+            map_alim_to_sigla, set_conj_restritos, map_sigla_to_nome,
+            map_alim_polo_siglas, map_alim_global_siglas
+        )
     except Exception as e:
         print(f"[CONJUNTOS RESTRITOS] Erro ao carregar planilhas: {e}")
-        return {}, set(), {}
+        return ConjuntosRestritosResult({}, set(), {})
 
-def is_alimentador_restrito(alim, polo_ou_regiao=None):
+def obter_status_restricao_alimentador(alim, polo_ou_regiao=None):
     """
-    Verifica se um alimentador pertence a um conjunto restrito.
-    Suporta correspondência por polo/região (ex: 'JF - JUIZ DE FORA' ou 'JF')
-    e unifica variações de dígitos numéricos (ex: 'LAD 005', 'LAD 05', 'LAD5').
+    Retorna o status de restrição do alimentador:
+    - 'RESTRITO': se pertence exclusivamente a conjunto(s) com restrição de DEC.
+    - 'CONFERIR BI!': se pertence a múltiplos conjuntos e há divergência (restrito e não restrito).
+    - '—': se pertence apenas a conjunto(s) não restrito(s) ou não localizado.
     """
     if not alim or pd.isna(alim):
-        return False
-    map_alim_to_sigla, set_conj_restritos, _ = carregar_conjuntos_restritos()
+        return "—"
+    res = carregar_conjuntos_restritos()
+    map_alim_to_sigla, set_conj_restritos, _ = res
     if not set_conj_restritos or not map_alim_to_sigla:
-        return False
+        return "—"
+
+    map_polo_siglas = getattr(res, 'map_alim_polo_siglas', {})
+    map_global_siglas = getattr(res, 'map_alim_global_siglas', {})
 
     polo = str(polo_ou_regiao).strip().upper()[:2] if polo_ou_regiao else ""
     variantes = _expandir_variantes_alimentador(alim)
+    alim_norm = normalizar_codigo_alimentador(alim)
 
-    # 1. Tenta correspondência contextual estrita por (variante, polo)
+    def _avaliar_siglas(siglas_list):
+        if not siglas_list:
+            return "—"
+        
+        # 1. Verifica se há conjunto titular cujo código seja prefixo do alimentador (ex: JTAD em JTAD208)
+        titulares = [s for s in siglas_list if alim_norm.startswith(s)]
+        if titulares:
+            sigla_titular = max(titulares, key=len)
+            is_titular_restr = sigla_titular in set_conj_restritos
+            if not is_titular_restr:
+                # Subestação titular não é restrita
+                return "—"
+            else:
+                # Subestação titular é restrita; se o alimentador também pertencer a conjunto não restrito, sinaliza divergência
+                tem_nao_restrito = any(s not in set_conj_restritos for s in siglas_list)
+                return "CONFERIR BI!" if tem_nao_restrito else "RESTRITO"
+
+        # 2. Sem correspondência direta de prefixo titular (ex: LAD 05, AAY16)
+        tem_restr = any(s in set_conj_restritos for s in siglas_list)
+        tem_nao_restr = any(s not in set_conj_restritos for s in siglas_list)
+        if tem_restr and tem_nao_restr:
+            return "CONFERIR BI!"
+        elif tem_restr:
+            return "RESTRITO"
+        return "—"
+
+    # 1. Correspondência contextual estrita por (variante, polo)
+    if polo and map_polo_siglas:
+        for var in variantes:
+            if (var, polo) in map_polo_siglas:
+                return _avaliar_siglas(map_polo_siglas[(var, polo)])
+
+    # 2. Avaliação global por variante (todas as subestações/conjuntos do alimentador)
+    if map_global_siglas:
+        for var in variantes:
+            if var in map_global_siglas:
+                return _avaliar_siglas(map_global_siglas[var])
+
+    # Fallback se chamado com mocks simplificados de teste
     if polo:
         for var in variantes:
             if (var, polo) in map_alim_to_sigla:
                 sigla = map_alim_to_sigla[(var, polo)]
-                return sigla in set_conj_restritos
+                return "RESTRITO" if sigla in set_conj_restritos else "—"
 
-    # 2. Fallback: verifica se alguma variante do alimentador pertence a conjunto restrito global
     for var in variantes:
         if var in map_alim_to_sigla:
             sigla = map_alim_to_sigla[var]
-            if sigla in set_conj_restritos:
-                return True
+            return "RESTRITO" if sigla in set_conj_restritos else "—"
 
-    return False
+    return "—"
+
+def is_alimentador_restrito(alim, polo_ou_regiao=None):
+    """
+    Verifica se um alimentador possui restrição de DEC ou divergência a conferir.
+    Retorna True para 'RESTRITO' e 'CONFERIR BI!'.
+    """
+    st_val = obter_status_restricao_alimentador(alim, polo_ou_regiao)
+    return st_val in ("RESTRITO", "CONFERIR BI!")
 
 def atualizar_email_decp_bd(map_email):
     """Atualiza a coluna Tem_Email_DECP na tabela demanda_atual para as solicitações mapeadas."""

@@ -992,12 +992,22 @@ if df is not None:
         else:
             if "Conjunto Restrito" in kpi_name and 'Conjunto' not in df_kpi.columns:
                 df_kpi = df_kpi.copy()
-                df_kpi['Conjunto'] = 'RESTRITO'
+                col_alim_kpi = next((c for c in df_kpi.columns if 'alim' in c.lower()), None)
+                col_reg_kpi = next((c for c in df_kpi.columns if 'regi' in c.lower()), None)
+                def _get_kpi_conj(row):
+                    alim_val = row.get(col_alim_kpi, '') if col_alim_kpi else ''
+                    reg_val = row.get(col_reg_kpi, '') if col_reg_kpi else None
+                    return db_manager.obter_status_restricao_alimentador(alim_val, reg_val)
+                df_kpi['Conjunto'] = df_kpi.apply(_get_kpi_conj, axis=1)
             st.markdown("""
             <div style="display: flex; gap: 14px; margin-bottom: 8px; font-size: 0.78rem; align-items: center; background: rgba(30, 41, 59, 0.4); padding: 5px 12px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.08);">
                 <span style="display: flex; align-items: center; gap: 6px;">
                     <span style="width: 10px; height: 10px; background: rgba(220, 38, 38, 0.75); border-radius: 2px;"></span>
                     <span><strong>Pendente / Conjunto Restrito</strong></span>
+                </span>
+                <span style="display: flex; align-items: center; gap: 6px;">
+                    <span style="width: 10px; height: 10px; background: rgba(249, 115, 22, 0.75); border-radius: 2px;"></span>
+                    <span><strong>Conferir BI (Divergente)</strong></span>
                 </span>
                 <span style="display: flex; align-items: center; gap: 6px;">
                     <span style="width: 10px; height: 10px; background: rgba(16, 185, 129, 0.75); border-radius: 2px;"></span>

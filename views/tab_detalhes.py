@@ -272,15 +272,13 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
 
     # Identificação de Conjuntos Restritos (avaliado previamente para subsidiar autorização)
     def get_status_conjunto(row):
-        if 'Conjunto' in row and str(row['Conjunto']).strip().upper() == 'RESTRITO':
-            return 'RESTRITO'
+        if 'Conjunto' in row and str(row['Conjunto']).strip().upper() in ['RESTRITO', 'CONFERIR BI!']:
+            return str(row['Conjunto']).strip()
         if not col_alim_view:
             return "—"
         alim_val = row.get(col_alim_view, '')
         reg_val = row.get(col_reg_view, '') if col_reg_view else None
-        if db_manager.is_alimentador_restrito(alim_val, reg_val):
-            return "RESTRITO"
-        return "—"
+        return db_manager.obter_status_restricao_alimentador(alim_val, reg_val)
     df_view['Conjunto'] = df_view.apply(get_status_conjunto, axis=1)
 
     def is_urgente_val(val):
@@ -357,7 +355,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
     )
     col_config['Conjunto'] = st.column_config.TextColumn(
         "Conjunto",
-        help="Indica RESTRITO caso o alimentador pertença a um conjunto com restrição de DEC para CHI ≥ 500",
+        help="Indica RESTRITO caso o alimentador pertença a conjunto com restrição de DEC, ou CONFERIR BI! em caso de divergência",
         width=calcular_largura_coluna('Conjunto', df_view['Conjunto'])
     )
     for c in df_view.columns:
@@ -414,7 +412,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
         if col_int in df_view.columns:
             format_styler[col_int] = '{:.0f}'
 
-    # Função de estilização para destacar a linha inteira quando CHI >= 1500, Urgência == 'SIM' ou Conjunto == 'RESTRITO'
+    # Função de estilização para destacar a linha inteira quando CHI >= 1500, Urgência == 'SIM', Conjunto == 'RESTRITO' ou 'CONFERIR BI!'
     def aplicar_destaque_autorizacao(row):
         status_conj = str(row.get('Conjunto', '—')).strip()
         status_aut = str(row.get('E-mail', '—')).strip()
@@ -422,6 +420,7 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
 
         estilo_vermelho = 'background-color: rgba(220, 38, 38, 0.45); font-weight: 700; color: #ffffff;'
         estilo_verde = 'background-color: rgba(16, 185, 129, 0.40); font-weight: 700; color: #ffffff;'
+        estilo_laranja = 'background-color: rgba(249, 115, 22, 0.45); font-weight: 700; color: #ffffff;'
         estilo_neutro = ''
 
         cols = row.index if hasattr(row, 'index') else list(row.keys())
@@ -436,6 +435,17 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
             else:
                 # Fundo avermelhado para conjunto restrito sem confirmação
                 return [estilo_vermelho] * len(cols)
+
+        if status_conj == 'CONFERIR BI!':
+            if tem_email:
+                # Linha inteira verde quando possui e-mail, mantendo a célula 'Conjunto' em laranja
+                return [
+                    estilo_laranja if col in ['Conjunto', 'Restrito'] else estilo_verde
+                    for col in cols
+                ]
+            else:
+                # Fundo alaranjado para alimentador com conjuntos divergentes
+                return [estilo_laranja] * len(cols)
 
         if tem_email:
             # Fundo verde para solicitação com e-mail confirmado (ao menos um recebido) com texto branco contrastante

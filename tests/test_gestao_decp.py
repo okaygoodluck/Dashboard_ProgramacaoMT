@@ -284,7 +284,7 @@ class TestGestaoDECP(unittest.TestCase):
         row4 = {'CHI': 148, 'Alimentador': 'ALIM01'}
         self.assertEqual(get_status_conjunto(row4), 'RESTRITO')
 
-        # Teste 5: Estilização condicional híbrida para RESTRITO e E-mail
+        # Teste 5: Estilização condicional híbrida para RESTRITO, CONFERIR BI! e E-mail
         def aplicar_destaque_teste(row):
             status_conj = str(row.get('Conjunto', '—')).strip()
             status_aut = str(row.get('E-mail Autorização', '—')).strip()
@@ -295,6 +295,11 @@ class TestGestaoDECP(unittest.TestCase):
                 if tem_email:
                     return {col: ('red' if col in ['Conjunto', 'Restrito'] else 'green') for col in cols}
                 return {col: 'red' for col in cols}
+
+            if status_conj == 'CONFERIR BI!':
+                if tem_email:
+                    return {col: ('orange' if col in ['Conjunto', 'Restrito'] else 'green') for col in cols}
+                return {col: 'orange' for col in cols}
 
             if tem_email:
                 return {col: 'green' for col in cols}
@@ -312,6 +317,16 @@ class TestGestaoDECP(unittest.TestCase):
         res_restr_sem = aplicar_destaque_teste(row_restrito_sem_email)
         self.assertEqual(res_restr_sem['Conjunto'], 'red')
         self.assertEqual(res_restr_sem['CHI'], 'red')
+
+        row_div_sem = {'Conjunto': 'CONFERIR BI!', 'E-mail Autorização': '—', 'CHI': 600}
+        res_div_sem = aplicar_destaque_teste(row_div_sem)
+        self.assertEqual(res_div_sem['Conjunto'], 'orange')
+        self.assertEqual(res_div_sem['CHI'], 'orange')
+
+        row_div_email = {'Conjunto': 'CONFERIR BI!', 'E-mail Autorização': 'DECP', 'CHI': 1600}
+        res_div_email = aplicar_destaque_teste(row_div_email)
+        self.assertEqual(res_div_email['Conjunto'], 'orange')
+        self.assertEqual(res_div_email['CHI'], 'green')
 
         row_normal_email = {'Conjunto': '—', 'E-mail Autorização': 'DECP', 'CHI': 1600}
         res_norm_email = aplicar_destaque_teste(row_normal_email)
@@ -568,12 +583,16 @@ class TestGestaoDECP(unittest.TestCase):
             {'Solicitacao': '9002', 'CHI': 100, 'Urgencia': 'NAO', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'ALIM_LIVRE', 'Ref_Regiao': 'BH'},
             # 3. Solicitacao com CHI >= 1500 sem e-mail -> Pendente
             {'Solicitacao': '9003', 'CHI': 1600, 'Urgencia': 'NAO', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'ALIM_LIVRE', 'Ref_Regiao': 'BH'},
-            # 4. Solicitacao com CHI >= 500 em conjunto restrito sem e-mail -> Pendente
-            {'Solicitacao': '9004', 'CHI': 600, 'Urgencia': 'NAO', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'LAD 005', 'Ref_Regiao': 'JF - JUIZ DE FORA'},
-            # 5. Solicitacao com CHI >= 500 em conjunto restrito COM e-mail -> DECP
-            {'Solicitacao': '9005', 'CHI': 600, 'Urgencia': 'NAO', 'Tem_Email_DECP': True, 'Tem_Email': False, 'Alimentador': 'LAD 005', 'Ref_Regiao': 'JF - JUIZ DE FORA'},
+            # 4. Solicitacao com CHI >= 500 em conjunto estritamente restrito sem e-mail -> Pendente
+            {'Solicitacao': '9004', 'CHI': 600, 'Urgencia': 'NAO', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'BHS13', 'Ref_Regiao': 'BH'},
+            # 5. Solicitacao com CHI >= 500 em conjunto estritamente restrito COM e-mail -> DECP
+            {'Solicitacao': '9005', 'CHI': 600, 'Urgencia': 'NAO', 'Tem_Email_DECP': True, 'Tem_Email': False, 'Alimentador': 'BHS13', 'Ref_Regiao': 'BH'},
             # 6. Solicitacao Urgente sem e-mail -> Pendente
             {'Solicitacao': '9006', 'CHI': 100, 'Urgencia': 'SIM', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'ALIM_LIVRE', 'Ref_Regiao': 'BH'},
+            # 7. Solicitacao com CHI >= 500 em alimentador divergente (CONFERIR BI!) sem e-mail -> — (Decisão 1: somente traço)
+            {'Solicitacao': '9007', 'CHI': 600, 'Urgencia': 'NAO', 'Tem_Email_DECP': False, 'Tem_Email': False, 'Alimentador': 'LAD 005', 'Ref_Regiao': 'JF - JUIZ DE FORA'},
+            # 8. Solicitacao em alimentador divergente (CONFERIR BI!) COM e-mail -> DECP
+            {'Solicitacao': '9008', 'CHI': 600, 'Urgencia': 'NAO', 'Tem_Email_DECP': True, 'Tem_Email': False, 'Alimentador': 'LAD 005', 'Ref_Regiao': 'JF - JUIZ DE FORA'},
         ])
 
         df_view, _, _, _ = preparar_dataframe_detalhes(df_input)
@@ -585,6 +604,8 @@ class TestGestaoDECP(unittest.TestCase):
         self.assertEqual(res['9004'], 'Pendente')
         self.assertEqual(res['9005'], 'DECP')
         self.assertEqual(res['9006'], 'Pendente')
+        self.assertEqual(res['9007'], '—')
+        self.assertEqual(res['9008'], 'DECP')
 
     def test_exclusao_nao_restrito_e_prioridade_prefixo(self):
         """Garante que 'NÃO RESTRITO' não seja classificado como restrito e que o prefixo titular prevaleça."""
@@ -597,6 +618,21 @@ class TestGestaoDECP(unittest.TestCase):
             self.assertFalse(db_manager.is_alimentador_restrito('JTAD208', 'PA - POUSO ALEGRE'))
             self.assertFalse(db_manager.is_alimentador_restrito('PTID207', 'PR - PARA DE MINAS'))
             self.assertTrue(db_manager.is_alimentador_restrito('LAD 005', 'JF - JUIZ DE FORA'))
+
+    def test_obter_status_restricao_alimentador_divergencia(self):
+        """Valida que alimentadores divergentes retornem 'CONFERIR BI!', 100% restritos retornem 'RESTRITO' e outros '—'."""
+        _, set_conj_restritos, _ = db_manager.carregar_conjuntos_restritos()
+        if set_conj_restritos:
+            # 1. LAD 005 em JF tem conjuntos restritos (SND) e nao restritos (JFAO, JFAU) -> CONFERIR BI!
+            self.assertEqual(db_manager.obter_status_restricao_alimentador('LAD 005', 'JF - JUIZ DE FORA'), 'CONFERIR BI!')
+            # 2. BHS13 em BH tem apenas conjunto restrito (BHS) -> RESTRITO
+            self.assertEqual(db_manager.obter_status_restricao_alimentador('BHS13', 'BH'), 'RESTRITO')
+            # 3. SLAD203 em SL e titular SLAD (nao restrito) -> —
+            self.assertEqual(db_manager.obter_status_restricao_alimentador('SLAD203', 'SL'), '—')
+            # 4. Ambos RESTRITO e CONFERIR BI! devem ser considerados pelo KPI (is_alimentador_restrito == True)
+            self.assertTrue(db_manager.is_alimentador_restrito('LAD 005', 'JF - JUIZ DE FORA'))
+            self.assertTrue(db_manager.is_alimentador_restrito('BHS13', 'BH'))
+            self.assertFalse(db_manager.is_alimentador_restrito('SLAD203', 'SL'))
 
 if __name__ == '__main__':
     unittest.main()
