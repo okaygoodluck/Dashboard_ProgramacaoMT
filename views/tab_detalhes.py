@@ -288,6 +288,10 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
         return s in ['SIM', 'S', 'TRUE', '1'] or 'SIM' in s or s.startswith('S')
 
     def get_email_autorizacao(row):
+        sit_val = str(row.get('Situação', row.get(col_situacao, ''))).strip().upper() if col_situacao else str(row.get('Situação', '')).strip().upper()
+        if 'REPROVAD' in sit_val or 'CANCELAD' in sit_val:
+            return "—"
+
         chi_val = pd.to_numeric(row.get(col_chi_view, 0), errors='coerce')
         is_chi = pd.notna(chi_val) and chi_val >= 1500
         urg_val = row.get(col_urg_view, None) if col_urg_view else None
@@ -424,6 +428,11 @@ def preparar_dataframe_detalhes(df_input, col_situacao=None):
         estilo_neutro = ''
 
         cols = row.index if hasattr(row, 'index') else list(row.keys())
+
+        sit_val = str(row.get('Situação', row.get(col_situacao, ''))).strip().upper() if col_situacao else str(row.get('Situação', '')).strip().upper()
+        if 'REPROVAD' in sit_val or 'CANCELAD' in sit_val:
+            estilo_reprovada = 'color: #94a3b8; font-style: italic;'
+            return [estilo_reprovada] * len(cols)
 
         if status_conj == 'RESTRITO':
             if tem_email:

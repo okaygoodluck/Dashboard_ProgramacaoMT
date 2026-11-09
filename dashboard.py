@@ -437,9 +437,23 @@ def load_latest_data():
                                     colunas_mesao.append('OBRA GD')
                                     break
                             
+                            col_status_ms = next((c for c in df_mesao.columns if 'status' in c.lower() and 'solic' in c.lower()), None)
+                            if col_status_ms:
+                                df_mesao['_status_ms_clean'] = df_mesao[col_status_ms].astype(str).str.strip().str.upper()
+                                colunas_mesao.append('_status_ms_clean')
+                                
                             df_mesao_sub = df_mesao[colunas_mesao].drop_duplicates(subset=['Solicitação_Merge'])
                             df = pd.merge(df, df_mesao_sub, on='Solicitação_Merge', how='left')
                             df.drop(columns=['Solicitação_Merge'], inplace=True)
+                            
+                            # Reconciliação do status operacional com o Mesão Diário (ex: REPROVADA / CANCELADA)
+                            if '_status_ms_clean' in df.columns:
+                                mask_reprov_ms = df['_status_ms_clean'].str.contains('REPROVAD|CANCELAD', na=False)
+                                if mask_reprov_ms.any():
+                                    target_col_sit = col_situacao if (col_situacao and col_situacao in df.columns) else next((c for c in df.columns if 'situa' in c.lower()), None)
+                                    if target_col_sit:
+                                        df.loc[mask_reprov_ms, target_col_sit] = df.loc[mask_reprov_ms, '_status_ms_clean']
+                                df.drop(columns=['_status_ms_clean'], inplace=True)
                             
                             # Reconciliação para evitar colunas duplicadas _x e _y geradas pelo merge
                             for base_c in ['CHI', 'Peso', 'Clientes', 'OBRA GD', 'PLE']:

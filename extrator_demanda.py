@@ -745,6 +745,18 @@ def extrair_dados():
                                 df_mesao['_chi_val'] = pd.to_numeric(df_mesao[col_chi_mesao], errors='coerce').fillna(0)
                                 mapa_chi = df_mesao.set_index('_solic_key')['_chi_val'].to_dict()
                                 df['CHI'] = df['_solic_key'].map(mapa_chi).fillna(0)
+
+                            # Reconciliação do Status Operacional com o Mesão (REPROVADA / CANCELADA)
+                            col_status_mesao = next((c for c in df_mesao.columns if 'status' in c.lower() and 'solic' in c.lower()), None)
+                            col_sit_df = next((c for c in df.columns if 'situa' in c.lower() or 'status' in c.lower()), None)
+                            if col_status_mesao and col_sit_df:
+                                mapa_status_mesao = df_mesao.set_index('_solic_key')[col_status_mesao].astype(str).str.strip().str.upper().to_dict()
+                                def _reconciliar_sit(row):
+                                    st_m = mapa_status_mesao.get(row['_solic_key'], '')
+                                    if 'REPROVAD' in st_m or 'CANCELAD' in st_m:
+                                        return st_m
+                                    return row[col_sit_df]
+                                df[col_sit_df] = df.apply(_reconciliar_sit, axis=1)
                             
                             df_antes_count = len(df)
                             

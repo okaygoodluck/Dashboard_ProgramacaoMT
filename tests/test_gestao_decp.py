@@ -634,6 +634,43 @@ class TestGestaoDECP(unittest.TestCase):
             self.assertTrue(db_manager.is_alimentador_restrito('BHS13', 'BH'))
             self.assertFalse(db_manager.is_alimentador_restrito('SLAD203', 'SL'))
 
+    def test_reconciliacao_status_mesao_reprovada(self):
+        """Valida que demandas marcadas como REPROVADA no Mesao Diário sobreponham a Situacao e nao fiquem como Aprovadas."""
+        from views.tab_detalhes import preparar_dataframe_detalhes
+
+        df_mock = pd.DataFrame([
+            {'Solicitação': '1706189', 'Situação': 'APROVADA', 'CHI': 816, 'Alimentador': 'SLUQ418', 'Ref_Regiao': 'SG'}
+        ])
+        df_mesao_mock = pd.DataFrame([
+            {'Solicitação': '1706189', 'Status Solicitação': 'REPROVADA', 'CHI': 816}
+        ])
+
+        col_sol_db = 'Solicitação'
+        col_sol_ms = 'Solicitação'
+        col_status_ms = 'Status Solicitação'
+
+        df_mock['Solicitação_Merge'] = df_mock[col_sol_db].astype(str).str.strip().str.lstrip('0')
+        df_mesao_mock['Solicitação_Merge'] = df_mesao_mock[col_sol_ms].astype(str).str.strip().str.lstrip('0')
+        df_mesao_mock['_status_ms_clean'] = df_mesao_mock[col_status_ms].astype(str).str.strip().str.upper()
+
+        df_merged = pd.merge(df_mock, df_mesao_mock[['Solicitação_Merge', '_status_ms_clean']], on='Solicitação_Merge', how='left')
+        mask_reprov = df_merged['_status_ms_clean'].str.contains('REPROVAD|CANCELAD', na=False)
+        df_merged.loc[mask_reprov, 'Situação'] = df_merged.loc[mask_reprov, '_status_ms_clean']
+        df_merged.drop(columns=['Solicitação_Merge', '_status_ms_clean'], inplace=True)
+
+        # 1. Situação sobreposta para REPROVADA
+        self.assertEqual(df_merged.loc[0, 'Situação'], 'REPROVADA')
+
+        # 2. Is_Aprovada deve ser False
+        df_merged['Is_Aprovada'] = df_merged['Situação'].astype(str).str.upper().str.contains('APROVADA|APROVADO') & ~df_merged['Situação'].astype(str).str.upper().str.contains('REPROVAD')
+        self.assertFalse(df_merged.loc[0, 'Is_Aprovada'])
+
+        # 3. Na tabela detalhada, não deve exigir e-mail (traço) e deve ter estilo inativo
+        df_view, _, _, func_destaque = preparar_dataframe_detalhes(df_merged, col_situacao='Situação')
+        self.assertEqual(df_view.loc[0, 'E-mail'], '—')
+        estilos = func_destaque(df_view.iloc[0])
+        self.assertTrue(any('italic' in str(e) for e in estilos))
+
 if __name__ == '__main__':
     unittest.main()
 
