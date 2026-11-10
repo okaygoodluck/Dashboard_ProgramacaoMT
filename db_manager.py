@@ -3654,15 +3654,20 @@ def reconciliar_reprovas_mesao_diario(pasta_mesao=None, dias_analise=3):
             
             # Mapeamento do arquivo anterior (se houver)
             map_ant = {}
+            map_ant_rows = {}
             if i > 0:
                 df_prev = dfs_mesao[i - 1]
-                map_ant = df_prev.set_index('_sol_norm')['_st_norm'].to_dict()
+                df_prev_unique = df_prev.drop_duplicates(subset=['_sol_norm'])
+                map_ant = df_prev_unique.set_index('_sol_norm')['_st_norm'].to_dict()
+                map_ant_rows = df_prev_unique.set_index('_sol_norm').to_dict('index')
 
-            df_rep = df_curr[df_curr['_st_norm'].isin(['REPROVADA', 'CANCELADA'])]
+            # Considera reprovadas com status explícito OU que ganharam Último Reprovador preenchido (ex: recadastradas pós-reprovação)
+            mask_reprovadas = df_curr['_st_norm'].isin(['REPROVADA', 'CANCELADA']) | (df_curr['_rep_norm'] != '')
+            df_rep = df_curr[mask_reprovadas]
 
             for _, row in df_rep.iterrows():
                 sol = row['_sol_norm']
-                st_atual = row['_st_norm']
+                st_atual = 'REPROVADA' if row['_rep_norm'] != '' and row['_st_norm'] not in ['REPROVADA', 'CANCELADA'] else row['_st_norm']
                 reprovador_nome = row['_rep_norm']
                 reg = row['_reg_norm']
                 st_ant = map_ant.get(sol, '')
