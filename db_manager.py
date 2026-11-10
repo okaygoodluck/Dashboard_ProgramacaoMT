@@ -3740,20 +3740,24 @@ def reconciliar_reprovas_mesao_diario(pasta_mesao=None, dias_analise=3):
 
         conn_app.commit()
 
-        # 3. Sobreposição de status em demanda_atual (ccp_data.db) para demandas que ainda constam ativas
+        # 3. Sobreposição de status em demanda_atual (ccp_data.db) para demandas que ainda constam ativas (não-impeditivo)
         try:
             conn_data = get_connection_write()
-            cur_data = conn_data.cursor()
-            for sol, info in reprovas_identificadas.items():
-                cur_data.execute("""
-                    UPDATE demanda_atual 
-                    SET "Situação" = ?
-                    WHERE (LTRIM("Solicitação", '0') = ? OR "Solicitação" = ?)
-                      AND UPPER("Situação") NOT IN ('REPROVADA', 'CANCELADA')
-                """, (info['status'], sol, sol))
-            conn_data.commit()
+            if conn_data:
+                cur_data = conn_data.cursor()
+                for sol, info in reprovas_identificadas.items():
+                    try:
+                        cur_data.execute("""
+                            UPDATE demanda_atual 
+                            SET "Situação" = ?
+                            WHERE (LTRIM("Solicitação", '0') = ? OR "Solicitação" = ?)
+                              AND UPPER("Situação") NOT IN ('REPROVADA', 'CANCELADA')
+                        """, (info['status'], sol, sol))
+                    except Exception:
+                        pass
+                conn_data.commit()
         except Exception as e_cur:
-            print(f"[RECONCILIACAO MESAO] Aviso ao atualizar demanda_atual: {e_cur}")
+            print(f"[RECONCILIACAO MESAO] Aviso não-impeditivo ao atualizar demanda_atual: {e_cur}")
 
         return {
             'status': 'sucesso',

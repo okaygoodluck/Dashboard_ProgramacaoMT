@@ -454,12 +454,6 @@ def load_latest_data():
                                     if target_col_sit:
                                         df.loc[mask_reprov_ms, target_col_sit] = df.loc[mask_reprov_ms, '_status_ms_clean']
                                 df.drop(columns=['_status_ms_clean'], inplace=True)
-
-                            # Blindagem: Reconciliação passiva no banco de eventos diários para que reprovas não sejam perdidas
-                            try:
-                                db_manager.reconciliar_reprovas_mesao_diario()
-                            except Exception as e_rec:
-                                print(f"[DASHBOARD] Aviso na auto-reconciliação de reprovas: {e_rec}")
                             
                             # Reconciliação para evitar colunas duplicadas _x e _y geradas pelo merge
                             for base_c in ['CHI', 'Peso', 'Clientes', 'OBRA GD', 'PLE']:
