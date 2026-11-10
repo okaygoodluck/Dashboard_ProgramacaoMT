@@ -3547,6 +3547,232 @@ def get_gargalos_aprovadas():
         return pd.DataFrame()
 
 
+def reconciliar_reprovas_mesao_diario(pasta_mesao=None, dias_analise=3):
+    """
+    Blindagem de Reprovações (Mesão Diário -> CCP).
+    Identifica solicitações reprovadas ou canceladas no Mesão Diário corporativo
+    e assegura que sejam devidamente registradas em eventos_diarios (TRATADA) e
+    fila_conciliacao, creditando a produtividade ao técnico reprovador oficial.
+    """
+    import os
+    import glob
+    import re
+    import unicodedata
+    import pandas as pd
+    import datetime
+
+    def _norm_nome(t):
+        if not t or pd.isna(t):
+            return ""
+        return ''.join(c for c in unicodedata.normalize('NFD', str(t).strip()) if unicodedata.category(c) != 'Mn').upper()
+
+    def _extrair_data_mesao(nome_arq):
+        m = re.search(r'Mesao_(\d{2})_(\d{2})_(\d{2,4})', nome_arq)
+        if m:
+            d, mth, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if y < 100:
+                y += 2000
+            try:
+                return datetime.date(y, mth, d)
+            except Exception:
+                pass
+        return None
+
+    if not pasta_mesao or not os.path.exists(pasta_mesao):
+        pasta_mesao = os.environ.get("CCP_MESAO_DIARIO_PATH")
+        if not pasta_mesao or not os.path.exists(pasta_mesao):
+            cands = [
+                r"\\SACORPARQ1.cemig.ad.corp\GROUPS\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario",
+                r"\\SACORPARQ1\GROUPS\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario",
+                r"I:\IT\ODCO\PROGRAMACAO_MT\Mesao_Diario"
+            ]
+            pasta_mesao = next((p for p in cands if os.path.exists(p)), None)
+
+    if not pasta_mesao or not os.path.exists(pasta_mesao):
+        return {'status': 'aviso', 'mensagem': 'Pasta do Mesão Diário não localizada.'}
+
+    arqs = glob.glob(os.path.join(pasta_mesao, "Mesao_*.xlsx"))
+    if not arqs:
+        return {'status': 'aviso', 'mensagem': 'Nenhum arquivo Mesao_*.xlsx encontrado.'}
+
+    # Ordena por data extraída do nome do arquivo
+    arqs_com_data = []
+    for a in arqs:
+        dt = _extrair_data_mesao(os.path.basename(a))
+        if dt:
+            arqs_com_data.append((dt, a))
+    arqs_com_data.sort(key=lambda x: x[0])
+
+    if not arqs_com_data:
+        arqs_com_data = [(datetime.date.today(), a) for a in sorted(arqs, key=os.path.getmtime)]
+
+    # Analisa os arquivos mais recentes conforme dias_analise
+    arqs_processar = arqs_com_data[-max(2, dias_analise):]
+
+    conn_app = None
+    conn_data = None
+    total_atualizados = 0
+    total_inseridos = 0
+
+    try:
+        conn_app = get_connection_config()
+        cursor_app = conn_app.cursor()
+
+        # Dicionário de usuários do sistema
+        df_users = pd.read_sql("SELECT matricula, nome FROM usuarios", conn_app)
+        user_map = {_norm_nome(r['nome']): r['matricula'] for _, r in df_users.iterrows()}
+
+        # Carrega dados dos arquivos selecionados
+        dfs_mesao = []
+        for dt_arq, path_arq in arqs_processar:
+            try:
+                df_temp = pd.read_excel(path_arq)
+                c_sol = next((c for c in df_temp.columns if 'solicita' in c.lower() and 'status' not in c.lower()), None)
+                c_st = next((c for c in df_temp.columns if 'status' in c.lower() and 'solic' in c.lower()), None)
+                c_rep = next((c for c in df_temp.columns if 'reprov' in c.lower() and 'solic' in c.lower()), None)
+                c_reg = next((c for c in df_temp.columns if 'regi' in c.lower()), None)
+
+                if c_sol and c_st:
+                    df_temp['_sol_norm'] = df_temp[c_sol].astype(str).str.strip().str.lstrip('0')
+                    df_temp['_st_norm'] = df_temp[c_st].astype(str).str.strip().str.upper()
+                    df_temp['_rep_norm'] = df_temp[c_rep].apply(_norm_nome) if c_rep else ""
+                    df_temp['_reg_norm'] = df_temp[c_reg].astype(str).str.strip().str[:2].str.upper() if c_reg else ""
+                    df_temp['_dt_ref'] = dt_arq
+                    dfs_mesao.append(df_temp)
+            except Exception as e_read:
+                print(f"[RECONCILIACAO MESAO] Falha ao ler {os.path.basename(path_arq)}: {e_read}")
+
+        if not dfs_mesao:
+            return {'status': 'aviso', 'mensagem': 'Nenhum dado válido extraído dos arquivos do Mesão.'}
+
+        # Compara transições entre arquivos sucessivos para identificar a data precisa da reprovação
+        reprovas_identificadas = {}
+
+        for i in range(len(dfs_mesao)):
+            df_curr = dfs_mesao[i]
+            dt_curr = df_curr['_dt_ref'].iloc[0]
+            
+            # Mapeamento do arquivo anterior (se houver)
+            map_ant = {}
+            if i > 0:
+                df_prev = dfs_mesao[i - 1]
+                map_ant = df_prev.set_index('_sol_norm')['_st_norm'].to_dict()
+
+            df_rep = df_curr[df_curr['_st_norm'].isin(['REPROVADA', 'CANCELADA'])]
+
+            for _, row in df_rep.iterrows():
+                sol = row['_sol_norm']
+                st_atual = row['_st_norm']
+                reprovador_nome = row['_rep_norm']
+                reg = row['_reg_norm']
+                st_ant = map_ant.get(sol, '')
+
+                mat = user_map.get(reprovador_nome)
+                if not mat:
+                    continue
+
+                # Se é transição no arquivo atual (não era reprovada no anterior), a data da reprova
+                # é o dia útil anterior à publicação matinal do Mesão (ou o próprio dia se i == 0)
+                if i > 0 and st_ant not in ['REPROVADA', 'CANCELADA']:
+                    dt_evento_data = obter_dia_util_anterior(dt_curr.strftime('%Y-%m-%d'))
+                elif i == 0:
+                    dt_evento_data = dt_curr.strftime('%Y-%m-%d')
+                else:
+                    # Já era reprovada no arquivo anterior, data já foi tratada
+                    continue
+
+                reprovas_identificadas[sol] = {
+                    'regiao': reg,
+                    'matricula': mat,
+                    'reprovador': reprovador_nome,
+                    'status': st_atual,
+                    'data_evento': f"{dt_evento_data} 17:30:00"
+                }
+
+        # Aplica reconciliação no banco ccp_app.db
+        for sol, info in reprovas_identificadas.items():
+            st_det = info['status']
+            mat = info['matricula']
+            reg = info['regiao']
+            dt_ev = info['data_evento']
+
+            # 1. Verifica se já existe evento TRATADA
+            cursor_app.execute("""
+                SELECT id, status_detalhado, matricula_responsavel, data_evento 
+                FROM eventos_diarios 
+                WHERE (solicitacao = ? OR LTRIM(solicitacao, '0') = ?)
+                  AND tipo_evento = 'TRATADA'
+            """, (sol, sol))
+            ev_existentes = cursor_app.fetchall()
+
+            if ev_existentes:
+                for ev in ev_existentes:
+                    ev_id, st_atual, mat_atual, _ = ev
+                    if not st_atual or str(st_atual).upper() not in ['REPROVADA', 'CANCELADA'] or mat_atual != mat:
+                        cursor_app.execute("""
+                            UPDATE eventos_diarios 
+                            SET status_detalhado = ?, matricula_responsavel = COALESCE(?, matricula_responsavel)
+                            WHERE id = ?
+                        """, (st_det, mat, ev_id))
+                        total_atualizados += 1
+            else:
+                # Cria evento TRATADA que não foi capturado na grade web
+                cursor_app.execute("""
+                    INSERT INTO eventos_diarios (solicitacao, tipo_evento, regiao, matricula_responsavel, data_evento, status_detalhado)
+                    VALUES (?, 'TRATADA', ?, ?, ?, ?)
+                """, (sol, reg, mat, dt_ev, st_det))
+                total_inseridos += 1
+
+            # 2. Garante sincronismo na fila_conciliacao
+            cursor_app.execute("""
+                INSERT INTO fila_conciliacao (solicitacao, sigla_regiao, matricula_responsavel, data_saida, status_apurado, data_auditoria)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(solicitacao) DO UPDATE SET
+                    status_apurado = excluded.status_apurado,
+                    data_auditoria = excluded.data_auditoria,
+                    matricula_responsavel = excluded.matricula_responsavel
+            """, (sol, reg, mat, dt_ev, st_det, get_agora_br().strftime('%Y-%m-%d %H:%M:%S')))
+
+        conn_app.commit()
+
+        # 3. Sobreposição de status em demanda_atual (ccp_data.db) para demandas que ainda constam ativas
+        try:
+            conn_data = get_connection_write()
+            cur_data = conn_data.cursor()
+            for sol, info in reprovas_identificadas.items():
+                cur_data.execute("""
+                    UPDATE demanda_atual 
+                    SET "Situação" = ?
+                    WHERE (LTRIM("Solicitação", '0') = ? OR "Solicitação" = ?)
+                      AND UPPER("Situação") NOT IN ('REPROVADA', 'CANCELADA')
+                """, (info['status'], sol, sol))
+            conn_data.commit()
+        except Exception as e_cur:
+            print(f"[RECONCILIACAO MESAO] Aviso ao atualizar demanda_atual: {e_cur}")
+
+        return {
+            'status': 'sucesso',
+            'reprovas_analisadas': len(reprovas_identificadas),
+            'eventos_atualizados': total_atualizados,
+            'eventos_inseridos': total_inseridos
+        }
+    except Exception as e:
+        print(f"[RECONCILIACAO MESAO] Erro crítico na reconciliação: {e}")
+        return {'status': 'erro', 'mensagem': str(e)}
+    finally:
+        if conn_app:
+            try:
+                conn_app.close()
+            except Exception:
+                pass
+        if conn_data:
+            try:
+                conn_data.close()
+            except Exception:
+                pass
+
+
+
 
 
 

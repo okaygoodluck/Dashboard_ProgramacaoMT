@@ -882,6 +882,13 @@ def extrair_dados():
                     if todas_regioes_sistema:
                         print("[DB] Salvando mapeamento completo de regiões do sistema...")
                         db_manager.salvar_regioes_sistema(pd.DataFrame(todas_regioes_sistema))
+
+                    try:
+                        print("[DB] Executando reconciliação e blindagem de reprovas via Mesão Diário...")
+                        res_rec = db_manager.reconciliar_reprovas_mesao_diario()
+                        print(f"[DB] Blindagem de reprovas: {res_rec}")
+                    except Exception as e_rec:
+                        print(f"[AVISO] Falha não impeditiva na reconciliação de reprovas: {e_rec}")
                         
                 except Exception as e:
                     print(f"[ERRO DB] Falha ao salvar no banco de dados: {e}")
