@@ -3648,6 +3648,11 @@ def reconciliar_reprovas_mesao_diario(pasta_mesao=None, dias_analise=3):
         # Compara transições entre arquivos sucessivos para identificar a data precisa da reprovação
         reprovas_identificadas = {}
 
+        # Mapeamento do status mais recente no Mesão para proteger demandas ativas
+        df_mais_recente = dfs_mesao[-1].drop_duplicates(subset=['_sol_norm'])
+        status_recente_map = df_mais_recente.set_index('_sol_norm')['_st_norm'].to_dict()
+        STATUS_ATIVOS_NAO_REPROVADOS = {'APROVADA', 'EM ELABORACAO', 'ENVIADA PARA O CONDIS', 'EM ANALISE', 'ELABORADA'}
+
         for i in range(len(dfs_mesao)):
             df_curr = dfs_mesao[i]
             dt_curr = df_curr['_dt_ref'].iloc[0]
@@ -3661,16 +3666,23 @@ def reconciliar_reprovas_mesao_diario(pasta_mesao=None, dias_analise=3):
                 map_ant = df_prev_unique.set_index('_sol_norm')['_st_norm'].to_dict()
                 map_ant_rows = df_prev_unique.set_index('_sol_norm').to_dict('index')
 
-            # Considera reprovadas com status explícito OU que ganharam Último Reprovador preenchido (ex: recadastradas pós-reprovação)
-            mask_reprovadas = df_curr['_st_norm'].isin(['REPROVADA', 'CANCELADA']) | (df_curr['_rep_norm'] != '')
+            # Considera reprovadas com status explícito OU que transicionaram para CADASTRADA com reprovador preenchido
+            mask_reprovadas = df_curr['_st_norm'].isin(['REPROVADA', 'CANCELADA']) | (
+                (df_curr['_st_norm'] == 'CADASTRADA') & (df_curr['_rep_norm'] != '')
+            )
             df_rep = df_curr[mask_reprovadas]
 
             for _, row in df_rep.iterrows():
                 sol = row['_sol_norm']
-                st_atual = 'REPROVADA' if row['_rep_norm'] != '' and row['_st_norm'] not in ['REPROVADA', 'CANCELADA'] else row['_st_norm']
+                st_atual = 'REPROVADA' if row['_st_norm'] == 'CADASTRADA' else row['_st_norm']
                 reprovador_nome = row['_rep_norm']
                 reg = row['_reg_norm']
                 st_ant = map_ant.get(sol, '')
+
+                # Blindagem: se a solicitação hoje consta ativa/aprovada no Mesão mais recente,
+                # não deve ser tratada como reprovada ativa
+                if status_recente_map.get(sol) in STATUS_ATIVOS_NAO_REPROVADOS:
+                    continue
 
                 mat = user_map.get(reprovador_nome)
                 if not mat:
