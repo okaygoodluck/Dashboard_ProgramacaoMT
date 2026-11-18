@@ -3666,7 +3666,7 @@ def reconciliar_reprovas_mesao_diario(pasta_mesao=None, dias_analise=3):
                 map_ant = df_prev_unique.set_index('_sol_norm')['_st_norm'].to_dict()
                 map_ant_rows = df_prev_unique.set_index('_sol_norm').to_dict('index')
 
-            # Considera reprovadas com status explícito OU que transicionaram para CADASTRADA com reprovador preenchido
+            # Considera reprovadas com status explícito OU que transicionaram para CADASTRADA após reprovação
             mask_reprovadas = df_curr['_st_norm'].isin(['REPROVADA', 'CANCELADA']) | (
                 (df_curr['_st_norm'] == 'CADASTRADA') & (df_curr['_rep_norm'] != '')
             )
@@ -3679,9 +3679,14 @@ def reconciliar_reprovas_mesao_diario(pasta_mesao=None, dias_analise=3):
                 reg = row['_reg_norm']
                 st_ant = map_ant.get(sol, '')
 
-                # Blindagem: se a solicitação hoje consta ativa/aprovada no Mesão mais recente,
+                # Blindagem 1: se a solicitação hoje consta ativa no Mesão mais recente,
                 # não deve ser tratada como reprovada ativa
                 if status_recente_map.get(sol) in STATUS_ATIVOS_NAO_REPROVADOS:
+                    continue
+
+                # Blindagem 2: Para demandas em CADASTRADA, só registrar reprova se houve transição
+                # explícita vindo de um status anterior ativo (evita reprovas fantasmas recorrentes)
+                if row['_st_norm'] == 'CADASTRADA' and (i == 0 or st_ant not in ['APROVADA', 'EM ELABORACAO', 'EM ANALISE', 'REPROVADA']):
                     continue
 
                 mat = user_map.get(reprovador_nome)
@@ -3751,25 +3756,6 @@ def reconciliar_reprovas_mesao_diario(pasta_mesao=None, dias_analise=3):
             """, (sol, reg, mat, dt_ev, st_det, get_agora_br().strftime('%Y-%m-%d %H:%M:%S')))
 
         conn_app.commit()
-
-        # 3. Sobreposição de status em demanda_atual (ccp_data.db) para demandas que ainda constam ativas (não-impeditivo)
-        try:
-            conn_data = get_connection_write()
-            if conn_data:
-                cur_data = conn_data.cursor()
-                for sol, info in reprovas_identificadas.items():
-                    try:
-                        cur_data.execute("""
-                            UPDATE demanda_atual 
-                            SET "Situação" = ?
-                            WHERE (LTRIM("Solicitação", '0') = ? OR "Solicitação" = ?)
-                              AND UPPER("Situação") NOT IN ('REPROVADA', 'CANCELADA')
-                        """, (info['status'], sol, sol))
-                    except Exception:
-                        pass
-                conn_data.commit()
-        except Exception as e_cur:
-            print(f"[RECONCILIACAO MESAO] Aviso não-impeditivo ao atualizar demanda_atual: {e_cur}")
 
         return {
             'status': 'sucesso',
