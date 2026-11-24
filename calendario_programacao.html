@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <title>Calendário da Programação</title>
@@ -11,8 +12,10 @@
             --text-color: #333;
             --border-color: #ddd;
             --card-bg: #fff;
-            --card-shadow: 0 6px 15px rgba(0, 0, 0, 0.15); /* Sombra mais pronunciada */
-            --day-hover-bg: #e9e9e9; /* Mais claro */
+            --card-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+            /* Sombra mais pronunciada */
+            --day-hover-bg: #e9e9e9;
+            /* Mais claro */
             --today-border: #3498db;
             --footer-text-color: #777;
             --nav-button-bg: #e0e0e0;
@@ -22,11 +25,14 @@
 
         /* Tema Escuro */
         body.dark-mode {
-            --bg-color: #242424; /* Fundo mais escuro */
+            --bg-color: #242424;
+            /* Fundo mais escuro */
             --text-color: #e0e0e0;
             --border-color: #555;
-            --card-bg: #363636; /* Cards mais escuros */
-            --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.6); /* Sombra mais escura */
+            --card-bg: #363636;
+            /* Cards mais escuros */
+            --card-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+            /* Sombra mais escura */
             --day-hover-bg: #4c4c4c;
             --today-border: #80c8ff;
             --footer-text-color: #aaaaaa;
@@ -45,15 +51,19 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            min-height: 100vh; /* Garante que o body ocupa a altura total da viewport */
-            box-sizing: border-box; /* Inclui padding e borda no tamanho total */
+            min-height: 100vh;
+            /* Garante que o body ocupa a altura total da viewport */
+            box-sizing: border-box;
+            /* Inclui padding e borda no tamanho total */
         }
 
         /* Título do Calendário */
         h1 {
             color: var(--text-color);
-            margin-bottom: 40px; /* Mais espaço abaixo do título */
-            font-size: 2.8em; /* Título maior */
+            margin-bottom: 40px;
+            /* Mais espaço abaixo do título */
+            font-size: 2.8em;
+            /* Título maior */
             text-align: center;
             width: 100%;
             padding-top: 20px;
@@ -62,50 +72,71 @@
 
         /* Botão de Tema */
         .theme-switcher {
-            position: absolute; /* Posicionamento absoluto */
-            top: 25px; /* Ajuste para o topo */
-            right: 25px; /* Ajuste para a direita */
-            padding: 12px 18px; /* Mais padding */
-            border: 2px solid var(--border-color); /* Borda mais visível */
-            border-radius: 50%; /* Botão circular */
+            position: absolute;
+            /* Posicionamento absoluto */
+            top: 25px;
+            /* Ajuste para o topo */
+            right: 25px;
+            /* Ajuste para a direita */
+            padding: 12px 18px;
+            /* Mais padding */
+            border: 2px solid var(--border-color);
+            /* Borda mais visível */
+            border-radius: 50%;
+            /* Botão circular */
             background-color: var(--card-bg);
             color: var(--text-color);
             cursor: pointer;
-            font-size: 1.6em; /* Ícone maior */
-            display: flex; /* Para centralizar o ícone */
+            font-size: 1.6em;
+            /* Ícone maior */
+            display: flex;
+            /* Para centralizar o ícone */
             align-items: center;
             justify-content: center;
             transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
             box-shadow: var(--card-shadow);
-            line-height: 1; /* Para evitar espaçamento extra em volta do ícone */
+            line-height: 1;
+            /* Para evitar espaçamento extra em volta do ícone */
         }
 
         .theme-switcher:hover {
-            transform: translateY(-2px); /* Efeito sutil no hover */
-            box-shadow: var(--card-shadow); /* Mantém sombra no hover */
+            transform: translateY(-2px);
+            /* Efeito sutil no hover */
+            box-shadow: var(--card-shadow);
+            /* Mantém sombra no hover */
         }
 
         .calendar-container {
             display: flex;
-            gap: 50px; /* Espaço maior entre os calendários */
+            gap: 50px;
+            /* Espaço maior entre os calendários */
             justify-content: center;
-            flex-wrap: wrap; /* Permite quebrar linha em telas menores */
-            max-width: 1400px; /* Aumenta ainda mais a largura máxima do contêiner */
-            width: 95%; /* Ocupa 95% da largura da tela */
-            flex-grow: 1; /* Permite que o contêiner de calendários cresça */
-            margin-bottom: 50px; /* Espaço antes do rodapé */
+            flex-wrap: wrap;
+            /* Permite quebrar linha em telas menores */
+            max-width: 1400px;
+            /* Aumenta ainda mais a largura máxima do contêiner */
+            width: 95%;
+            /* Ocupa 95% da largura da tela */
+            flex-grow: 1;
+            /* Permite que o contêiner de calendários cresça */
+            margin-bottom: 50px;
+            /* Espaço antes do rodapé */
         }
 
         .month {
             flex: 1;
-            min-width: 450px; /* Aumenta a largura mínima de cada mês */
+            min-width: 450px;
+            /* Aumenta a largura mínima de cada mês */
             border: 1px solid var(--border-color);
-            border-radius: 15px; /* Bordas mais arredondadas */
-            padding: 30px; /* Mais padding interno */
+            border-radius: 15px;
+            /* Bordas mais arredondadas */
+            padding: 30px;
+            /* Mais padding interno */
             background-color: var(--card-bg);
             box-shadow: var(--card-shadow);
             transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
-            display: flex; /* Para organizar cabeçalho, dias da semana e dias */
+            display: flex;
+            /* Para organizar cabeçalho, dias da semana e dias */
             flex-direction: column;
         }
 
@@ -119,14 +150,18 @@
         .month-header h2 {
             text-align: center;
             color: var(--text-color);
-            margin: 0; /* Remover margens padrão do h2 */
-            font-size: 2em; /* Título do mês maior */
-            flex-grow: 1; /* Permite que o título ocupe o espaço central */
+            margin: 0;
+            /* Remover margens padrão do h2 */
+            font-size: 2em;
+            /* Título do mês maior */
+            flex-grow: 1;
+            /* Permite que o título ocupe o espaço central */
         }
 
         /* Espaço para quando um botão não estiver presente */
         .month-header .placeholder {
-            width: 100px; /* Largura igual a do botão para manter o h2 centralizado */
+            width: 100px;
+            /* Largura igual a do botão para manter o h2 centralizado */
         }
 
         .nav-button {
@@ -138,7 +173,8 @@
             cursor: pointer;
             font-size: 1em;
             transition: background-color 0.2s ease, transform 0.1s ease;
-            width: 100px; /* Fixa a largura do botão para alinhamento */
+            width: 100px;
+            /* Fixa a largura do botão para alinhamento */
             text-align: center;
         }
 
@@ -151,10 +187,13 @@
             display: flex;
             justify-content: space-between;
             font-weight: bold;
-            margin-bottom: 20px; /* Mais espaço */
+            margin-bottom: 20px;
+            /* Mais espaço */
             color: var(--text-color);
-            padding: 0 8px; /* Ajuste de padding */
-            font-size: 1.2em; /* Dias da semana maiores */
+            padding: 0 8px;
+            /* Ajuste de padding */
+            font-size: 1.2em;
+            /* Dias da semana maiores */
         }
 
         .weekdays span {
@@ -165,43 +204,55 @@
         .days {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px; /* Mais espaço entre os dias */
-            flex-grow: 1; /* Permite que a grade de dias ocupe o espaço restante */
+            gap: 10px;
+            /* Mais espaço entre os dias */
+            flex-grow: 1;
+            /* Permite que a grade de dias ocupe o espaço restante */
         }
 
         .day {
-            width: calc(100% / 7 - 10px); /* Ajustado para o novo gap */
+            width: calc(100% / 7 - 10px);
+            /* Ajustado para o novo gap */
             text-align: center;
-            padding: 15px 0; /* Mais padding vertical */
+            padding: 15px 0;
+            /* Mais padding vertical */
             box-sizing: border-box;
-            border-radius: 10px; /* Mais arredondado */
+            border-radius: 10px;
+            /* Mais arredondado */
             transition: background-color 0.2s ease, transform 0.1s ease;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            min-height: 85px; /* Aumentado significativamente a altura mínima da célula */
-            font-size: 1.1em; /* Fonte base dos dias maior */
+            min-height: 85px;
+            /* Aumentado significativamente a altura mínima da célula */
+            font-size: 1.1em;
+            /* Fonte base dos dias maior */
             position: relative;
-            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05); /* Borda interna sutil */
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+            /* Borda interna sutil */
         }
+
         body.dark-mode .day {
-             box-shadow: inset 0 0 0 1px rgba(255,255,255,0.05);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
         }
 
         .day span.date-number {
             font-weight: bold;
-            font-size: 1.4em; /* Número do dia ainda maior */
+            font-size: 1.4em;
+            /* Número do dia ainda maior */
             margin-bottom: 5px;
         }
 
         .day span.legend {
-            font-size: 0.8em; /* Legenda maior */
+            font-size: 0.8em;
+            /* Legenda maior */
             line-height: 1.2;
             text-transform: uppercase;
             font-weight: 600;
             padding: 3px 0;
-            color: rgba(255, 255, 255, 0.95); /* Cor da legenda mais forte */
+            color: rgba(255, 255, 255, 0.95);
+            /* Cor da legenda mais forte */
             width: 100%;
             white-space: normal;
             word-break: break-word;
@@ -209,56 +260,68 @@
 
         .day:not(.empty):hover {
             background-color: var(--day-hover-bg);
-            transform: translateY(-3px); /* Efeito de elevação mais pronunciado */
+            transform: translateY(-3px);
+            /* Efeito de elevação mais pronunciado */
             box-shadow: var(--card-shadow);
         }
 
         /* Cores gerais (mantidas ou ajustadas sutilmente) */
         .green-day {
-            background-color: #9cdb8f; /* Verde um pouco mais vibrante */
+            background-color: #9cdb8f;
+            /* Verde um pouco mais vibrante */
             color: #212121;
         }
 
         .red-day {
-            background-color: #e06c75; /* Vermelho um pouco mais vibrante */
+            background-color: #e06c75;
+            /* Vermelho um pouco mais vibrante */
             color: white;
         }
 
         /* Classes para os limites (alta prioridade) */
         .limit-aprovacao {
-            background-color: #d64a38; /* Vermelho escuro forte */
+            background-color: #d64a38;
+            /* Vermelho escuro forte */
             color: white;
         }
 
         .limit-avisos {
-            background-color: #f7913d; /* Laranja escuro forte */
+            background-color: #f7913d;
+            /* Laranja escuro forte */
             color: white;
         }
 
         .limit-condis {
-            background-color: #3f9be6; /* Azul escuro forte */
+            background-color: #3f9be6;
+            /* Azul escuro forte */
             color: white;
         }
 
         /* Feriado */
         .holiday {
-            background-color: #ac63e3; /* Roxo vibrante */
+            background-color: #ac63e3;
+            /* Roxo vibrante */
             color: white;
             font-weight: bold;
             box-shadow: 0 0 8px rgba(172, 99, 227, 0.6);
         }
 
         .holiday .legend {
-            font-size: 0.75em; /* Legenda de feriado um pouco maior */
+            font-size: 0.75em;
+            /* Legenda de feriado um pouco maior */
         }
 
         /* Estilo para o dia atual */
         .today {
-            border: 4px solid var(--today-border); /* Borda ainda mais grossa */
-            background-color: var(--card-bg); /* Mantém o fundo do card para visibilidade da borda */
+            border: 4px solid var(--today-border);
+            /* Borda ainda mais grossa */
+            background-color: var(--card-bg);
+            /* Mantém o fundo do card para visibilidade da borda */
             color: var(--text-color);
-            box-shadow: 0 0 15px rgba(52, 152, 219, 0.8); /* Sombra mais intensa para o dia atual */
-            transform: scale(1.02); /* Pequeno zoom para o dia atual */
+            box-shadow: 0 0 15px rgba(52, 152, 219, 0.8);
+            /* Sombra mais intensa para o dia atual */
+            transform: scale(1.02);
+            /* Pequeno zoom para o dia atual */
         }
 
         /* Para os dias vazios no início do mês */
@@ -266,7 +329,8 @@
             background-color: transparent;
             border: none;
             cursor: default;
-            box-shadow: none; /* Sem sombra para dias vazios */
+            box-shadow: none;
+            /* Sem sombra para dias vazios */
         }
 
         .day.empty:hover {
@@ -276,7 +340,8 @@
 
         /* Rodapé */
         footer {
-            margin-top: auto; /* Empurra o rodapé para o final da página */
+            margin-top: auto;
+            /* Empurra o rodapé para o final da página */
             padding-top: 20px;
             text-align: center;
             font-size: 0.9em;
@@ -290,104 +355,133 @@
                 gap: 30px;
                 max-width: 90%;
             }
+
             .month {
                 min-width: 380px;
                 padding: 25px;
             }
+
             .day {
                 min-height: 80px;
                 font-size: 1em;
             }
+
             .day span.date-number {
                 font-size: 1.3em;
             }
         }
 
-        @media (max-width: 992px) { /* Tablets em modo paisagem */
+        @media (max-width: 992px) {
+
+            /* Tablets em modo paisagem */
             .month {
                 min-width: 320px;
                 padding: 20px;
             }
+
             .day {
                 min-height: 75px;
             }
+
             h1 {
                 font-size: 2.2em;
             }
         }
 
-        @media (max-width: 768px) { /* Tablets em modo retrato e celulares */
+        @media (max-width: 768px) {
+
+            /* Tablets em modo retrato e celulares */
             body {
                 padding: 20px;
             }
+
             h1 {
                 font-size: 1.8em;
                 margin-bottom: 30px;
             }
+
             .theme-switcher {
                 top: 15px;
                 right: 15px;
                 padding: 10px 15px;
                 font-size: 1.4em;
             }
+
             .calendar-container {
                 flex-direction: column;
                 align-items: center;
                 gap: 30px;
-                width: 100%; /* Ocupa a largura total (com padding do body) */
-                max-width: none; /* Remove a largura máxima */
+                width: 100%;
+                /* Ocupa a largura total (com padding do body) */
+                max-width: none;
+                /* Remove a largura máxima */
             }
+
             .month {
-                width: 95%; /* Ocupa quase toda a largura disponível */
-                min-width: unset; /* Remove min-width para flexibilidade total */
+                width: 95%;
+                /* Ocupa quase toda a largura disponível */
+                min-width: unset;
+                /* Remove min-width para flexibilidade total */
                 padding: 25px;
             }
+
             .day {
                 min-height: 70px;
                 font-size: 0.95em;
                 padding: 12px 0;
                 border-radius: 8px;
             }
+
             .day span.date-number {
                 font-size: 1.2em;
             }
+
             .day span.legend {
                 font-size: 0.7em;
             }
         }
 
-        @media (max-width: 480px) { /* Celulares menores */
+        @media (max-width: 480px) {
+
+            /* Celulares menores */
             body {
                 padding: 15px;
             }
+
             h1 {
                 font-size: 1.5em;
                 margin-bottom: 25px;
             }
+
             .theme-switcher {
                 padding: 8px 12px;
                 font-size: 1.2em;
             }
+
             .month {
                 padding: 20px;
             }
+
             .weekdays {
                 font-size: 1em;
             }
+
             .day {
                 min-height: 60px;
                 padding: 10px 0;
             }
+
             .day span.date-number {
                 font-size: 1.1em;
             }
+
             .day span.legend {
                 font-size: 0.65em;
             }
         }
-
     </style>
 </head>
+
 <body>
 
     <button class="theme-switcher" id="themeSwitcher">☀️</button>
@@ -423,17 +517,17 @@
             { name: "Consciência Negra", month: 10, day: 20 },
             { name: "Consciência Negra", month: 10, day: 21 },//emenda
             { name: "Feriado Municipal", month: 11, day: 25 },
-			{ name: "Natal", month: 11, day: 24 }, // emenda natalina
+            { name: "Natal", month: 11, day: 24 }, // emenda natalina
             { name: "Natal", month: 11, day: 25 },
             { name: "Natal", month: 11, day: 26 }, //Emenda Natalina
-			{ name: "Ano novo", month: 11, day: 31 }, //Vespera de ano novo
-		
+            { name: "Ano novo", month: 11, day: 31 }, //Vespera de ano novo
+
         ];
 
         // Feriados de Belo Horizonte para 2026 (Nome, Mês-1, Dia)
         const holidaysBH2026 = [
             { name: "Confraternização Universal", month: 0, day: 1 },
-             { name: "Confraternização Universal", month: 0, day: 2 },
+            { name: "Confraternização Universal", month: 0, day: 2 },
             { name: "Segunda de Carnaval (facultativo)", month: 1, day: 16 }, // 16 de Fevereiro de 2026
             { name: "Carnaval", month: 1, day: 17 }, // 17 de Fevereiro de 2026
             { name: "Quarta-feira de Cinzas (facultativo até 14h)", month: 1, day: 18 }, // 18 de Fevereiro de 2026
@@ -449,14 +543,16 @@
             { name: "Finados", month: 10, day: 2 },
             { name: "Proclamação da República", month: 10, day: 15 },
             { name: "Consciência Negra", month: 10, day: 20 },
+            { name: "Imaculada Conceição (emenda)", month: 11, day: 7 },
+            { name: "Imaculada Conceição", month: 11, day: 8 },
             { name: "Natal", month: 11, day: 25 },
             { name: "Ano novo", month: 11, day: 31 }
         ];
 
         // Variável global para armazenar o mês e ano atualmente exibidos
-        
+
         let now = new Date();
-        let currentDisplayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()); 
+        let currentDisplayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
         function isHoliday(date) {
             const year = date.getFullYear();
@@ -512,7 +608,7 @@
         function getConsecutiveNonBusinessDays(startDate) {
             const nonBusinessDays = [];
             let currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-            currentDate.setDate(currentDate.getDate() + 1); 
+            currentDate.setDate(currentDate.getDate() + 1);
 
             while (!isBusinessDay(currentDate)) {
                 nonBusinessDays.push(new Date(currentDate));
@@ -573,7 +669,7 @@
                 </div>
                 <div class="days"></div>
             `;
-            
+
             const daysDiv = container.querySelector('.days'); // Seleciona o contêiner dos dias dentro do mês atual
 
             // Calcula os limites de dias úteis a partir de fixedTodayForLimits
@@ -611,7 +707,7 @@
                     dayDiv.appendChild(dateNumberSpan);
 
                     // Verifica se é o dia atual (do usuário, que é 30/07/2025)
-                    const actualTodayStripped = new Date(now.getFullYear(), now.getMonth(), now.getDate()); 
+                    const actualTodayStripped = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                     if (date.getTime() === actualTodayStripped.getTime()) {
                         dayDiv.classList.add('today');
                     }
@@ -642,7 +738,7 @@
                             dayDiv.classList.add('green-day');
                         }
                     }
-                    
+
                     const consecutiveNonBusinessDaysApproval = getConsecutiveNonBusinessDays(approvalLimit);
                     const consecutiveNonBusinessDaysAvisos = getConsecutiveNonBusinessDays(avisosLimit);
                     const consecutiveNonBusinessDaysCondis = getConsecutiveNonBusinessDays(condisLimit);
@@ -660,7 +756,7 @@
                         addLimitMarking(dayDiv, 'Condis', 'limit-condis');
                     }
                 }
-                
+
                 // Verifica conflitos de legendas/cores e aplica um gradiente
                 const statusColors = {
                     'limit-aprovacao': '#d64a38',
@@ -743,4 +839,5 @@
     </script>
 
 </body>
+
 </html>

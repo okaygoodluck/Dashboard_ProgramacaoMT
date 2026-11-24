@@ -46,6 +46,8 @@ HOLIDAYS_BH_2026 = [
     (11, 2, "Finados"),
     (11, 15, "Proclamação da República"),
     (11, 20, "Consciência Negra"),
+    (12, 7, "Imaculada Conceição (emenda)"),
+    (12, 8, "Imaculada Conceição"),
     (12, 25, "Natal"),
     (12, 31, "Véspera de Ano Novo")
 ]
